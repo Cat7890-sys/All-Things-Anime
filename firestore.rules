@@ -1,0 +1,232 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidUsernameFormat(username) {
+      return username is string && username.size() >= 3 && username.size() <= 20 && username.matches('^[a-zA-Z0-9_]{3,20}$');
+    }
+
+    function isValidUsernameLower(usernameLower) {
+      return usernameLower is string && usernameLower.size() >= 3 && usernameLower.size() <= 20 && usernameLower.matches('^[a-z0-9_]{3,20}$');
+    }
+
+    function isValidAvatarUrl(url) {
+      return url is string && url.size() <= 500 && (url == '' || url.matches('^https://.+'));
+    }
+
+    function isValidUserAccount(data, userId) {
+      return data.keys().hasAll([
+          'uid',
+          'username',
+          'usernameLowercase',
+          'displayName',
+          'email',
+          'bio',
+          'avatarUrl',
+          'emailVerified',
+          'accountStatus',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid',
+          'username',
+          'usernameLowercase',
+          'displayName',
+          'email',
+          'bio',
+          'avatarUrl',
+          'emailVerified',
+          'accountStatus',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.uid is string
+        && data.uid == userId
+        && isValidUsernameFormat(data.username)
+        && isValidUsernameLower(data.usernameLowercase)
+        && data.username.lower() == data.usernameLowercase
+        && data.displayName is string
+        && data.displayName.size() >= 2
+        && data.displayName.size() <= 40
+        && data.email is string
+        && data.email.size() >= 5
+        && data.email.size() <= 254
+        && data.bio is string
+        && data.bio.size() <= 280
+        && isValidAvatarUrl(data.avatarUrl)
+        && data.emailVerified is bool
+        && data.accountStatus in ['pending_verification', 'active']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPublicProfile(data, userId) {
+      return data.keys().hasAll([
+          'uid',
+          'username',
+          'usernameLowercase',
+          'displayName',
+          'bio',
+          'avatarUrl',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid',
+          'username',
+          'usernameLowercase',
+          'displayName',
+          'bio',
+          'avatarUrl',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.uid is string
+        && data.uid == userId
+        && isValidUsernameFormat(data.username)
+        && isValidUsernameLower(data.usernameLowercase)
+        && data.username.lower() == data.usernameLowercase
+        && data.displayName is string
+        && data.displayName.size() >= 2
+        && data.displayName.size() <= 40
+        && data.bio is string
+        && data.bio.size() <= 280
+        && isValidAvatarUrl(data.avatarUrl)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUsernameReservation(data, usernameLower) {
+      return data.keys().hasAll(['uid', 'username', 'createdAt'])
+        && data.keys().hasOnly(['uid', 'username', 'createdAt'])
+        && data.uid is string
+        && isValidId(data.uid)
+        && isValidUsernameFormat(data.username)
+        && data.username.lower() == usernameLower
+        && data.createdAt is timestamp;
+    }
+
+    // Owner-only private account document (protects email and account status)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserAccount(incoming(), userId)
+        && incoming().email.lower() == request.auth.token.email.lower()
+        && incoming().emailVerified == false
+        && incoming().accountStatus == 'pending_verification'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && existsAfter(/databases/$(database)/documents/usernames/$(incoming().usernameLowercase))
+        && existsAfter(/databases/$(database)/documents/publicProfiles/$(userId));
+
+      allow update: if isValidId(userId)
+        && isOwner(userId)
+        && isEmailVerified()
+        && isValidUserAccount(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().username == existing().username
+        && incoming().usernameLowercase == existing().usernameLowercase
+        && incoming().email == existing().email
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action 1: Sync verified activation once Firebase Auth confirms email verification
+          (
+            existing().emailVerified == false
+            && incoming().emailVerified == true
+            && existing().accountStatus == 'pending_verification'
+            && incoming().accountStatus == 'active'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['emailVerified', 'accountStatus', 'updatedAt'])
+          )
+          ||
+          // Action 2: Edit permitted public profile fields (verified owner only)
+          (
+            existing().emailVerified == true
+            && existing().accountStatus == 'active'
+            && incoming().emailVerified == existing().emailVerified
+            && incoming().accountStatus == existing().accountStatus
+            && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'bio', 'avatarUrl', 'updatedAt'])
+          )
+        );
+
+      allow delete: if false;
+    }
+
+    // Public non-PII profile document (never contains email or accountStatus)
+    match /publicProfiles/{userId} {
+      allow get: if isValidId(userId);
+      allow list: if false;
+
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isValidPublicProfile(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && existsAfter(/databases/$(database)/documents/users/$(userId))
+        && existsAfter(/databases/$(database)/documents/usernames/$(incoming().usernameLowercase));
+
+      allow update: if isValidId(userId)
+        && isOwner(userId)
+        && isEmailVerified()
+        && isValidPublicProfile(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().username == existing().username
+        && incoming().usernameLowercase == existing().usernameLowercase
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'bio', 'avatarUrl', 'updatedAt']);
+
+      allow delete: if false;
+    }
+
+    // Atomic username uniqueness registry
+    match /usernames/{usernameLowercase} {
+      allow get: if isValidUsernameLower(usernameLowercase);
+      allow list: if false;
+
+      allow create: if isValidUsernameLower(usernameLowercase)
+        && isSignedIn()
+        && !exists(/databases/$(database)/documents/usernames/$(usernameLowercase))
+        && isValidUsernameReservation(incoming(), usernameLowercase)
+        && incoming().uid == request.auth.uid
+        && incoming().createdAt == request.time
+        && existsAfter(/databases/$(database)/documents/users/$(request.auth.uid))
+        && existsAfter(/databases/$(database)/documents/publicProfiles/$(request.auth.uid));
+
+      allow update, delete: if false;
+    }
+  }
+}

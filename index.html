@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ATA — ALL THINGS ANIME | One Universe. Infinite Opinions.</title>
+    <meta name="description" content="One Universe. Infinite Opinions. An independent cosmic anime social platform foundation." />
+    <meta property="og:title" content="ATA — ALL THINGS ANIME" />
+    <meta property="og:description" content="One Universe. Infinite Opinions. An independent cosmic anime social platform foundation." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#090B14" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@600;700&family=Space+Grotesk:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem('ata-theme-preference');
+          var theme = saved === 'light' || saved === 'dark'
+            ? saved
+            : window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches
+            ? 'light'
+            : 'dark';
+          var root = document.documentElement;
+          if (theme === 'dark') {
+            root.classList.add('dark');
+          } else {
+            root.classList.remove('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body class="bg-[#F4F5F8] text-[#090B14] dark:bg-[#090B14] dark:text-[#FFFFFF] antialiased selection:bg-[#EF3038] selection:text-white transition-colors duration-200">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

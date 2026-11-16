@@ -1,0 +1,191 @@
+{
+  "entities": {
+    "UserPrivateAccount": {
+      "title": "UserPrivateAccount",
+      "description": "Private ATA member account record containing protected email and verification state. Readable only by the authenticated owner.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Authentication UID."
+        },
+        "username": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20,
+          "pattern": "^[a-zA-Z0-9_]{3,20}$",
+          "description": "Unique public ATA handle preserving user capitalization."
+        },
+        "usernameLowercase": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20,
+          "pattern": "^[a-z0-9_]{3,20}$",
+          "description": "Lowercase normalized username used for uniqueness enforcement."
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40,
+          "description": "Publicly visible display name."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "minLength": 5,
+          "maxLength": 254,
+          "description": "Private account email address (never exposed publicly)."
+        },
+        "bio": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 280,
+          "description": "Short member biography."
+        },
+        "avatarUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500,
+          "description": "Optional HTTPS avatar image URL or empty string for default cosmic avatar."
+        },
+        "emailVerified": {
+          "type": "boolean",
+          "description": "Mirrors Firebase Auth email verification status."
+        },
+        "accountStatus": {
+          "type": "string",
+          "enum": ["pending_verification", "active"],
+          "description": "Controlled account verification lifecycle state."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last-updated timestamp."
+        }
+      },
+      "required": [
+        "uid",
+        "username",
+        "usernameLowercase",
+        "displayName",
+        "email",
+        "bio",
+        "avatarUrl",
+        "emailVerified",
+        "accountStatus",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "PublicProfile": {
+      "title": "PublicProfile",
+      "description": "Non-PII public ATA member profile containing zero private email or status fields.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "username": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20,
+          "pattern": "^[a-zA-Z0-9_]{3,20}$"
+        },
+        "usernameLowercase": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20,
+          "pattern": "^[a-z0-9_]{3,20}$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40
+        },
+        "bio": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 280
+        },
+        "avatarUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "uid",
+        "username",
+        "usernameLowercase",
+        "displayName",
+        "bio",
+        "avatarUrl",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "UsernameReservation": {
+      "title": "UsernameReservation",
+      "description": "Immutable unique username lock keyed by lowercase username.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "username": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20,
+          "pattern": "^[a-zA-Z0-9_]{3,20}$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "username", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserPrivateAccount"
+      },
+      "description": "Owner-only private user account records containing email and verification state."
+    },
+    "/publicProfiles/{userId}": {
+      "schema": {
+        "$ref": "#/entities/PublicProfile"
+      },
+      "description": "Publicly readable non-PII user profiles."
+    },
+    "/usernames/{usernameLowercase}": {
+      "schema": {
+        "$ref": "#/entities/UsernameReservation"
+      },
+      "description": "Unique username registry preventing duplicate handle claims."
+    }
+  }
+}

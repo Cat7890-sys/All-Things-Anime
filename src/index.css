@@ -1,0 +1,75 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-display: "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-accent: "Orbitron", "Space Grotesk", system-ui, sans-serif;
+
+  --color-space-black: #090B14;
+  --color-dark-surface: #171923;
+  --color-pure-white: #FFFFFF;
+  --color-ata-red: #EF3038;
+  --color-deep-red: #B92335;
+  --color-soft-grey: #A7A9B8;
+  --color-border-grey: #303342;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  :focus-visible {
+    outline: 2px solid #EF3038;
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+.font-display-space {
+  font-family: var(--font-display);
+}
+
+.font-accent-orbitron {
+  font-family: var(--font-accent);
+}
+
+/* Subtle cosmic orbital backdrop accent for key hero surfaces */
+.cosmic-backdrop-grid {
+  background-image:
+    radial-gradient(circle at 82% 18%, rgba(239, 48, 56, 0.14), transparent 44%),
+    radial-gradient(circle at 14% 88%, rgba(185, 35, 53, 0.10), transparent 46%);
+}
+
+@keyframes ata-orbital-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ata-orbit-spin {
+  animation: ata-orbital-spin 1.8s linear infinite;
+}
+
+.ata-orbit-spin-slow {
+  animation: ata-orbital-spin 3.4s linear infinite;
+}

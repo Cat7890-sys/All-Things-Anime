@@ -1,0 +1,6 @@
+{
+  "name": "ATA — ALL THINGS ANIME",
+  "description": "One Universe. Infinite Opinions. An independent manga-inspired social platform foundation for anime fans.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
