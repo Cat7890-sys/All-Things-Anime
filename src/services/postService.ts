@@ -83,13 +83,31 @@ function sanitizeFilename(name: string): string {
   return cleaned.slice(0, 80) || 'upload.jpg';
 }
 
+function getPostsCollection(communityId?: string) {
+  return communityId
+    ? collection(db, 'communities', communityId, 'posts')
+    : collection(db, 'posts');
+}
+
+function getPostDocRef(postId: string, communityId?: string) {
+  return communityId
+    ? doc(db, 'communities', communityId, 'posts', postId)
+    : doc(db, 'posts', postId);
+}
+
+function getPostCollectionPath(communityId?: string): string {
+  return communityId ? `communities/${communityId}/posts` : 'posts';
+}
+
 export function subscribeToCommunityPosts(
   pageSize: number,
   onPosts: (result: PaginatedPostsResult) => void,
-  onError: (message: string) => void
+  onError: (message: string) => void,
+  communityId?: string
 ): Unsubscribe {
+  const path = getPostCollectionPath(communityId);
   const q = query(
-    collection(db, 'posts'),
+    getPostsCollection(communityId),
     orderBy('createdAt', 'desc'),
     limit(pageSize)
   );
@@ -110,7 +128,7 @@ export function subscribeToCommunityPosts(
     },
     (error) => {
       try {
-        handleFirestoreError(error, OperationType.LIST, 'posts');
+        handleFirestoreError(error, OperationType.LIST, path);
       } catch (err) {
         onError(
           err instanceof Error
@@ -124,11 +142,13 @@ export function subscribeToCommunityPosts(
 
 export async function fetchMoreCommunityPosts(
   cursor: QueryDocumentSnapshot<DocumentData>,
-  pageSize: number
+  pageSize: number,
+  communityId?: string
 ): Promise<PaginatedPostsResult> {
+  const path = getPostCollectionPath(communityId);
   try {
     const q = query(
-      collection(db, 'posts'),
+      getPostsCollection(communityId),
       orderBy('createdAt', 'desc'),
       startAfter(cursor),
       limit(pageSize)
@@ -145,7 +165,7 @@ export async function fetchMoreCommunityPosts(
       hasMore: snapshot.docs.length === pageSize,
     };
   } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'posts');
+    handleFirestoreError(error, OperationType.LIST, path);
   }
 }
 
@@ -230,7 +250,8 @@ export async function fetchPostsByAuthor(
 
 export async function createPost(
   authorProfile: AtaUserAccount,
-  input: CreatePostInput
+  input: CreatePostInput,
+  communityId?: string
 ): Promise<AtaPost> {
   const currentUser = auth.currentUser;
   if (!currentUser || currentUser.uid !== authorProfile.uid) {
@@ -247,7 +268,7 @@ export async function createPost(
 
   await currentUser.getIdToken(true);
 
-  const postRef = doc(collection(db, 'posts'));
+  const postRef = doc(getPostsCollection(communityId));
   const postId = postRef.id;
 
   let uploadedImageUrl = '';
@@ -353,7 +374,11 @@ export async function createPost(
           throw cooldownErr;
         }
       }
-      handleFirestoreError(error, OperationType.CREATE, `posts/${postId}`);
+      handleFirestoreError(
+        error,
+        OperationType.CREATE,
+        `${getPostCollectionPath(communityId)}/${postId}`
+      );
     }
     throw error;
   }
@@ -361,7 +386,8 @@ export async function createPost(
 
 export async function updatePost(
   postId: string,
-  input: UpdatePostInput
+  input: UpdatePostInput,
+  communityId?: string
 ): Promise<void> {
   const currentUser = auth.currentUser;
   if (!currentUser || !currentUser.emailVerified) {
@@ -375,9 +401,9 @@ export async function updatePost(
 
   await currentUser.getIdToken(true);
 
-  const path = `posts/${postId}`;
+  const path = `${getPostCollectionPath(communityId)}/${postId}`;
   try {
-    await updateDoc(doc(db, 'posts', postId), {
+    await updateDoc(getPostDocRef(postId, communityId), {
       content: input.content.trim(),
       animeTitle: input.animeTitle.trim(),
       hasSpoiler: Boolean(input.hasSpoiler),
@@ -392,7 +418,8 @@ export async function updatePost(
 
 export async function deletePost(
   postId: string,
-  imagePath?: string
+  imagePath?: string,
+  communityId?: string
 ): Promise<void> {
   const currentUser = auth.currentUser;
   if (!currentUser || !currentUser.emailVerified) {
@@ -401,9 +428,9 @@ export async function deletePost(
 
   await currentUser.getIdToken(true);
 
-  const path = `posts/${postId}`;
+  const path = `${getPostCollectionPath(communityId)}/${postId}`;
   try {
-    await deleteDoc(doc(db, 'posts', postId));
+    await deleteDoc(getPostDocRef(postId, communityId));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
@@ -419,13 +446,14 @@ export async function deletePost(
 
 export async function getUserLikedPostMap(
   postIds: string[],
-  uid: string
+  uid: string,
+  communityId?: string
 ): Promise<Record<string, boolean>> {
   const entries = await Promise.all(
     postIds.map(async (postId) => {
       try {
         const snap = await getDoc(
-          doc(db, 'posts', postId, 'reactions', uid)
+          doc(getPostDocRef(postId, communityId), 'reactions', uid)
         );
         return [postId, snap.exists()] as const;
       } catch {
@@ -438,7 +466,8 @@ export async function getUserLikedPostMap(
 
 export async function togglePostLike(
   postId: string,
-  uid: string
+  uid: string,
+  communityId?: string
 ): Promise<{ liked: boolean; likeCount: number }> {
   const currentUser = auth.currentUser;
   if (!currentUser || currentUser.uid !== uid) {
@@ -450,11 +479,11 @@ export async function togglePostLike(
 
   await currentUser.getIdToken(true);
 
-  const path = `posts/${postId}/reactions/${uid}`;
+  const path = `${getPostCollectionPath(communityId)}/${postId}/reactions/${uid}`;
   try {
     return await runTransaction(db, async (transaction) => {
-      const postRef = doc(db, 'posts', postId);
-      const reactionRef = doc(db, 'posts', postId, 'reactions', uid);
+      const postRef = getPostDocRef(postId, communityId);
+      const reactionRef = doc(postRef, 'reactions', uid);
 
       const [postSnap, reactionSnap] = await Promise.all([
         transaction.get(postRef),

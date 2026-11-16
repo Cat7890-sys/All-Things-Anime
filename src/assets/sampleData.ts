@@ -15,7 +15,7 @@ export const ATA_BRAND = {
   shortName: 'ATA',
   fullName: 'ALL THINGS ANIME',
   tagline: 'One Universe. Infinite Opinions.',
-  foundationLabel: 'Build 04 · Progressive Web App',
+  foundationLabel: 'Build 04A · Anime Communities',
   demonstrationNotice: 'Sample Showcase Only — Demonstration entries below are separate from live community posts.',
 } as const;
 
@@ -41,7 +41,7 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     label: 'Communities',
     shortLabel: 'Clubs',
     description: 'Dedicated fan clubs, episode discussion rooms, and debate circles.',
-    isImplemented: false,
+    isImplemented: true,
   },
   {
     id: 'messages',

@@ -48,6 +48,9 @@ interface PostDetailModalProps {
   onBlockAuthor: (authorId: string, authorUsername: string) => Promise<void>;
   onCommentCountSync: (postId: string, totalCount: number) => void;
   onOpenAuth?: (mode: AuthViewMode) => void;
+  communityId?: string;
+  canModerate?: boolean;
+  canComment?: boolean;
 }
 
 interface CommentNodeProps {
@@ -55,6 +58,8 @@ interface CommentNodeProps {
   isReply?: boolean;
   currentUserId?: string;
   isVerified: boolean;
+  canModerate?: boolean;
+  canReply?: boolean;
   onOpenAuthorProfile: (authorId: string) => void;
   onReply: (comment: AtaComment) => void;
   onReportComment: (comment: AtaComment) => void;
@@ -68,6 +73,8 @@ const CommentItem: React.FC<CommentNodeProps> = ({
   isReply = false,
   currentUserId,
   isVerified,
+  canModerate = false,
+  canReply = true,
   onOpenAuthorProfile,
   onReply,
   onReportComment,
@@ -76,6 +83,7 @@ const CommentItem: React.FC<CommentNodeProps> = ({
   onDeleted,
 }) => {
   const isOwner = Boolean(currentUserId && currentUserId === comment.authorId);
+  const canDelete = isOwner || canModerate;
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(comment.content);
   const [editSpoiler, setEditSpoiler] = useState(comment.hasSpoiler);
@@ -190,29 +198,33 @@ const CommentItem: React.FC<CommentNodeProps> = ({
 
         <div className="flex items-center gap-1 shrink-0">
           {isOwner && isVerified && !isEditing && (
-            <>
-              <button
-                type="button"
-                onClick={() => {
-                  setEditText(comment.content);
-                  setEditSpoiler(comment.hasSpoiler);
-                  setIsEditing(true);
-                  setConfirmDelete(false);
-                }}
-                aria-label="Edit comment"
-                className="flex h-7 w-7 items-center justify-center rounded-md border border-[#D4D7E2] dark:border-[#303342] bg-white dark:bg-[#171923] text-[#52576B] dark:text-[#A7A9B8] hover:border-[#EF3038] hover:text-[#EF3038]"
-              >
-                <Edit3 className="h-3 w-3" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmDelete((prev) => !prev)}
-                aria-label="Delete comment"
-                className="flex h-7 w-7 items-center justify-center rounded-md border border-[#D4D7E2] dark:border-[#303342] bg-white dark:bg-[#171923] text-[#52576B] dark:text-[#A7A9B8] hover:border-[#EF3038] hover:text-[#EF3038]"
-              >
-                <Trash2 className="h-3 w-3" aria-hidden="true" />
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={() => {
+                setEditText(comment.content);
+                setEditSpoiler(comment.hasSpoiler);
+                setIsEditing(true);
+                setConfirmDelete(false);
+              }}
+              aria-label="Edit comment"
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-[#D4D7E2] dark:border-[#303342] bg-white dark:bg-[#171923] text-[#52576B] dark:text-[#A7A9B8] hover:border-[#EF3038] hover:text-[#EF3038]"
+            >
+              <Edit3 className="h-3 w-3" aria-hidden="true" />
+            </button>
+          )}
+
+          {canDelete && isVerified && !isEditing && (
+            <button
+              type="button"
+              onClick={() => setConfirmDelete((prev) => !prev)}
+              aria-label={
+                isOwner ? 'Delete comment' : 'Remove comment as moderator'
+              }
+              title={isOwner ? 'Delete comment' : 'Remove comment (Moderator)'}
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-[#D4D7E2] dark:border-[#303342] bg-white dark:bg-[#171923] text-[#52576B] dark:text-[#A7A9B8] hover:border-[#EF3038] hover:text-[#EF3038]"
+            >
+              <Trash2 className="h-3 w-3" aria-hidden="true" />
+            </button>
           )}
 
           {!isOwner && isVerified && (
@@ -345,7 +357,7 @@ const CommentItem: React.FC<CommentNodeProps> = ({
         </SpoilerGate>
       )}
 
-      {isVerified && !isEditing && (
+      {isVerified && canReply && !isEditing && (
         <div className="pt-0.5">
           <button
             type="button"
@@ -375,6 +387,9 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
   onBlockAuthor,
   onCommentCountSync,
   onOpenAuth,
+  communityId,
+  canModerate = false,
+  canComment = true,
 }) => {
   const { firebaseUser, profile } = useAuth();
 
@@ -407,13 +422,14 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
       (errMessage) => {
         setCommentsError(errMessage);
         setIsLoadingComments(false);
-      }
+      },
+      communityId
     );
 
     return () => {
       unsubscribe();
     };
-  }, [post?.id]);
+  }, [post?.id, communityId]);
 
   const visibleComments = useMemo(() => {
     return comments.filter((c) => !blockedUserIds.has(c.authorId));
@@ -465,12 +481,17 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      await createComment(post.id, profile, {
-        content: newComment,
-        parentCommentId: replyTarget?.id || '',
-        replyToAuthorUsername: replyTarget?.authorUsername || '',
-        hasSpoiler: newCommentSpoiler,
-      });
+      await createComment(
+        post.id,
+        profile,
+        {
+          content: newComment,
+          parentCommentId: replyTarget?.id || '',
+          replyToAuthorUsername: replyTarget?.authorUsername || '',
+          hasSpoiler: newCommentSpoiler,
+        },
+        communityId
+      );
       setNewComment('');
       setNewCommentSpoiler(false);
       setReplyTarget(null);
@@ -542,6 +563,8 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
             onBlockAuthor={onBlockAuthor}
             onOpenAuth={onOpenAuth}
             showDetailButton={false}
+            communityId={communityId}
+            canModerate={canModerate}
           />
 
           {/* Comment Composer */}
@@ -567,6 +590,11 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
               <p className="rounded-xl bg-[#F4F5F8] dark:bg-[#090B14] border border-[#EF3038] p-3.5 text-xs text-[#090B14] dark:text-white">
                 Verify your email address on your Profile page to post comments
                 or replies.
+              </p>
+            ) : !canComment ? (
+              <p className="rounded-xl bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] p-3.5 text-xs text-[#52576B] dark:text-[#A7A9B8]">
+                Join this community to post comments and replies in its
+                discussions.
               </p>
             ) : (
               <form
@@ -697,6 +725,8 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                         comment={comment}
                         currentUserId={firebaseUser?.uid}
                         isVerified={isVerified}
+                        canModerate={canModerate}
+                        canReply={canComment}
                         onOpenAuthorProfile={(uid) => {
                           onClose();
                           onOpenAuthorProfile(uid);
@@ -705,9 +735,11 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                         onReportComment={onRequestReportComment}
                         onBlockAuthor={onBlockAuthor}
                         onEdited={(cid, content, spoiler) =>
-                          updateComment(post.id, cid, content, spoiler)
+                          updateComment(post.id, cid, content, spoiler, communityId)
                         }
-                        onDeleted={(cid) => deleteComment(post.id, cid)}
+                        onDeleted={(cid) =>
+                          deleteComment(post.id, cid, communityId)
+                        }
                       />
 
                       {replies.map((reply) => (
@@ -717,6 +749,8 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                           isReply
                           currentUserId={firebaseUser?.uid}
                           isVerified={isVerified}
+                          canModerate={canModerate}
+                          canReply={canComment}
                           onOpenAuthorProfile={(uid) => {
                             onClose();
                             onOpenAuthorProfile(uid);
@@ -725,9 +759,17 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                           onReportComment={onRequestReportComment}
                           onBlockAuthor={onBlockAuthor}
                           onEdited={(cid, content, spoiler) =>
-                            updateComment(post.id, cid, content, spoiler)
+                            updateComment(
+                              post.id,
+                              cid,
+                              content,
+                              spoiler,
+                              communityId
+                            )
                           }
-                          onDeleted={(cid) => deleteComment(post.id, cid)}
+                          onDeleted={(cid) =>
+                            deleteComment(post.id, cid, communityId)
+                          }
                         />
                       ))}
                     </div>

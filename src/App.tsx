@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { TrendingSidebarSection } from './components/TrendingSidebarSection';
 import { AppShell } from './layout/AppShell';
 import { ComingSoonPage } from './pages/ComingSoonPage';
+import { CommunitiesPage } from './pages/CommunitiesPage';
 import { HomePage } from './pages/HomePage';
 import { ProfilePage } from './pages/ProfilePage';
 import { sampleContentService } from './services/sampleContentService';
@@ -91,6 +92,11 @@ export default function App() {
           featuredSeries={featuredSeries}
           onNavigate={handleSelectDestination}
           onOpenAuth={handleOpenAuth}
+        />
+      ) : activeDestination === 'communities' ? (
+        <CommunitiesPage
+          onOpenAuth={handleOpenAuth}
+          onNavigateProfile={() => handleSelectDestination('profile')}
         />
       ) : activeDestination === 'profile' ? (
         <ProfilePage initialAuthMode={authMode} />

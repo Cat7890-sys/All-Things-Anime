@@ -36,6 +36,8 @@ interface PostCardProps {
   onBlockAuthor: (authorId: string, authorUsername: string) => Promise<void>;
   onOpenAuth?: (mode: AuthViewMode) => void;
   showDetailButton?: boolean;
+  communityId?: string;
+  canModerate?: boolean;
 }
 
 export const PostCard: React.FC<PostCardProps> = ({
@@ -50,9 +52,12 @@ export const PostCard: React.FC<PostCardProps> = ({
   onBlockAuthor,
   onOpenAuth,
   showDetailButton = true,
+  communityId,
+  canModerate = false,
 }) => {
   const { firebaseUser } = useAuth();
   const isOwner = Boolean(firebaseUser && firebaseUser.uid === post.authorId);
+  const canDelete = isOwner || canModerate;
   const isVerifiedSignedIn = Boolean(firebaseUser?.emailVerified);
 
   const [isEditing, setIsEditing] = useState(false);
@@ -125,7 +130,7 @@ export const PostCard: React.FC<PostCardProps> = ({
 
     setIsSavingEdit(true);
     try {
-      await updatePost(post.id, payload);
+      await updatePost(post.id, payload, communityId);
       onPostUpdated(post.id, payload);
       setIsEditing(false);
     } catch (err) {
@@ -142,7 +147,7 @@ export const PostCard: React.FC<PostCardProps> = ({
     setActionError(null);
     setIsDeleting(true);
     try {
-      await deletePost(post.id, post.imagePath);
+      await deletePost(post.id, post.imagePath, communityId);
       onPostDeleted(post.id);
     } catch (err) {
       setActionError(
@@ -216,32 +221,35 @@ export const PostCard: React.FC<PostCardProps> = ({
           </div>
         </button>
 
-        {/* Owner or Safety Controls */}
+        {/* Owner, Moderator, or Safety Controls */}
         <div className="flex items-center gap-1.5 shrink-0">
           {isOwner && isVerifiedSignedIn && !isEditing && (
-            <>
-              <button
-                type="button"
-                onClick={handleStartEdit}
-                aria-label="Edit post"
-                title="Edit post"
-                className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#D4D7E2] dark:border-[#303342] bg-[#F4F5F8] dark:bg-[#090B14] text-[#090B14] dark:text-[#A7A9B8] hover:border-[#EF3038] hover:text-[#EF3038] transition-colors"
-              >
-                <Edit3 className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setConfirmDelete((prev) => !prev);
-                  setActionError(null);
-                }}
-                aria-label="Delete post"
-                title="Delete post"
-                className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#D4D7E2] dark:border-[#303342] bg-[#F4F5F8] dark:bg-[#090B14] text-[#090B14] dark:text-[#A7A9B8] hover:border-[#EF3038] hover:text-[#EF3038] transition-colors"
-              >
-                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={handleStartEdit}
+              aria-label="Edit post"
+              title="Edit post"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#D4D7E2] dark:border-[#303342] bg-[#F4F5F8] dark:bg-[#090B14] text-[#090B14] dark:text-[#A7A9B8] hover:border-[#EF3038] hover:text-[#EF3038] transition-colors"
+            >
+              <Edit3 className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          )}
+
+          {canDelete && isVerifiedSignedIn && !isEditing && (
+            <button
+              type="button"
+              onClick={() => {
+                setConfirmDelete((prev) => !prev);
+                setActionError(null);
+              }}
+              aria-label={
+                isOwner ? 'Delete post' : 'Remove post as moderator'
+              }
+              title={isOwner ? 'Delete post' : 'Remove post (Moderator)'}
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#D4D7E2] dark:border-[#303342] bg-[#F4F5F8] dark:bg-[#090B14] text-[#090B14] dark:text-[#A7A9B8] hover:border-[#EF3038] hover:text-[#EF3038] transition-colors"
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
           )}
 
           {!isOwner && isVerifiedSignedIn && (
@@ -288,7 +296,9 @@ export const PostCard: React.FC<PostCardProps> = ({
       {confirmDelete && (
         <div className="mt-3 rounded-xl bg-[#F4F5F8] dark:bg-[#090B14] border border-[#EF3038] p-3.5 flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs font-medium text-[#090B14] dark:text-white">
-            Permanently delete this post? This cannot be undone.
+            {isOwner
+              ? 'Permanently delete this post? This cannot be undone.'
+              : 'Remove this discussion post as a community moderator? This cannot be undone.'}
           </p>
           <div className="flex items-center gap-2">
             <button

@@ -29,12 +29,20 @@ interface PostComposerProps {
   onPostCreated: (post: AtaPost) => void;
   onOpenAuth?: (mode: AuthViewMode) => void;
   onNavigateProfile?: () => void;
+  communityId?: string;
+  communityName?: string;
+  canPostInCommunity?: boolean;
+  isCommunityArchived?: boolean;
 }
 
 export const PostComposer: React.FC<PostComposerProps> = ({
   onPostCreated,
   onOpenAuth,
   onNavigateProfile,
+  communityId,
+  communityName,
+  canPostInCommunity = true,
+  isCommunityArchived = false,
 }) => {
   const { firebaseUser, profile, isLoadingAuth } = useAuth();
   const { isOnline } = useOnlineStatus();
@@ -120,13 +128,17 @@ export const PostComposer: React.FC<PostComposerProps> = ({
 
     setIsSubmitting(true);
     try {
-      const created = await createPost(profile, {
-        content,
-        animeTitle,
-        hasSpoiler,
-        spoilerLabel,
-        imageFile,
-      });
+      const created = await createPost(
+        profile,
+        {
+          content,
+          animeTitle,
+          hasSpoiler,
+          spoilerLabel,
+          imageFile,
+        },
+        communityId
+      );
 
       setContent('');
       setAnimeTitle('');
@@ -247,11 +259,55 @@ export const PostComposer: React.FC<PostComposerProps> = ({
     );
   }
 
+  if (communityId && isCommunityArchived) {
+    return (
+      <section
+        aria-label="Archived community notice"
+        className="bg-white dark:bg-[#171923] border border-[#D4D7E2] dark:border-[#303342] rounded-2xl p-5"
+      >
+        <p className="font-display-space font-bold text-base text-[#090B14] dark:text-white">
+          Archived Community — Read-Only
+        </p>
+        <p className="mt-1 text-xs sm:text-sm text-[#52576B] dark:text-[#A7A9B8]">
+          {communityName || 'This community'} has been archived by its owner.
+          Existing threads remain readable, while new posts and comments are
+          paused.
+        </p>
+      </section>
+    );
+  }
+
+  if (communityId && !canPostInCommunity) {
+    return (
+      <section
+        aria-label="Community membership required to post"
+        className="bg-white dark:bg-[#171923] border border-[#D4D7E2] dark:border-[#303342] rounded-2xl p-5"
+      >
+        <div className="flex items-start gap-3">
+          <MessageSquarePlus
+            className="h-5 w-5 text-[#EF3038] shrink-0 mt-0.5"
+            aria-hidden="true"
+          />
+          <div>
+            <h2 className="font-display-space font-bold text-base sm:text-lg text-[#090B14] dark:text-white">
+              Join {communityName || 'this community'} to Start a Discussion
+            </h2>
+            <p className="mt-1 text-xs sm:text-sm text-[#52576B] dark:text-[#A7A9B8]">
+              Only verified community members can publish new discussion posts,
+              react, or reply inside this club.
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   const trimmedLength = content.trim().length;
+  const composerScopeId = communityId || 'global';
 
   return (
     <section
-      aria-labelledby="ata-post-composer-heading"
+      aria-labelledby={`ata-post-composer-heading-${composerScopeId}`}
       className="bg-white dark:bg-[#171923] border border-[#D4D7E2] dark:border-[#303342] rounded-2xl p-5 sm:p-6"
     >
       <div className="flex items-center justify-between gap-3 border-b border-[#D4D7E2] dark:border-[#303342] pb-3.5">
@@ -265,10 +321,12 @@ export const PostComposer: React.FC<PostComposerProps> = ({
           />
           <div className="min-w-0">
             <h2
-              id="ata-post-composer-heading"
+              id={`ata-post-composer-heading-${composerScopeId}`}
               className="font-display-space font-bold text-lg sm:text-xl text-[#090B14] dark:text-white truncate"
             >
-              Share an Anime Take
+              {communityName
+                ? `Discuss in ${communityName}`
+                : 'Share an Anime Take'}
             </h2>
             {profile && (
               <p className="text-xs text-[#52576B] dark:text-[#A7A9B8] truncate">
@@ -413,7 +471,7 @@ export const PostComposer: React.FC<PostComposerProps> = ({
           <div className="flex items-center gap-2">
             <input
               ref={fileInputRef}
-              id="ata-post-image-input"
+              id={`ata-post-image-input-${composerScopeId}`}
               type="file"
               accept="image/jpeg,image/png,image/webp,image/gif"
               disabled={isSubmitting || !profile || !isStorageConfigured}
@@ -421,7 +479,7 @@ export const PostComposer: React.FC<PostComposerProps> = ({
               className="sr-only"
             />
             <label
-              htmlFor="ata-post-image-input"
+              htmlFor={`ata-post-image-input-${composerScopeId}`}
               className={`inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[40px] text-xs font-medium rounded-xl border transition-colors whitespace-nowrap ${
                 isStorageConfigured
                   ? 'cursor-pointer text-[#090B14] dark:text-[#A7A9B8] bg-[#F4F5F8] dark:bg-[#090B14] border-[#D4D7E2] dark:border-[#303342] hover:border-[#EF3038] hover:text-[#090B14] dark:hover:text-white'

@@ -9,13 +9,14 @@ interface ReportModalProps {
   targetType: ReportTargetType;
   targetId: string;
   postId: string;
+  communityId?: string;
   targetAuthorId: string;
   targetAuthorUsername: string;
   reporterId: string;
   onClose: () => void;
 }
 
-const REPORT_REASONS: Array<{ value: ReportReason; label: string; hint: string }> = [
+const POST_REPORT_REASONS: Array<{ value: ReportReason; label: string; hint: string }> = [
   {
     value: 'unmarked_spoiler',
     label: 'Unmarked Spoiler',
@@ -43,17 +44,50 @@ const REPORT_REASONS: Array<{ value: ReportReason; label: string; hint: string }
   },
 ];
 
+const COMMUNITY_REPORT_REASONS: Array<{ value: ReportReason; label: string; hint: string }> = [
+  {
+    value: 'rule_violation',
+    label: 'Platform Safety / Guideline Violation',
+    hint: 'Community promotes harmful conduct or unsafe behavior.',
+  },
+  {
+    value: 'inappropriate_community',
+    label: 'Inappropriate Name, Artwork, or Description',
+    hint: 'Misleading, abusive, or explicit community metadata.',
+  },
+  {
+    value: 'spam',
+    label: 'Spam or Impersonation',
+    hint: 'Fake official club, link farming, or repetitive spam.',
+  },
+  {
+    value: 'harassment',
+    label: 'Harassment or Targeted Attacks',
+    hint: 'Community organized around targeting individuals or groups.',
+  },
+  {
+    value: 'other',
+    label: 'Other Moderation Issue',
+    hint: 'Any other concern requiring moderator review.',
+  },
+];
+
 export const ReportModal: React.FC<ReportModalProps> = ({
   isOpen,
   targetType,
   targetId,
   postId,
+  communityId,
   targetAuthorId,
   targetAuthorUsername,
   reporterId,
   onClose,
 }) => {
-  const [reason, setReason] = useState<ReportReason>('unmarked_spoiler');
+  const reasonOptions =
+    targetType === 'community' ? COMMUNITY_REPORT_REASONS : POST_REPORT_REASONS;
+  const [reason, setReason] = useState<ReportReason>(
+    targetType === 'community' ? 'rule_violation' : 'unmarked_spoiler'
+  );
   const [details, setDetails] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +106,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
         targetType,
         targetId,
         postId,
+        communityId,
         targetAuthorId,
         reason,
         details,
@@ -108,10 +143,16 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                 id="ata-report-modal-title"
                 className="font-display-space font-bold text-lg text-[#090B14] dark:text-white"
               >
-                Report {targetType === 'post' ? 'Post' : 'Comment'}
+                {targetType === 'community'
+                  ? 'Report Community'
+                  : targetType === 'post'
+                    ? 'Report Post'
+                    : 'Report Comment'}
               </h2>
               <p className="text-xs text-[#52576B] dark:text-[#A7A9B8]">
-                Content by @{targetAuthorUsername}
+                {targetType === 'community'
+                  ? `Community: ${targetAuthorUsername}`
+                  : `Content by @${targetAuthorUsername}`}
               </p>
             </div>
           </div>
@@ -174,7 +215,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
               <legend className="text-xs font-semibold text-[#090B14] dark:text-white mb-1.5">
                 Reason for Report
               </legend>
-              {REPORT_REASONS.map((option) => {
+              {reasonOptions.map((option) => {
                 const selected = reason === option.value;
                 return (
                   <label

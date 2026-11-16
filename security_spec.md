@@ -22,7 +22,19 @@
 12. **User Blocking & Moderation Reports**:
     - `blocks/{blockerId}__{blockedId}` is private to `blockerId` (`allow read` only if `blockerId == uid || blockedId == uid`, write only by `blockerId`, no self-block).
     - `reports/{reportId}` is **write-only** from verified clients (`allow read: if false`) so member reports are never exposed publicly; `status` must start as `'open'`.
-13. **Storage Rules (`storage.rules`)**: `posts/{userId}/{postId}/{fileName}` requires verified `userId == request.auth.uid`, `size <= 5MB`, and `contentType` matching `image/(jpeg|png|webp|gif)`.
+13. **Storage Rules (`storage.rules`)**: `posts/{userId}/{postId}/{fileName}` and `communities/{userId}/{communityId}/{fileName}` require verified `userId == request.auth.uid`, `size <= 5MB`, and `contentType` matching `image/(jpeg|png|webp|gif)`.
+
+### Build 04A (Anime Communities, RBAC, Private Isolation & Moderation)
+14. **Atomic Slug Reservation & Owner Bootstrap**: `communitySlugs/{slug}` is immutable (`update: if false`) and created atomically with `communities/{communityId}` (`ownerId == uid`, `moderatorIds == [uid]`, `memberCount == 1`, `status == 'active'`, `isFeatured == false`), `communityMemberships/{communityId}__{uid}` (`role == 'owner'`), and `communityRateLimits/{uid}` (`>= 30s` cooldown).
+15. **Server-Enforced RBAC (Owner / Moderator / Member)**:
+    - Only verified Owners can change `visibility`, `status` (`active` / `archived`), permanently delete a community, or promote/demote `moderatorIds` (atomically synced with `communityMemberships.role` via `getAfter`).
+    - Only verified Moderators/Owners (`communityMemberships` role in `['owner', 'moderator']`) can edit community details, approve/reject `communityJoinRequests`, or delete another member's posts/comments inside the community.
+    - Non-moderators can never modify `moderatorIds`, `role`, `isFeatured`, `ownerId`, or `memberCount` directly.
+16. **Private Community Isolation**:
+    - `communities/{communityId}/posts/**` (`get`, `list`, `create`, `update`, `delete`) and `communityMemberships` listing for `private` communities require `isCommunityMember(communityId, request.auth.uid)`. Unauthenticated or non-member reads return `PERMISSION_DENIED`.
+    - Joining a `private` community directly in `communityMemberships` without an approved `communityJoinRequests` decision by a moderator is denied.
+17. **Community Moderation & Reporting**:
+    - `reports/{reportId}` supports `targetType: 'community'` (plus `'post'` and `'comment'`) and remains write-only from verified users.
 
 ## 2. Adversarial "Dirty Dozen" Payloads (Expected: `PERMISSION_DENIED`)
 
@@ -38,3 +50,7 @@
 10. Reading `reports/{reportId}` or `blocks/{otherBlocker}__{someone}` from an unauthorized client -> denied (`reports` read is unconditionally `false`).
 11. Creating a `reports/{reportId}` with `status: 'resolved'` or mismatched `reporterId` -> denied.
 12. Uploading an executable or oversized (`> 5MB`) file to `posts/{uid}/{postId}/payload.html` -> denied in `storage.rules`.
+13. Non-member reading or listing `communities/{privateId}/posts` or `communityMemberships` of a private community -> denied.
+14. Non-member creating a self-approved `communityMemberships/{privateId}__{uid}` with `role: 'moderator'` or `role: 'owner'` -> denied.
+15. Non-owner attempting to archive/delete a community, change `visibility`, or promote themselves to moderator -> denied.
+16. Moderator or member attempting to modify `isFeatured: true`, `memberCount: 9999`, or approve their own `communityJoinRequests` -> denied.

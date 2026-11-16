@@ -35,6 +35,10 @@ service cloud.firestore {
       return id is string && id.size() >= 3 && id.size() <= 260 && id.matches('^[a-zA-Z0-9_\\-]+__[a-zA-Z0-9_\\-]+$');
     }
 
+    function isValidSlug(slug) {
+      return slug is string && slug.size() >= 3 && slug.size() <= 40 && slug.matches('^[a-z0-9]+(?:-[a-z0-9]+)*$');
+    }
+
     function isValidUsernameFormat(username) {
       return username is string && username.size() >= 3 && username.size() <= 20 && username.matches('^[a-zA-Z0-9_]{3,20}$');
     }
@@ -47,9 +51,64 @@ service cloud.firestore {
       return url is string && url.size() <= maxLen && (url == '' || url.matches('^https://.+'));
     }
 
+    function isValidCommunityCategory(category) {
+      return category in [
+        'Shonen',
+        'Seinen',
+        'Shojo',
+        'Mecha & Sci-Fi',
+        'Fantasy & Isekai',
+        'Slice of Life',
+        'Animation & Sakuga',
+        'Manga & Light Novels',
+        'General'
+      ];
+    }
+
     function isBlockedBetween(uidA, uidB) {
       return exists(/databases/$(database)/documents/blocks/$(uidA + '__' + uidB))
         || exists(/databases/$(database)/documents/blocks/$(uidB + '__' + uidA));
+    }
+
+    function isCommunityExists(communityId) {
+      return exists(/databases/$(database)/documents/communities/$(communityId));
+    }
+
+    function isCommunityActive(communityId) {
+      return isCommunityExists(communityId)
+        && get(/databases/$(database)/documents/communities/$(communityId)).data.status == 'active';
+    }
+
+    function isCommunityPublic(communityId) {
+      return isCommunityExists(communityId)
+        && get(/databases/$(database)/documents/communities/$(communityId)).data.visibility == 'public';
+    }
+
+    function isCommunityMember(communityId, uid) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/communityMemberships/$(communityId + '__' + uid));
+    }
+
+    function isCommunityModerator(communityId, uid) {
+      return isCommunityMember(communityId, uid)
+        && get(/databases/$(database)/documents/communityMemberships/$(communityId + '__' + uid)).data.role in ['owner', 'moderator'];
+    }
+
+    function isCommunityOwner(communityId, uid) {
+      return isSignedIn()
+        && isCommunityExists(communityId)
+        && get(/databases/$(database)/documents/communities/$(communityId)).data.ownerId == uid;
+    }
+
+    function canReadCommunityPosts(communityId) {
+      return isCommunityActive(communityId)
+        && (isCommunityPublic(communityId) || isCommunityMember(communityId, request.auth.uid));
+    }
+
+    function canParticipateInCommunity(communityId) {
+      return isEmailVerified()
+        && isCommunityActive(communityId)
+        && isCommunityMember(communityId, request.auth.uid);
     }
 
     function isValidUserAccount(data, userId) {
@@ -323,6 +382,7 @@ service cloud.firestore {
           'targetType',
           'targetId',
           'postId',
+          'communityId',
           'targetAuthorId',
           'reason',
           'details',
@@ -332,15 +392,202 @@ service cloud.firestore {
         && data.id is string
         && data.id == reportId
         && isValidId(data.reporterId)
-        && data.targetType in ['post', 'comment']
+        && data.targetType in ['post', 'comment', 'community']
         && isValidId(data.targetId)
         && isValidId(data.postId)
+        && (!('communityId' in data) || (data.communityId is string && data.communityId.size() <= 128))
         && isValidId(data.targetAuthorId)
-        && data.reason in ['spam', 'harassment', 'unmarked_spoiler', 'hate_speech', 'other']
+        && data.reason in [
+          'spam',
+          'harassment',
+          'unmarked_spoiler',
+          'hate_speech',
+          'inappropriate_community',
+          'rule_violation',
+          'other'
+        ]
         && data.details is string
         && data.details.size() <= 500
         && data.status == 'open'
         && data.createdAt is timestamp;
+    }
+
+    function isValidCommunity(data, communityId) {
+      return data.keys().hasAll([
+          'id',
+          'name',
+          'nameLowercase',
+          'slug',
+          'description',
+          'avatarUrl',
+          'avatarPath',
+          'coverUrl',
+          'coverPath',
+          'category',
+          'animeTags',
+          'rules',
+          'ownerId',
+          'moderatorIds',
+          'memberCount',
+          'visibility',
+          'status',
+          'isFeatured',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'name',
+          'nameLowercase',
+          'slug',
+          'description',
+          'avatarUrl',
+          'avatarPath',
+          'coverUrl',
+          'coverPath',
+          'category',
+          'animeTags',
+          'rules',
+          'ownerId',
+          'moderatorIds',
+          'memberCount',
+          'visibility',
+          'status',
+          'isFeatured',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.id is string
+        && data.id == communityId
+        && data.name is string
+        && data.name.size() >= 3
+        && data.name.size() <= 50
+        && data.nameLowercase is string
+        && data.nameLowercase == data.name.lower()
+        && isValidSlug(data.slug)
+        && data.description is string
+        && data.description.size() >= 10
+        && data.description.size() <= 500
+        && isValidOptionalHttpsUrl(data.avatarUrl, 1000)
+        && data.avatarPath is string
+        && data.avatarPath.size() <= 300
+        && isValidOptionalHttpsUrl(data.coverUrl, 1000)
+        && data.coverPath is string
+        && data.coverPath.size() <= 300
+        && isValidCommunityCategory(data.category)
+        && data.animeTags is list
+        && data.animeTags.size() <= 8
+        && (data.animeTags.size() == 0 || (data.animeTags[0] is string && data.animeTags[0].size() >= 1 && data.animeTags[0].size() <= 30))
+        && data.rules is list
+        && data.rules.size() <= 10
+        && (data.rules.size() == 0 || (data.rules[0] is string && data.rules[0].size() >= 3 && data.rules[0].size() <= 180))
+        && data.ownerId is string
+        && isValidId(data.ownerId)
+        && data.moderatorIds is list
+        && data.moderatorIds.size() >= 1
+        && data.moderatorIds.size() <= 25
+        && data.ownerId in data.moderatorIds
+        && data.memberCount is int
+        && data.memberCount >= 0
+        && data.visibility in ['public', 'private']
+        && data.status in ['active', 'archived']
+        && data.isFeatured is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCommunitySlug(data, slug) {
+      return data.keys().hasAll(['communityId', 'slug', 'ownerId', 'createdAt'])
+        && data.keys().hasOnly(['communityId', 'slug', 'ownerId', 'createdAt'])
+        && isValidId(data.communityId)
+        && isValidSlug(data.slug)
+        && data.slug == slug
+        && isValidId(data.ownerId)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidCommunityMembership(data, membershipId) {
+      return data.keys().hasAll([
+          'id',
+          'communityId',
+          'userId',
+          'username',
+          'displayName',
+          'avatarUrl',
+          'role',
+          'joinedAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'communityId',
+          'userId',
+          'username',
+          'displayName',
+          'avatarUrl',
+          'role',
+          'joinedAt',
+          'updatedAt'
+        ])
+        && data.id is string
+        && data.id == membershipId
+        && isValidId(data.communityId)
+        && isValidId(data.userId)
+        && membershipId == data.communityId + '__' + data.userId
+        && isValidUsernameFormat(data.username)
+        && data.displayName is string
+        && data.displayName.size() >= 2
+        && data.displayName.size() <= 40
+        && isValidOptionalHttpsUrl(data.avatarUrl, 500)
+        && data.role in ['owner', 'moderator', 'member']
+        && data.joinedAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCommunityJoinRequest(data, requestId) {
+      return data.keys().hasAll([
+          'id',
+          'communityId',
+          'userId',
+          'username',
+          'displayName',
+          'avatarUrl',
+          'message',
+          'status',
+          'reviewedBy',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'communityId',
+          'userId',
+          'username',
+          'displayName',
+          'avatarUrl',
+          'message',
+          'status',
+          'reviewedBy',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.id is string
+        && data.id == requestId
+        && isValidId(data.communityId)
+        && isValidId(data.userId)
+        && requestId == data.communityId + '__' + data.userId
+        && isValidUsernameFormat(data.username)
+        && data.displayName is string
+        && data.displayName.size() >= 2
+        && data.displayName.size() <= 40
+        && isValidOptionalHttpsUrl(data.avatarUrl, 500)
+        && data.message is string
+        && data.message.size() <= 300
+        && data.status in ['pending', 'approved', 'rejected']
+        && data.reviewedBy is string
+        && data.reviewedBy.size() <= 128
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
     }
 
     // Owner-only private account document (protects email and account status)
@@ -472,7 +719,7 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // Community Posts
+    // Global Community Posts
     match /posts/{postId} {
       allow get: if isValidId(postId);
       allow list: if true;
@@ -610,6 +857,548 @@ service cloud.firestore {
           && isEmailVerified()
           && isOwner(existing().authorId);
       }
+    }
+
+    // Build 04A: Anime Communities & Scoped Community Discussions
+    match /communities/{communityId} {
+      allow get: if isValidId(communityId)
+        && (
+          existing().status == 'active'
+          || (
+            isSignedIn()
+            && (
+              existing().ownerId == request.auth.uid
+              || isCommunityMember(communityId, request.auth.uid)
+            )
+          )
+        );
+
+      allow list: if existing().status == 'active'
+        || (isSignedIn() && existing().ownerId == request.auth.uid);
+
+      allow create: if isValidId(communityId)
+        && isEmailVerified()
+        && isValidCommunity(incoming(), communityId)
+        && incoming().ownerId == request.auth.uid
+        && incoming().moderatorIds.size() == 1
+        && incoming().moderatorIds[0] == request.auth.uid
+        && incoming().memberCount == 1
+        && incoming().status == 'active'
+        && incoming().isFeatured == false
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/publicProfiles/$(request.auth.uid))
+        && !exists(/databases/$(database)/documents/communitySlugs/$(incoming().slug))
+        && existsAfter(/databases/$(database)/documents/communitySlugs/$(incoming().slug))
+        && existsAfter(/databases/$(database)/documents/communityMemberships/$(communityId + '__' + request.auth.uid))
+        && getAfter(/databases/$(database)/documents/communityMemberships/$(communityId + '__' + request.auth.uid)).data.role == 'owner'
+        && existsAfter(/databases/$(database)/documents/communityRateLimits/$(request.auth.uid))
+        && (
+          !exists(/databases/$(database)/documents/communityRateLimits/$(request.auth.uid))
+          || request.time >= get(/databases/$(database)/documents/communityRateLimits/$(request.auth.uid)).data.lastCreatedAt + duration.value(30, 's')
+        );
+
+      allow update: if isValidId(communityId)
+        && isEmailVerified()
+        && isValidCommunity(incoming(), communityId)
+        && incoming().id == existing().id
+        && incoming().slug == existing().slug
+        && incoming().ownerId == existing().ownerId
+        && incoming().isFeatured == existing().isFeatured
+        && incoming().createdAt == existing().createdAt
+        && (
+          // Action 1: Authorized Moderator or Owner edits community details & rules
+          (
+            isCommunityModerator(communityId, request.auth.uid)
+            && incoming().updatedAt == request.time
+            && incoming().memberCount == existing().memberCount
+            && incoming().visibility == existing().visibility
+            && incoming().status == existing().status
+            && incoming().moderatorIds == existing().moderatorIds
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'name',
+              'nameLowercase',
+              'description',
+              'avatarUrl',
+              'avatarPath',
+              'coverUrl',
+              'coverPath',
+              'category',
+              'animeTags',
+              'rules',
+              'updatedAt'
+            ])
+          )
+          ||
+          // Action 2: Owner updates visibility or archive/restore status
+          (
+            existing().ownerId == request.auth.uid
+            && incoming().updatedAt == request.time
+            && incoming().memberCount == existing().memberCount
+            && incoming().moderatorIds == existing().moderatorIds
+            && incoming().diff(existing()).affectedKeys().hasOnly(['visibility', 'status', 'updatedAt'])
+          )
+          ||
+          // Action 3: Owner promotes or demotes moderators (synced with communityMemberships)
+          (
+            existing().ownerId == request.auth.uid
+            && incoming().updatedAt == request.time
+            && incoming().memberCount == existing().memberCount
+            && incoming().ownerId in incoming().moderatorIds
+            && incoming().diff(existing()).affectedKeys().hasOnly(['moderatorIds', 'updatedAt'])
+          )
+          ||
+          // Action 4: Self join or leave on active community (memberCount +/- 1 atomically synced with own membership doc)
+          (
+            incoming().updatedAt == existing().updatedAt
+            && incoming().diff(existing()).affectedKeys().hasOnly(['memberCount'])
+            && (
+              (
+                existing().status == 'active'
+                && existing().visibility == 'public'
+                && !exists(/databases/$(database)/documents/communityMemberships/$(communityId + '__' + request.auth.uid))
+                && existsAfter(/databases/$(database)/documents/communityMemberships/$(communityId + '__' + request.auth.uid))
+                && incoming().memberCount == existing().memberCount + 1
+              )
+              ||
+              (
+                exists(/databases/$(database)/documents/communityMemberships/$(communityId + '__' + request.auth.uid))
+                && !existsAfter(/databases/$(database)/documents/communityMemberships/$(communityId + '__' + request.auth.uid))
+                && existing().memberCount >= 1
+                && incoming().memberCount == existing().memberCount - 1
+              )
+            )
+          )
+          ||
+          // Action 5: Moderator/Owner approves join request (+1) or removes member (-1)
+          (
+            isCommunityModerator(communityId, request.auth.uid)
+            && incoming().updatedAt == existing().updatedAt
+            && incoming().diff(existing()).affectedKeys().hasOnly(['memberCount'])
+            && (
+              incoming().memberCount == existing().memberCount + 1
+              || (existing().memberCount >= 1 && incoming().memberCount == existing().memberCount - 1)
+            )
+          )
+        );
+
+      allow delete: if isValidId(communityId)
+        && isEmailVerified()
+        && existing().ownerId == request.auth.uid;
+
+      // Community-scoped discussion posts (strictly member-only when private)
+      match /posts/{postId} {
+        allow get: if isValidId(communityId)
+          && isValidId(postId)
+          && canReadCommunityPosts(communityId);
+
+        allow list: if isValidId(communityId)
+          && canReadCommunityPosts(communityId);
+
+        allow create: if isValidId(communityId)
+          && isValidId(postId)
+          && canParticipateInCommunity(communityId)
+          && isValidPost(incoming(), postId)
+          && incoming().authorId == request.auth.uid
+          && incoming().likeCount == 0
+          && incoming().commentCount == 0
+          && incoming().isEdited == false
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/publicProfiles/$(request.auth.uid))
+          && existsAfter(/databases/$(database)/documents/postRateLimits/$(request.auth.uid))
+          && (
+            !exists(/databases/$(database)/documents/postRateLimits/$(request.auth.uid))
+            || request.time >= get(/databases/$(database)/documents/postRateLimits/$(request.auth.uid)).data.lastPostAt + duration.value(10, 's')
+          );
+
+        allow update: if isValidId(communityId)
+          && isValidId(postId)
+          && isEmailVerified()
+          && isCommunityActive(communityId)
+          && isValidPost(incoming(), postId)
+          && incoming().id == existing().id
+          && incoming().authorId == existing().authorId
+          && incoming().authorUsername == existing().authorUsername
+          && incoming().createdAt == existing().createdAt
+          && (
+            // Author edits own community post
+            (
+              isOwner(existing().authorId)
+              && isCommunityMember(communityId, request.auth.uid)
+              && incoming().likeCount == existing().likeCount
+              && incoming().commentCount == existing().commentCount
+              && incoming().isEdited == true
+              && incoming().updatedAt == request.time
+              && incoming().diff(existing()).affectedKeys().hasOnly(['content', 'animeTitle', 'hasSpoiler', 'spoilerLabel', 'isEdited', 'updatedAt'])
+            )
+            ||
+            // Verified community member toggles reaction atomically
+            (
+              isCommunityMember(communityId, request.auth.uid)
+              && !isBlockedBetween(existing().authorId, request.auth.uid)
+              && incoming().updatedAt == existing().updatedAt
+              && incoming().diff(existing()).affectedKeys().hasOnly(['likeCount'])
+              && (
+                (
+                  !exists(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)/reactions/$(request.auth.uid))
+                  && existsAfter(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)/reactions/$(request.auth.uid))
+                  && incoming().likeCount == existing().likeCount + 1
+                )
+                ||
+                (
+                  exists(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)/reactions/$(request.auth.uid))
+                  && !existsAfter(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)/reactions/$(request.auth.uid))
+                  && existing().likeCount >= 1
+                  && incoming().likeCount == existing().likeCount - 1
+                )
+              )
+            )
+            ||
+            // Comment count sync (member adding/deleting own comment, or moderator removing comment)
+            (
+              (
+                (isCommunityMember(communityId, request.auth.uid) && !isBlockedBetween(existing().authorId, request.auth.uid))
+                || isCommunityModerator(communityId, request.auth.uid)
+              )
+              && incoming().updatedAt == existing().updatedAt
+              && incoming().diff(existing()).affectedKeys().hasOnly(['commentCount'])
+              && (
+                incoming().commentCount == existing().commentCount + 1
+                || (existing().commentCount >= 1 && incoming().commentCount == existing().commentCount - 1)
+              )
+            )
+          );
+
+        allow delete: if isValidId(communityId)
+          && isValidId(postId)
+          && isEmailVerified()
+          && (isOwner(existing().authorId) || isCommunityModerator(communityId, request.auth.uid));
+
+        match /reactions/{userId} {
+          allow get: if isValidId(communityId) && isValidId(postId) && isValidId(userId) && isOwner(userId);
+          allow list: if false;
+
+          allow create: if isValidId(communityId)
+            && isValidId(postId)
+            && isValidId(userId)
+            && isOwner(userId)
+            && canParticipateInCommunity(communityId)
+            && isValidReaction(incoming())
+            && incoming().uid == request.auth.uid
+            && incoming().createdAt == request.time
+            && exists(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId))
+            && !isBlockedBetween(get(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)).data.authorId, request.auth.uid);
+
+          allow delete: if isValidId(communityId)
+            && isValidId(postId)
+            && isValidId(userId)
+            && isOwner(userId)
+            && isEmailVerified();
+
+          allow update: if false;
+        }
+
+        match /comments/{commentId} {
+          allow get: if isValidId(communityId)
+            && isValidId(postId)
+            && isValidId(commentId)
+            && canReadCommunityPosts(communityId);
+
+          allow list: if isValidId(communityId)
+            && isValidId(postId)
+            && canReadCommunityPosts(communityId);
+
+          allow create: if isValidId(communityId)
+            && isValidId(postId)
+            && isValidId(commentId)
+            && canParticipateInCommunity(communityId)
+            && isValidComment(incoming(), postId, commentId)
+            && incoming().authorId == request.auth.uid
+            && incoming().isEdited == false
+            && incoming().createdAt == request.time
+            && incoming().updatedAt == request.time
+            && exists(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId))
+            && !isBlockedBetween(get(/databases/$(database)/documents/communities/$(communityId)/posts/$(postId)).data.authorId, request.auth.uid)
+            && existsAfter(/databases/$(database)/documents/commentRateLimits/$(request.auth.uid))
+            && (
+              !exists(/databases/$(database)/documents/commentRateLimits/$(request.auth.uid))
+              || request.time >= get(/databases/$(database)/documents/commentRateLimits/$(request.auth.uid)).data.lastCommentAt + duration.value(4, 's')
+            );
+
+          allow update: if isValidId(communityId)
+            && isValidId(postId)
+            && isValidId(commentId)
+            && isEmailVerified()
+            && isCommunityActive(communityId)
+            && isOwner(existing().authorId)
+            && isCommunityMember(communityId, request.auth.uid)
+            && isValidComment(incoming(), postId, commentId)
+            && incoming().id == existing().id
+            && incoming().postId == existing().postId
+            && incoming().authorId == existing().authorId
+            && incoming().authorUsername == existing().authorUsername
+            && incoming().parentCommentId == existing().parentCommentId
+            && incoming().replyToAuthorUsername == existing().replyToAuthorUsername
+            && incoming().createdAt == existing().createdAt
+            && incoming().isEdited == true
+            && incoming().updatedAt == request.time
+            && incoming().diff(existing()).affectedKeys().hasOnly(['content', 'hasSpoiler', 'isEdited', 'updatedAt']);
+
+          allow delete: if isValidId(communityId)
+            && isValidId(postId)
+            && isValidId(commentId)
+            && isEmailVerified()
+            && (isOwner(existing().authorId) || isCommunityModerator(communityId, request.auth.uid));
+        }
+      }
+    }
+
+    // Unique Community Slug Registry
+    match /communitySlugs/{slug} {
+      allow get: if isValidSlug(slug);
+      allow list: if false;
+
+      allow create: if isValidSlug(slug)
+        && isEmailVerified()
+        && !exists(/databases/$(database)/documents/communitySlugs/$(slug))
+        && isValidCommunitySlug(incoming(), slug)
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && existsAfter(/databases/$(database)/documents/communities/$(incoming().communityId));
+
+      allow update: if false;
+
+      allow delete: if isValidSlug(slug)
+        && isEmailVerified()
+        && existing().ownerId == request.auth.uid
+        && !existsAfter(/databases/$(database)/documents/communities/$(existing().communityId));
+    }
+
+    // Community Memberships ({communityId}__{userId})
+    match /communityMemberships/{membershipId} {
+      allow get: if isValidPairId(membershipId)
+        && (
+          (
+            resource == null
+            && isSignedIn()
+            && membershipId.split('__')[1] == request.auth.uid
+          )
+          ||
+          (
+            resource != null
+            && (
+              (isCommunityPublic(existing().communityId) && isCommunityActive(existing().communityId))
+              || (
+                isSignedIn()
+                && (
+                  existing().userId == request.auth.uid
+                  || isCommunityMember(existing().communityId, request.auth.uid)
+                )
+              )
+            )
+          )
+        );
+
+      allow list: if (isSignedIn() && existing().userId == request.auth.uid)
+        || (isCommunityPublic(existing().communityId) && isCommunityActive(existing().communityId))
+        || (isSignedIn() && isCommunityMember(existing().communityId, request.auth.uid));
+
+      allow create: if isValidPairId(membershipId)
+        && isEmailVerified()
+        && isValidCommunityMembership(incoming(), membershipId)
+        && incoming().joinedAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          // Case 1: Community creator establishing initial owner membership atomically
+          (
+            incoming().userId == request.auth.uid
+            && incoming().role == 'owner'
+            && !exists(/databases/$(database)/documents/communities/$(incoming().communityId))
+            && existsAfter(/databases/$(database)/documents/communities/$(incoming().communityId))
+            && getAfter(/databases/$(database)/documents/communities/$(incoming().communityId)).data.ownerId == request.auth.uid
+          )
+          ||
+          // Case 2: User joining an active PUBLIC community
+          (
+            incoming().userId == request.auth.uid
+            && incoming().role == 'member'
+            && isCommunityActive(incoming().communityId)
+            && isCommunityPublic(incoming().communityId)
+            && !exists(/databases/$(database)/documents/communityMemberships/$(membershipId))
+            && getAfter(/databases/$(database)/documents/communities/$(incoming().communityId)).data.memberCount == get(/databases/$(database)/documents/communities/$(incoming().communityId)).data.memberCount + 1
+          )
+          ||
+          // Case 3: Moderator/Owner approving a PRIVATE community join request
+          (
+            isCommunityModerator(incoming().communityId, request.auth.uid)
+            && isCommunityActive(incoming().communityId)
+            && incoming().role == 'member'
+            && exists(/databases/$(database)/documents/communityJoinRequests/$(membershipId))
+            && get(/databases/$(database)/documents/communityJoinRequests/$(membershipId)).data.status == 'pending'
+            && getAfter(/databases/$(database)/documents/communityJoinRequests/$(membershipId)).data.status == 'approved'
+            && getAfter(/databases/$(database)/documents/communities/$(incoming().communityId)).data.memberCount == get(/databases/$(database)/documents/communities/$(incoming().communityId)).data.memberCount + 1
+          )
+        );
+
+      allow update: if isValidPairId(membershipId)
+        && isEmailVerified()
+        && isValidCommunityMembership(incoming(), membershipId)
+        && incoming().id == existing().id
+        && incoming().communityId == existing().communityId
+        && incoming().userId == existing().userId
+        && incoming().username == existing().username
+        && incoming().joinedAt == existing().joinedAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action 1: Owner promotes/demotes member <-> moderator (atomically synced with community.moderatorIds)
+          (
+            isCommunityOwner(existing().communityId, request.auth.uid)
+            && existing().userId != request.auth.uid
+            && existing().role != 'owner'
+            && incoming().role in ['member', 'moderator']
+            && incoming().diff(existing()).affectedKeys().hasOnly(['role', 'updatedAt'])
+            && (
+              (incoming().role == 'moderator' && existing().userId in getAfter(/databases/$(database)/documents/communities/$(existing().communityId)).data.moderatorIds)
+              || (incoming().role == 'member' && !(existing().userId in getAfter(/databases/$(database)/documents/communities/$(existing().communityId)).data.moderatorIds))
+            )
+          )
+          ||
+          // Action 2: Member refreshes own displayName/avatarUrl snapshot
+          (
+            existing().userId == request.auth.uid
+            && incoming().role == existing().role
+            && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'avatarUrl', 'updatedAt'])
+          )
+        );
+
+      allow delete: if isValidPairId(membershipId)
+        && isEmailVerified()
+        && (
+          // Member leaves community (owner cannot abandon without deleting community)
+          (
+            existing().userId == request.auth.uid
+            && existing().role != 'owner'
+            && !existsAfter(/databases/$(database)/documents/communityMemberships/$(membershipId))
+            && (
+              !existsAfter(/databases/$(database)/documents/communities/$(existing().communityId))
+              || get(/databases/$(database)/documents/communities/$(existing().communityId)).data.memberCount == 0
+              || getAfter(/databases/$(database)/documents/communities/$(existing().communityId)).data.memberCount == get(/databases/$(database)/documents/communities/$(existing().communityId)).data.memberCount - 1
+            )
+          )
+          ||
+          // Owner deleting entire community cleans up own membership atomically
+          (
+            existing().userId == request.auth.uid
+            && existing().role == 'owner'
+            && !existsAfter(/databases/$(database)/documents/communities/$(existing().communityId))
+          )
+          ||
+          // Moderator removes standard member, or Owner removes any non-owner member
+          (
+            isCommunityModerator(existing().communityId, request.auth.uid)
+            && existing().role != 'owner'
+            && (existing().role == 'member' || isCommunityOwner(existing().communityId, request.auth.uid))
+            && (
+              !existsAfter(/databases/$(database)/documents/communities/$(existing().communityId))
+              || get(/databases/$(database)/documents/communities/$(existing().communityId)).data.memberCount == 0
+              || getAfter(/databases/$(database)/documents/communities/$(existing().communityId)).data.memberCount == get(/databases/$(database)/documents/communities/$(existing().communityId)).data.memberCount - 1
+            )
+          )
+        );
+    }
+
+    // Private Community Join Requests ({communityId}__{userId})
+    match /communityJoinRequests/{requestId} {
+      allow get: if isValidPairId(requestId)
+        && isSignedIn()
+        && (
+          (resource == null && requestId.split('__')[1] == request.auth.uid)
+          || (
+            resource != null
+            && (
+              existing().userId == request.auth.uid
+              || isCommunityModerator(existing().communityId, request.auth.uid)
+            )
+          )
+        );
+
+      allow list: if isSignedIn()
+        && (
+          existing().userId == request.auth.uid
+          || isCommunityModerator(existing().communityId, request.auth.uid)
+        );
+
+      allow create: if isValidPairId(requestId)
+        && isEmailVerified()
+        && isValidCommunityJoinRequest(incoming(), requestId)
+        && incoming().userId == request.auth.uid
+        && incoming().status == 'pending'
+        && incoming().reviewedBy == ''
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isCommunityActive(incoming().communityId)
+        && !isCommunityPublic(incoming().communityId)
+        && !isCommunityMember(incoming().communityId, request.auth.uid);
+
+      allow update: if isValidPairId(requestId)
+        && isEmailVerified()
+        && isValidCommunityJoinRequest(incoming(), requestId)
+        && incoming().id == existing().id
+        && incoming().communityId == existing().communityId
+        && incoming().userId == existing().userId
+        && incoming().username == existing().username
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Moderator/Owner approves or rejects pending request
+          (
+            isCommunityModerator(existing().communityId, request.auth.uid)
+            && existing().status == 'pending'
+            && incoming().status in ['approved', 'rejected']
+            && incoming().reviewedBy == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'reviewedBy', 'updatedAt'])
+            && (
+              incoming().status == 'rejected'
+              || existsAfter(/databases/$(database)/documents/communityMemberships/$(existing().communityId + '__' + existing().userId))
+            )
+          )
+          ||
+          // Requester re-submits after a previous rejection or after leaving the community
+          (
+            existing().userId == request.auth.uid
+            && existing().status in ['rejected', 'approved']
+            && incoming().status == 'pending'
+            && incoming().reviewedBy == ''
+            && isCommunityActive(existing().communityId)
+            && !isCommunityPublic(existing().communityId)
+            && !isCommunityMember(existing().communityId, request.auth.uid)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['message', 'status', 'reviewedBy', 'updatedAt'])
+          )
+        );
+
+      allow delete: if isValidPairId(requestId)
+        && isEmailVerified()
+        && (
+          (existing().userId == request.auth.uid && existing().status == 'pending')
+          || isCommunityOwner(existing().communityId, request.auth.uid)
+        );
+    }
+
+    // Per-user server-timestamp rate limits for community creation
+    match /communityRateLimits/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+
+      allow create, update: if isValidId(userId)
+        && isOwner(userId)
+        && isEmailVerified()
+        && incoming().keys().hasAll(['uid', 'lastCreatedAt'])
+        && incoming().keys().hasOnly(['uid', 'lastCreatedAt'])
+        && incoming().uid == userId
+        && incoming().lastCreatedAt == request.time;
+
+      allow delete: if false;
     }
 
     // Deterministic Follow Relationships ({followerId}__{followingId})

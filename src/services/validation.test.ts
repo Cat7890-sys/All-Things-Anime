@@ -2,12 +2,21 @@ import assert from 'node:assert/strict';
 import {
   normalizeEmail,
   normalizeUsername,
+  slugifyCommunityName,
   validateAnimeTitle,
   validateAvatarUrl,
   validateBio,
   validateCommentContent,
+  validateCommunityCategory,
+  validateCommunityDescription,
+  validateCommunityName,
+  validateCommunityRules,
+  validateCommunitySlug,
+  validateCommunityTags,
+  validateCreateCommunityForm,
   validateDisplayName,
   validateEmail,
+  validateJoinRequestMessage,
   validateLoginForm,
   validatePassword,
   validatePostContent,
@@ -17,6 +26,7 @@ import {
   validateRegistrationForm,
   validateReportDetails,
   validateSpoilerLabel,
+  validateUpdateCommunityForm,
   validateUsername,
 } from './validation.ts';
 
@@ -146,4 +156,81 @@ assert.ok(validateCommentContent('c'.repeat(801)));
 assert.equal(validateReportDetails({ details: 'Contains untagged finale spoiler.' }), null);
 assert.ok(validateReportDetails({ details: 'd'.repeat(501) }));
 
-console.log('All ATA Build 02 & Build 03 validation assertions passed.');
+// 10. Build 04A: Community name, slug, description, category, tags, rules, join request
+assert.equal(slugifyCommunityName('Sakuga Frame Study!!'), 'sakuga-frame-study');
+assert.equal(validateCommunityName('Sakuga Frame Study'), null);
+assert.ok(validateCommunityName('AB')); // too short
+assert.ok(validateCommunityName('n'.repeat(51))); // too long
+
+assert.equal(validateCommunitySlug('sakuga-frame-study'), null);
+assert.ok(validateCommunitySlug('ab')); // too short
+assert.ok(validateCommunitySlug('Sakuga_Club')); // uppercase/underscore disallowed
+assert.ok(validateCommunitySlug('sakuga--study')); // double hyphen disallowed
+
+assert.equal(
+  validateCommunityDescription('Deep breakdowns of keyframe animation and scene layouts.'),
+  null
+);
+assert.ok(validateCommunityDescription('Too short'));
+
+assert.equal(validateCommunityCategory('Mecha & Sci-Fi'), null);
+assert.ok(validateCommunityCategory('Invalid Genre'));
+
+assert.equal(validateCommunityTags(['Frieren', 'Sakuga', 'Fantasy']), null);
+assert.ok(
+  validateCommunityTags(['1', '2', '3', '4', '5', '6', '7', '8', '9'])
+); // max 8 tags
+assert.ok(validateCommunityTags(['t'.repeat(31)])); // max 30 chars per tag
+
+assert.equal(
+  validateCommunityRules(['Tag all manga spoilers cleanly.', 'Keep critiques constructive.']),
+  null
+);
+assert.ok(validateCommunityRules(['No'])); // rule min 3 chars
+assert.ok(validateCommunityRules(Array.from({ length: 11 }, (_, i) => `Rule ${i + 1} detail`))); // max 10 rules
+
+assert.equal(validateJoinRequestMessage('Looking forward to weekly watch threads!'), null);
+assert.ok(validateJoinRequestMessage('m'.repeat(301))); // max 300 chars
+
+assert.equal(
+  validateCreateCommunityForm({
+    name: 'Orbital Hangar Guild',
+    slug: 'orbital-hangar-guild',
+    description: 'Mechanical design, retro OVA craft, and orbital battleships.',
+    category: 'Mecha & Sci-Fi',
+    animeTags: ['Gundam', 'Macross'],
+    rules: ['Credit artists and key animators when posting cuts.'],
+    visibility: 'public',
+    avatarUrl: 'https://cdn.example.com/club-avatar.png',
+    coverUrl: '',
+  }),
+  null
+);
+
+assert.ok(
+  validateCreateCommunityForm({
+    name: 'Orbital Hangar Guild',
+    slug: 'orbital-hangar-guild',
+    description: 'Mechanical design, retro OVA craft, and orbital battleships.',
+    category: 'Mecha & Sci-Fi',
+    animeTags: ['Gundam'],
+    rules: [],
+    visibility: 'private',
+    avatarUrl: 'http://insecure.example.com/club.png',
+  })
+); // rejects non-HTTPS image URL
+
+assert.equal(
+  validateUpdateCommunityForm({
+    name: 'Orbital Hangar Guild',
+    description: 'Mechanical design, retro OVA craft, and orbital battleships.',
+    category: 'Mecha & Sci-Fi',
+    animeTags: ['Gundam', 'Patlabor'],
+    rules: ['Respect spoiler tags on new episodes.'],
+    removeCover: true,
+    coverUrl: 'not-even-used-when-removed',
+  }),
+  null
+);
+
+console.log('All ATA Build 02, Build 03 & Build 04A validation assertions passed.');

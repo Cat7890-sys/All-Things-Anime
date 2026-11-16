@@ -207,19 +207,22 @@ export interface CreateCommentInput {
   hasSpoiler?: boolean;
 }
 
-export type ReportTargetType = 'post' | 'comment';
+export type ReportTargetType = 'post' | 'comment' | 'community';
 
 export type ReportReason =
   | 'spam'
   | 'harassment'
   | 'unmarked_spoiler'
   | 'hate_speech'
+  | 'inappropriate_community'
+  | 'rule_violation'
   | 'other';
 
 export interface CreateReportInput {
   targetType: ReportTargetType;
   targetId: string;
   postId: string;
+  communityId?: string;
   targetAuthorId: string;
   reason: ReportReason;
   details: string;
@@ -231,4 +234,101 @@ export interface BlockedUserRecord {
   blockedId: string;
   blockedUsername: string;
   createdAt: Date | null;
+}
+
+// ==========================================
+// Build 04A: Anime Communities & Scoped Discussions
+// ==========================================
+
+export type CommunityCategory =
+  | 'Shonen'
+  | 'Seinen'
+  | 'Shojo'
+  | 'Mecha & Sci-Fi'
+  | 'Fantasy & Isekai'
+  | 'Slice of Life'
+  | 'Animation & Sakuga'
+  | 'Manga & Light Novels'
+  | 'General';
+
+export type CommunityVisibility = 'public' | 'private';
+export type CommunityStatus = 'active' | 'archived';
+export type CommunityRole = 'owner' | 'moderator' | 'member';
+export type JoinRequestStatus = 'pending' | 'approved' | 'rejected';
+
+export interface AtaCommunity {
+  id: string;
+  name: string;
+  nameLowercase: string;
+  slug: string;
+  description: string;
+  avatarUrl: string;
+  avatarPath: string;
+  coverUrl: string;
+  coverPath: string;
+  category: CommunityCategory;
+  animeTags: string[];
+  rules: string[];
+  ownerId: string;
+  moderatorIds: string[];
+  memberCount: number;
+  visibility: CommunityVisibility;
+  status: CommunityStatus;
+  isFeatured: boolean;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export interface CreateCommunityInput {
+  name: string;
+  slug: string;
+  description: string;
+  category: CommunityCategory;
+  animeTags: string[];
+  rules: string[];
+  visibility: CommunityVisibility;
+  avatarUrl?: string;
+  coverUrl?: string;
+  avatarFile?: File | null;
+  coverFile?: File | null;
+}
+
+export interface UpdateCommunityInput {
+  name: string;
+  description: string;
+  category: CommunityCategory;
+  animeTags: string[];
+  rules: string[];
+  avatarUrl?: string;
+  coverUrl?: string;
+  avatarFile?: File | null;
+  coverFile?: File | null;
+  removeAvatar?: boolean;
+  removeCover?: boolean;
+}
+
+export interface CommunityMembership {
+  id: string;
+  communityId: string;
+  userId: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+  role: CommunityRole;
+  joinedAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export interface CommunityJoinRequest {
+  id: string;
+  communityId: string;
+  userId: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+  message: string;
+  status: JoinRequestStatus;
+  reviewedBy: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
 }

@@ -133,7 +133,7 @@ export const TrendingSidebarSection: React.FC<TrendingSidebarSectionProps> = ({
           className="mt-4 w-full inline-flex items-center justify-center gap-2 px-3.5 py-2.5 min-h-[40px] text-xs font-semibold text-white bg-[#EF3038] border border-[#B92335] rounded-xl hover:bg-[#B92335] transition-colors duration-150"
         >
           <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-          <span>Explore Communities Plan</span>
+          <span>Explore Communities</span>
         </button>
       </section>
     </div>

@@ -1,8 +1,11 @@
 import type {
+  CommunityCategory,
+  CreateCommunityInput,
   CreatePostInput,
   CreateReportInput,
   LoginAccountInput,
   RegisterAccountInput,
+  UpdateCommunityInput,
   UpdatePostInput,
   UpdateProfileInput,
   ValidationErrors,
@@ -267,5 +270,227 @@ export function validateReportDetails(
   if (input.details.trim().length > REPORT_DETAILS_MAX_LENGTH) {
     return `Report details must be ${REPORT_DETAILS_MAX_LENGTH} characters or fewer.`;
   }
+  return null;
+}
+
+// ==========================================
+// Build 04A: Community Validation
+// ==========================================
+
+export const COMMUNITY_NAME_MIN = 3;
+export const COMMUNITY_NAME_MAX = 50;
+export const COMMUNITY_SLUG_MIN = 3;
+export const COMMUNITY_SLUG_MAX = 40;
+export const COMMUNITY_SLUG_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+export const COMMUNITY_DESC_MIN = 10;
+export const COMMUNITY_DESC_MAX = 500;
+export const COMMUNITY_MAX_TAGS = 8;
+export const COMMUNITY_TAG_MAX_LEN = 30;
+export const COMMUNITY_MAX_RULES = 10;
+export const COMMUNITY_RULE_MIN_LEN = 3;
+export const COMMUNITY_RULE_MAX_LEN = 180;
+export const JOIN_REQUEST_MESSAGE_MAX = 300;
+export const COMMUNITY_IMAGE_URL_MAX = 1000;
+
+export const COMMUNITY_CATEGORIES: readonly CommunityCategory[] = [
+  'Shonen',
+  'Seinen',
+  'Shojo',
+  'Mecha & Sci-Fi',
+  'Fantasy & Isekai',
+  'Slice of Life',
+  'Animation & Sakuga',
+  'Manga & Light Novels',
+  'General',
+] as const;
+
+export function slugifyCommunityName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, COMMUNITY_SLUG_MAX);
+}
+
+export function validateCommunityName(name: string): string | null {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return 'Community name is required.';
+  }
+  if (trimmed.length < COMMUNITY_NAME_MIN) {
+    return `Community name must be at least ${COMMUNITY_NAME_MIN} characters.`;
+  }
+  if (trimmed.length > COMMUNITY_NAME_MAX) {
+    return `Community name must be ${COMMUNITY_NAME_MAX} characters or fewer.`;
+  }
+  return null;
+}
+
+export function validateCommunitySlug(slug: string): string | null {
+  const normalized = slug.trim().toLowerCase();
+  if (!normalized) {
+    return 'Community URL slug is required.';
+  }
+  if (normalized.length < COMMUNITY_SLUG_MIN) {
+    return `Community slug must be at least ${COMMUNITY_SLUG_MIN} characters.`;
+  }
+  if (normalized.length > COMMUNITY_SLUG_MAX) {
+    return `Community slug must be ${COMMUNITY_SLUG_MAX} characters or fewer.`;
+  }
+  if (!COMMUNITY_SLUG_REGEX.test(normalized)) {
+    return 'Slug may only contain lowercase letters, numbers, and single hyphens between words.';
+  }
+  return null;
+}
+
+export function validateCommunityDescription(description: string): string | null {
+  const trimmed = description.trim();
+  if (!trimmed) {
+    return 'Community description is required.';
+  }
+  if (trimmed.length < COMMUNITY_DESC_MIN) {
+    return `Description must be at least ${COMMUNITY_DESC_MIN} characters.`;
+  }
+  if (trimmed.length > COMMUNITY_DESC_MAX) {
+    return `Description must be ${COMMUNITY_DESC_MAX} characters or fewer.`;
+  }
+  return null;
+}
+
+export function validateCommunityCategory(category: string): string | null {
+  if (!COMMUNITY_CATEGORIES.includes(category as CommunityCategory)) {
+    return 'Please select a valid anime community category.';
+  }
+  return null;
+}
+
+export function validateCommunityTags(tags: string[]): string | null {
+  const cleaned = tags.map((t) => t.trim()).filter(Boolean);
+  if (cleaned.length > COMMUNITY_MAX_TAGS) {
+    return `You can add up to ${COMMUNITY_MAX_TAGS} anime tags.`;
+  }
+  for (const tag of cleaned) {
+    if (tag.length > COMMUNITY_TAG_MAX_LEN) {
+      return `Each anime tag must be ${COMMUNITY_TAG_MAX_LEN} characters or fewer.`;
+    }
+  }
+  return null;
+}
+
+export function validateCommunityRules(rules: string[]): string | null {
+  const cleaned = rules.map((r) => r.trim()).filter(Boolean);
+  if (cleaned.length > COMMUNITY_MAX_RULES) {
+    return `You can define up to ${COMMUNITY_MAX_RULES} community rules.`;
+  }
+  for (const rule of cleaned) {
+    if (rule.length < COMMUNITY_RULE_MIN_LEN) {
+      return `Each community rule must be at least ${COMMUNITY_RULE_MIN_LEN} characters.`;
+    }
+    if (rule.length > COMMUNITY_RULE_MAX_LEN) {
+      return `Each community rule must be ${COMMUNITY_RULE_MAX_LEN} characters or fewer.`;
+    }
+  }
+  return null;
+}
+
+export function validateOptionalCommunityImageUrl(url?: string): string | null {
+  const trimmed = (url || '').trim();
+  if (!trimmed) return null;
+  if (trimmed.length > COMMUNITY_IMAGE_URL_MAX) {
+    return `Image URL must be ${COMMUNITY_IMAGE_URL_MAX} characters or fewer.`;
+  }
+  if (!trimmed.startsWith('https://')) {
+    return 'Image URL must start with https://.';
+  }
+  try {
+    new URL(trimmed);
+  } catch {
+    return 'Please enter a valid HTTPS image URL.';
+  }
+  return null;
+}
+
+export function validateJoinRequestMessage(message: string): string | null {
+  if (message.trim().length > JOIN_REQUEST_MESSAGE_MAX) {
+    return `Membership request note must be ${JOIN_REQUEST_MESSAGE_MAX} characters or fewer.`;
+  }
+  return null;
+}
+
+export function validateCreateCommunityForm(
+  input: CreateCommunityInput
+): string | null {
+  const nameErr = validateCommunityName(input.name);
+  if (nameErr) return nameErr;
+
+  const slugErr = validateCommunitySlug(input.slug);
+  if (slugErr) return slugErr;
+
+  const descErr = validateCommunityDescription(input.description);
+  if (descErr) return descErr;
+
+  const catErr = validateCommunityCategory(input.category);
+  if (catErr) return catErr;
+
+  const tagsErr = validateCommunityTags(input.animeTags);
+  if (tagsErr) return tagsErr;
+
+  const rulesErr = validateCommunityRules(input.rules);
+  if (rulesErr) return rulesErr;
+
+  if (input.avatarFile) {
+    const fileErr = validatePostImageFile(input.avatarFile);
+    if (fileErr) return fileErr;
+  } else {
+    const urlErr = validateOptionalCommunityImageUrl(input.avatarUrl);
+    if (urlErr) return urlErr;
+  }
+
+  if (input.coverFile) {
+    const fileErr = validatePostImageFile(input.coverFile);
+    if (fileErr) return fileErr;
+  } else {
+    const urlErr = validateOptionalCommunityImageUrl(input.coverUrl);
+    if (urlErr) return urlErr;
+  }
+
+  return null;
+}
+
+export function validateUpdateCommunityForm(
+  input: UpdateCommunityInput
+): string | null {
+  const nameErr = validateCommunityName(input.name);
+  if (nameErr) return nameErr;
+
+  const descErr = validateCommunityDescription(input.description);
+  if (descErr) return descErr;
+
+  const catErr = validateCommunityCategory(input.category);
+  if (catErr) return catErr;
+
+  const tagsErr = validateCommunityTags(input.animeTags);
+  if (tagsErr) return tagsErr;
+
+  const rulesErr = validateCommunityRules(input.rules);
+  if (rulesErr) return rulesErr;
+
+  if (input.avatarFile) {
+    const fileErr = validatePostImageFile(input.avatarFile);
+    if (fileErr) return fileErr;
+  } else if (!input.removeAvatar) {
+    const urlErr = validateOptionalCommunityImageUrl(input.avatarUrl);
+    if (urlErr) return urlErr;
+  }
+
+  if (input.coverFile) {
+    const fileErr = validatePostImageFile(input.coverFile);
+    if (fileErr) return fileErr;
+  } else if (!input.removeCover) {
+    const urlErr = validateOptionalCommunityImageUrl(input.coverUrl);
+    if (urlErr) return urlErr;
+  }
+
   return null;
 }

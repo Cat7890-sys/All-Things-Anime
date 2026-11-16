@@ -53,14 +53,31 @@ function mapDocToComment(
   };
 }
 
+function getPostDocRef(postId: string, communityId?: string) {
+  return communityId
+    ? doc(db, 'communities', communityId, 'posts', postId)
+    : doc(db, 'posts', postId);
+}
+
+function getCommentsCollection(postId: string, communityId?: string) {
+  return collection(getPostDocRef(postId, communityId), 'comments');
+}
+
+function getCommentsBasePath(postId: string, communityId?: string): string {
+  return communityId
+    ? `communities/${communityId}/posts/${postId}/comments`
+    : `posts/${postId}/comments`;
+}
+
 export function subscribeToPostComments(
   postId: string,
   onComments: (comments: AtaComment[]) => void,
-  onError: (message: string) => void
+  onError: (message: string) => void,
+  communityId?: string
 ): Unsubscribe {
-  const path = `posts/${postId}/comments`;
+  const path = getCommentsBasePath(postId, communityId);
   const q = query(
-    collection(db, 'posts', postId, 'comments'),
+    getCommentsCollection(postId, communityId),
     orderBy('createdAt', 'asc'),
     limit(150)
   );
@@ -85,7 +102,8 @@ export function subscribeToPostComments(
 export async function createComment(
   postId: string,
   authorProfile: AtaUserAccount,
-  input: CreateCommentInput
+  input: CreateCommentInput,
+  communityId?: string
 ): Promise<void> {
   const currentUser = auth.currentUser;
   if (!currentUser || currentUser.uid !== authorProfile.uid) {
@@ -102,8 +120,8 @@ export async function createComment(
 
   await currentUser.getIdToken(true);
 
-  const postRef = doc(db, 'posts', postId);
-  const commentRef = doc(collection(db, 'posts', postId, 'comments'));
+  const postRef = getPostDocRef(postId, communityId);
+  const commentRef = doc(getCommentsCollection(postId, communityId));
   const rateLimitRef = doc(db, 'commentRateLimits', currentUser.uid);
 
   try {
@@ -168,7 +186,7 @@ export async function createComment(
       handleFirestoreError(
         error,
         OperationType.CREATE,
-        `posts/${postId}/comments/${commentRef.id}`
+        `${getCommentsBasePath(postId, communityId)}/${commentRef.id}`
       );
     }
     throw error;
@@ -179,7 +197,8 @@ export async function updateComment(
   postId: string,
   commentId: string,
   content: string,
-  hasSpoiler: boolean
+  hasSpoiler: boolean,
+  communityId?: string
 ): Promise<void> {
   const currentUser = auth.currentUser;
   if (!currentUser || !currentUser.emailVerified) {
@@ -193,9 +212,9 @@ export async function updateComment(
 
   await currentUser.getIdToken(true);
 
-  const path = `posts/${postId}/comments/${commentId}`;
+  const path = `${getCommentsBasePath(postId, communityId)}/${commentId}`;
   try {
-    await updateDoc(doc(db, 'posts', postId, 'comments', commentId), {
+    await updateDoc(doc(getCommentsCollection(postId, communityId), commentId), {
       content: content.trim(),
       hasSpoiler: Boolean(hasSpoiler),
       isEdited: true,
@@ -208,7 +227,8 @@ export async function updateComment(
 
 export async function deleteComment(
   postId: string,
-  commentId: string
+  commentId: string,
+  communityId?: string
 ): Promise<void> {
   const currentUser = auth.currentUser;
   if (!currentUser || !currentUser.emailVerified) {
@@ -217,11 +237,11 @@ export async function deleteComment(
 
   await currentUser.getIdToken(true);
 
-  const path = `posts/${postId}/comments/${commentId}`;
+  const path = `${getCommentsBasePath(postId, communityId)}/${commentId}`;
   try {
     await runTransaction(db, async (transaction) => {
-      const postRef = doc(db, 'posts', postId);
-      const commentRef = doc(db, 'posts', postId, 'comments', commentId);
+      const postRef = getPostDocRef(postId, communityId);
+      const commentRef = doc(getCommentsCollection(postId, communityId), commentId);
 
       const [postSnap, commentSnap] = await Promise.all([
         transaction.get(postRef),

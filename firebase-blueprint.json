@@ -447,7 +447,7 @@
         },
         "targetType": {
           "type": "string",
-          "enum": ["post", "comment"]
+          "enum": ["post", "comment", "community"]
         },
         "targetId": {
           "type": "string",
@@ -459,6 +459,11 @@
           "minLength": 1,
           "maxLength": 128
         },
+        "communityId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 128
+        },
         "targetAuthorId": {
           "type": "string",
           "minLength": 1,
@@ -466,7 +471,15 @@
         },
         "reason": {
           "type": "string",
-          "enum": ["spam", "harassment", "unmarked_spoiler", "hate_speech", "other"]
+          "enum": [
+            "spam",
+            "harassment",
+            "unmarked_spoiler",
+            "hate_speech",
+            "inappropriate_community",
+            "rule_violation",
+            "other"
+          ]
         },
         "details": {
           "type": "string",
@@ -528,6 +541,318 @@
         }
       },
       "required": ["uid", "lastCommentAt"]
+    },
+    "Community": {
+      "title": "Community",
+      "description": "Anime community hub with visibility, category, tags, rules, owner, and moderator controls.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 50
+        },
+        "nameLowercase": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 50
+        },
+        "slug": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 40,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 500
+        },
+        "avatarUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 1000
+        },
+        "avatarPath": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 300
+        },
+        "coverUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 1000
+        },
+        "coverPath": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 300
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "Shonen",
+            "Seinen",
+            "Shojo",
+            "Mecha & Sci-Fi",
+            "Fantasy & Isekai",
+            "Slice of Life",
+            "Animation & Sakuga",
+            "Manga & Light Novels",
+            "General"
+          ]
+        },
+        "animeTags": {
+          "type": "array"
+        },
+        "rules": {
+          "type": "array"
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "moderatorIds": {
+          "type": "array"
+        },
+        "memberCount": {
+          "type": "integer"
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["public", "private"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "archived"]
+        },
+        "isFeatured": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "nameLowercase",
+        "slug",
+        "description",
+        "avatarUrl",
+        "avatarPath",
+        "coverUrl",
+        "coverPath",
+        "category",
+        "animeTags",
+        "rules",
+        "ownerId",
+        "moderatorIds",
+        "memberCount",
+        "visibility",
+        "status",
+        "isFeatured",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CommunitySlugReservation": {
+      "title": "CommunitySlugReservation",
+      "description": "Unique community URL slug registry keyed by lowercase slug.",
+      "type": "object",
+      "properties": {
+        "communityId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "slug": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 40,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["communityId", "slug", "ownerId", "createdAt"]
+    },
+    "CommunityMembership": {
+      "title": "CommunityMembership",
+      "description": "Authoritative community membership and role record keyed by {communityId}__{userId}.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 260
+        },
+        "communityId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "username": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20,
+          "pattern": "^[a-zA-Z0-9_]{3,20}$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40
+        },
+        "avatarUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500
+        },
+        "role": {
+          "type": "string",
+          "enum": ["owner", "moderator", "member"]
+        },
+        "joinedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "communityId",
+        "userId",
+        "username",
+        "displayName",
+        "avatarUrl",
+        "role",
+        "joinedAt",
+        "updatedAt"
+      ]
+    },
+    "CommunityJoinRequest": {
+      "title": "CommunityJoinRequest",
+      "description": "Membership request for private communities keyed by {communityId}__{userId}.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 260
+        },
+        "communityId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "username": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20,
+          "pattern": "^[a-zA-Z0-9_]{3,20}$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40
+        },
+        "avatarUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500
+        },
+        "message": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 300
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "approved", "rejected"]
+        },
+        "reviewedBy": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "communityId",
+        "userId",
+        "username",
+        "displayName",
+        "avatarUrl",
+        "message",
+        "status",
+        "reviewedBy",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CommunityRateLimit": {
+      "title": "CommunityRateLimit",
+      "description": "Per-user server timestamp guard enforcing cooldowns between community creations.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "lastCreatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "lastCreatedAt"]
     }
   },
   "firestore": {
@@ -553,7 +878,7 @@
       "schema": {
         "$ref": "#/entities/Post"
       },
-      "description": "Community feed posts."
+      "description": "Global community feed posts."
     },
     "/posts/{postId}/reactions/{userId}": {
       "schema": {
@@ -566,6 +891,54 @@
         "$ref": "#/entities/Comment"
       },
       "description": "Comments and replies on a post."
+    },
+    "/communities/{communityId}": {
+      "schema": {
+        "$ref": "#/entities/Community"
+      },
+      "description": "Anime communities with category, tags, visibility, rules, owner, and moderator roster."
+    },
+    "/communities/{communityId}/posts/{postId}": {
+      "schema": {
+        "$ref": "#/entities/Post"
+      },
+      "description": "Discussion posts scoped to a specific community; private communities restrict read/write to members."
+    },
+    "/communities/{communityId}/posts/{postId}/reactions/{userId}": {
+      "schema": {
+        "$ref": "#/entities/PostReaction"
+      },
+      "description": "Per-user reactions on a community discussion post."
+    },
+    "/communities/{communityId}/posts/{postId}/comments/{commentId}": {
+      "schema": {
+        "$ref": "#/entities/Comment"
+      },
+      "description": "Comments and replies on a community discussion post."
+    },
+    "/communitySlugs/{slug}": {
+      "schema": {
+        "$ref": "#/entities/CommunitySlugReservation"
+      },
+      "description": "Unique slug reservation registry for communities."
+    },
+    "/communityMemberships/{membershipId}": {
+      "schema": {
+        "$ref": "#/entities/CommunityMembership"
+      },
+      "description": "Community membership and RBAC role assignments keyed by {communityId}__{userId}."
+    },
+    "/communityJoinRequests/{requestId}": {
+      "schema": {
+        "$ref": "#/entities/CommunityJoinRequest"
+      },
+      "description": "Private community join requests keyed by {communityId}__{userId}."
+    },
+    "/communityRateLimits/{userId}": {
+      "schema": {
+        "$ref": "#/entities/CommunityRateLimit"
+      },
+      "description": "Server-time rate limiting checkpoints for community creation spam prevention."
     },
     "/follows/{followId}": {
       "schema": {
@@ -583,7 +956,7 @@
       "schema": {
         "$ref": "#/entities/ModerationReport"
       },
-      "description": "Non-public moderation reports for posts and comments."
+      "description": "Non-public moderation reports for posts, comments, and communities."
     },
     "/postRateLimits/{userId}": {
       "schema": {

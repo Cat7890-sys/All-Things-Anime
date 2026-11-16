@@ -23,19 +23,24 @@ export async function submitModerationReport(
   await currentUser.getIdToken(true);
 
   const reportRef = doc(collection(db, 'reports'));
+  const payload: Record<string, unknown> = {
+    id: reportRef.id,
+    reporterId,
+    targetType: input.targetType,
+    targetId: input.targetId,
+    postId: input.postId || input.targetId,
+    targetAuthorId: input.targetAuthorId,
+    reason: input.reason,
+    details: input.details.trim(),
+    status: 'open',
+    createdAt: serverTimestamp(),
+  };
+  if (input.communityId) {
+    payload.communityId = input.communityId;
+  }
+
   try {
-    await setDoc(reportRef, {
-      id: reportRef.id,
-      reporterId,
-      targetType: input.targetType,
-      targetId: input.targetId,
-      postId: input.postId,
-      targetAuthorId: input.targetAuthorId,
-      reason: input.reason,
-      details: input.details.trim(),
-      status: 'open',
-      createdAt: serverTimestamp(),
-    });
+    await setDoc(reportRef, payload);
   } catch (error) {
     handleFirestoreError(
       error,
