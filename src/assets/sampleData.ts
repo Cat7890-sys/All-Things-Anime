@@ -6,6 +6,10 @@ import type {
   NavDestination,
   TrendingAnimeItem,
 } from '../types';
+import animeCoverMartial from './images/anime_cover_martial_1794831913177.jpg';
+import animeCoverMecha from './images/anime_cover_mecha_1794831913654.jpg';
+import animeCoverWanderer from './images/anime_cover_wanderer_1794831912432.jpg';
+import cosmicBannerImage from './images/ata_cosmic_banner_1794834295302.jpg';
 
 export const ATA_BRAND = {
   shortName: 'ATA',
@@ -15,8 +19,7 @@ export const ATA_BRAND = {
   demonstrationNotice: 'Sample Showcase Only — Demonstration entries below are separate from live community posts.',
 } as const;
 
-export const WELCOME_BANNER_IMAGE =
-  '/src/assets/images/ata_cosmic_banner_1794834295302.jpg';
+export const WELCOME_BANNER_IMAGE = cosmicBannerImage;
 
 export const NAV_DESTINATIONS: NavDestination[] = [
   {
@@ -141,7 +144,7 @@ export const SAMPLE_DISCOVERY_SERIES: DiscoverySeriesItem[] = [
     synopsis:
       'A cartographer crosses mist-locked mountain ridges to chart floating stone monoliths that alter local gravity every crimson eclipse.',
     studioLabel: 'Sample Studio A',
-    coverImageUrl: '/src/assets/images/anime_cover_wanderer_1794831912432.jpg',
+    coverImageUrl: animeCoverWanderer,
     coverAlt:
       'Original manga illustration of a cloaked wanderer facing a floating geometric stone monolith over misty valleys.',
     isDemonstration: true,
@@ -156,7 +159,7 @@ export const SAMPLE_DISCOVERY_SERIES: DiscoverySeriesItem[] = [
     synopsis:
       'Dockyard engineers aboard a low-orbit relay station maintain prototype interceptor frames while navigating deep-space salvage treaties.',
     studioLabel: 'Sample Studio B',
-    coverImageUrl: '/src/assets/images/anime_cover_mecha_1794831913654.jpg',
+    coverImageUrl: animeCoverMecha,
     coverAlt:
       'Original anime key visual of an angular white-and-ink mechanical frame standing inside a sunlit orbital hangar.',
     isDemonstration: true,
@@ -171,7 +174,7 @@ export const SAMPLE_DISCOVERY_SERIES: DiscoverySeriesItem[] = [
     synopsis:
       'Under a scarlet full moon, an exiled courier navigates lantern-lit rooftops to return stolen calligraphy scrolls before dawn.',
     studioLabel: 'Sample Studio C',
-    coverImageUrl: '/src/assets/images/anime_cover_martial_1794831913177.jpg',
+    coverImageUrl: animeCoverMartial,
     coverAlt:
       'Original graphic novel artwork of a silhouetted swordsman leaping across tiled roofs before a crimson full moon.',
     isDemonstration: true,

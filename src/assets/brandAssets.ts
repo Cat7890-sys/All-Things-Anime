@@ -44,7 +44,7 @@ export const ATA_BRAND_ASSETS: BrandAssetSpec[] = [
     label: 'Cosmic Portal Favicon',
     usage: 'Browser tab icon and bookmark badge.',
     variant: 'favicon',
-    assetPath: '/favicon.svg',
+    assetPath: `${import.meta.env.BASE_URL}favicon.svg`,
   },
   {
     id: 'loading-animation',
