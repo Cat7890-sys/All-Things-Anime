@@ -1,12 +1,28 @@
 import type {
+  CreatePostInput,
+  CreateReportInput,
   LoginAccountInput,
   RegisterAccountInput,
+  UpdatePostInput,
   UpdateProfileInput,
   ValidationErrors,
 } from '../types';
 
 export const USERNAME_REGEX = /^[a-zA-Z0-9_]{3,20}$/;
 export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export const POST_MAX_LENGTH = 1500;
+export const ANIME_TITLE_MAX_LENGTH = 100;
+export const SPOILER_LABEL_MAX_LENGTH = 80;
+export const COMMENT_MAX_LENGTH = 800;
+export const REPORT_DETAILS_MAX_LENGTH = 500;
+export const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+export const ALLOWED_IMAGE_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+]);
 
 const RESERVED_USERNAMES = new Set([
   'admin',
@@ -167,4 +183,89 @@ export function validateProfileEditForm(
   if (avatarErr) errors.avatarUrl = avatarErr;
 
   return errors;
+}
+
+// ==========================================
+// Build 03: Post, Image, Comment & Report Validation
+// ==========================================
+
+export function validatePostContent(content: string): string | null {
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return 'Post content cannot be empty.';
+  }
+  if (trimmed.length > POST_MAX_LENGTH) {
+    return `Post content must be ${POST_MAX_LENGTH} characters or fewer.`;
+  }
+  return null;
+}
+
+export function validateAnimeTitle(animeTitle: string): string | null {
+  if (animeTitle.trim().length > ANIME_TITLE_MAX_LENGTH) {
+    return `Anime title must be ${ANIME_TITLE_MAX_LENGTH} characters or fewer.`;
+  }
+  return null;
+}
+
+export function validateSpoilerLabel(spoilerLabel: string): string | null {
+  if (spoilerLabel.trim().length > SPOILER_LABEL_MAX_LENGTH) {
+    return `Spoiler label must be ${SPOILER_LABEL_MAX_LENGTH} characters or fewer.`;
+  }
+  return null;
+}
+
+export function validatePostImageFile(
+  file: { size: number; type: string; name?: string } | null | undefined
+): string | null {
+  if (!file) return null;
+  if (!ALLOWED_IMAGE_MIME_TYPES.has(file.type)) {
+    return 'Only JPEG, PNG, WebP, or GIF images are allowed.';
+  }
+  if (file.size > MAX_IMAGE_SIZE_BYTES) {
+    return 'Image size must be 5 MB or smaller.';
+  }
+  if (file.size <= 0) {
+    return 'Selected image file appears to be empty.';
+  }
+  return null;
+}
+
+export function validatePostForm(
+  input: CreatePostInput | UpdatePostInput
+): string | null {
+  const contentErr = validatePostContent(input.content);
+  if (contentErr) return contentErr;
+
+  const animeErr = validateAnimeTitle(input.animeTitle);
+  if (animeErr) return animeErr;
+
+  const spoilerErr = validateSpoilerLabel(input.spoilerLabel);
+  if (spoilerErr) return spoilerErr;
+
+  if ('imageFile' in input && input.imageFile) {
+    const imgErr = validatePostImageFile(input.imageFile);
+    if (imgErr) return imgErr;
+  }
+
+  return null;
+}
+
+export function validateCommentContent(content: string): string | null {
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return 'Comment cannot be empty.';
+  }
+  if (trimmed.length > COMMENT_MAX_LENGTH) {
+    return `Comment must be ${COMMENT_MAX_LENGTH} characters or fewer.`;
+  }
+  return null;
+}
+
+export function validateReportDetails(
+  input: Pick<CreateReportInput, 'details'>
+): string | null {
+  if (input.details.trim().length > REPORT_DETAILS_MAX_LENGTH) {
+    return `Report details must be ${REPORT_DETAILS_MAX_LENGTH} characters or fewer.`;
+  }
+  return null;
 }

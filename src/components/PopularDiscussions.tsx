@@ -192,12 +192,12 @@ export const PopularDiscussions: React.FC<PopularDiscussionsProps> = ({
                   className="h-4 w-4 text-[#EF3038]"
                   aria-hidden="true"
                 />
-                <span>Replies &amp; Voting Inactive in Build 01.1</span>
+                <span>Sample Showcase Entry</span>
               </div>
               <p className="mt-1 leading-relaxed">
-                This is original demonstration content illustrating ATA&apos;s
-                discussion layout and typography. Live commenting and upvotes
-                will connect once Firebase persistence is enabled.
+                This is original demonstration content illustrating curated
+                editorial previews. Use the live Community Feed above to publish
+                real posts, react, comment, and follow members.
               </p>
             </div>
           </div>

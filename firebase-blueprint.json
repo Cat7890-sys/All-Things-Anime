@@ -9,66 +9,55 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 128,
-          "pattern": "^[a-zA-Z0-9_\\-]+$",
-          "description": "Firebase Authentication UID."
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
         },
         "username": {
           "type": "string",
           "minLength": 3,
           "maxLength": 20,
-          "pattern": "^[a-zA-Z0-9_]{3,20}$",
-          "description": "Unique public ATA handle preserving user capitalization."
+          "pattern": "^[a-zA-Z0-9_]{3,20}$"
         },
         "usernameLowercase": {
           "type": "string",
           "minLength": 3,
           "maxLength": 20,
-          "pattern": "^[a-z0-9_]{3,20}$",
-          "description": "Lowercase normalized username used for uniqueness enforcement."
+          "pattern": "^[a-z0-9_]{3,20}$"
         },
         "displayName": {
           "type": "string",
           "minLength": 2,
-          "maxLength": 40,
-          "description": "Publicly visible display name."
+          "maxLength": 40
         },
         "email": {
           "type": "string",
           "format": "email",
           "minLength": 5,
-          "maxLength": 254,
-          "description": "Private account email address (never exposed publicly)."
+          "maxLength": 254
         },
         "bio": {
           "type": "string",
           "minLength": 0,
-          "maxLength": 280,
-          "description": "Short member biography."
+          "maxLength": 280
         },
         "avatarUrl": {
           "type": "string",
           "minLength": 0,
-          "maxLength": 500,
-          "description": "Optional HTTPS avatar image URL or empty string for default cosmic avatar."
+          "maxLength": 500
         },
         "emailVerified": {
-          "type": "boolean",
-          "description": "Mirrors Firebase Auth email verification status."
+          "type": "boolean"
         },
         "accountStatus": {
           "type": "string",
-          "enum": ["pending_verification", "active"],
-          "description": "Controlled account verification lifecycle state."
+          "enum": ["pending_verification", "active"]
         },
         "createdAt": {
           "type": "string",
-          "format": "date-time",
-          "description": "Server creation timestamp."
+          "format": "date-time"
         },
         "updatedAt": {
           "type": "string",
-          "format": "date-time",
-          "description": "Server last-updated timestamp."
+          "format": "date-time"
         }
       },
       "required": [
@@ -123,6 +112,12 @@
           "minLength": 0,
           "maxLength": 500
         },
+        "followersCount": {
+          "type": "integer"
+        },
+        "followingCount": {
+          "type": "integer"
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time"
@@ -166,6 +161,373 @@
         }
       },
       "required": ["uid", "username", "createdAt"]
+    },
+    "Post": {
+      "title": "Post",
+      "description": "Community anime discussion post with optional anime association, image attachment, and spoiler warning.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "authorId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "authorUsername": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20
+        },
+        "authorDisplayName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40
+        },
+        "authorAvatarUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1500
+        },
+        "animeTitle": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 100
+        },
+        "hasSpoiler": {
+          "type": "boolean"
+        },
+        "spoilerLabel": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 80
+        },
+        "imageUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 1000
+        },
+        "imagePath": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 300
+        },
+        "likeCount": {
+          "type": "integer"
+        },
+        "commentCount": {
+          "type": "integer"
+        },
+        "isEdited": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "authorId",
+        "authorUsername",
+        "authorDisplayName",
+        "authorAvatarUrl",
+        "content",
+        "animeTitle",
+        "hasSpoiler",
+        "spoilerLabel",
+        "imageUrl",
+        "imagePath",
+        "likeCount",
+        "commentCount",
+        "isEdited",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "PostReaction": {
+      "title": "PostReaction",
+      "description": "Per-user reaction document stored inside a post's reactions subcollection.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["like"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "type", "createdAt"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "Post comment or nested reply stored inside a post's comments subcollection.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "postId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "authorId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "authorUsername": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20
+        },
+        "authorDisplayName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40
+        },
+        "authorAvatarUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 800
+        },
+        "parentCommentId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 128
+        },
+        "replyToAuthorUsername": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 20
+        },
+        "hasSpoiler": {
+          "type": "boolean"
+        },
+        "isEdited": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "postId",
+        "authorId",
+        "authorUsername",
+        "authorDisplayName",
+        "authorAvatarUrl",
+        "content",
+        "parentCommentId",
+        "replyToAuthorUsername",
+        "hasSpoiler",
+        "isEdited",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "FollowRelationship": {
+      "title": "FollowRelationship",
+      "description": "Deterministic follow edge keyed by {followerId}__{followingId}.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 260
+        },
+        "followerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "followingId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "followerId", "followingId", "createdAt"]
+    },
+    "BlockRelationship": {
+      "title": "BlockRelationship",
+      "description": "Deterministic block edge keyed by {blockerId}__{blockedId}.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 260
+        },
+        "blockerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "blockedId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "blockedUsername": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "blockerId", "blockedId", "blockedUsername", "createdAt"]
+    },
+    "ModerationReport": {
+      "title": "ModerationReport",
+      "description": "Private moderation report for posts or comments. Write-only from authenticated verified clients.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "reporterId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "targetType": {
+          "type": "string",
+          "enum": ["post", "comment"]
+        },
+        "targetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "postId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "targetAuthorId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "reason": {
+          "type": "string",
+          "enum": ["spam", "harassment", "unmarked_spoiler", "hate_speech", "other"]
+        },
+        "details": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500
+        },
+        "status": {
+          "type": "string",
+          "enum": ["open"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "reporterId",
+        "targetType",
+        "targetId",
+        "postId",
+        "targetAuthorId",
+        "reason",
+        "details",
+        "status",
+        "createdAt"
+      ]
+    },
+    "PostRateLimit": {
+      "title": "PostRateLimit",
+      "description": "Per-user server timestamp guard enforcing cooldowns between post creations.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "lastPostAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "lastPostAt"]
+    },
+    "CommentRateLimit": {
+      "title": "CommentRateLimit",
+      "description": "Per-user server timestamp guard enforcing cooldowns between comment creations.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "lastCommentAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "lastCommentAt"]
     }
   },
   "firestore": {
@@ -179,13 +541,61 @@
       "schema": {
         "$ref": "#/entities/PublicProfile"
       },
-      "description": "Publicly readable non-PII user profiles."
+      "description": "Publicly readable non-PII user profiles with follower/following counters."
     },
     "/usernames/{usernameLowercase}": {
       "schema": {
         "$ref": "#/entities/UsernameReservation"
       },
       "description": "Unique username registry preventing duplicate handle claims."
+    },
+    "/posts/{postId}": {
+      "schema": {
+        "$ref": "#/entities/Post"
+      },
+      "description": "Community feed posts."
+    },
+    "/posts/{postId}/reactions/{userId}": {
+      "schema": {
+        "$ref": "#/entities/PostReaction"
+      },
+      "description": "Per-user reaction state keyed by UID to prevent duplicate likes."
+    },
+    "/posts/{postId}/comments/{commentId}": {
+      "schema": {
+        "$ref": "#/entities/Comment"
+      },
+      "description": "Comments and replies on a post."
+    },
+    "/follows/{followId}": {
+      "schema": {
+        "$ref": "#/entities/FollowRelationship"
+      },
+      "description": "Follow relationships keyed by {followerId}__{followingId}."
+    },
+    "/blocks/{blockId}": {
+      "schema": {
+        "$ref": "#/entities/BlockRelationship"
+      },
+      "description": "User block relationships keyed by {blockerId}__{blockedId}."
+    },
+    "/reports/{reportId}": {
+      "schema": {
+        "$ref": "#/entities/ModerationReport"
+      },
+      "description": "Non-public moderation reports for posts and comments."
+    },
+    "/postRateLimits/{userId}": {
+      "schema": {
+        "$ref": "#/entities/PostRateLimit"
+      },
+      "description": "Server-time rate limiting checkpoints for post spam prevention."
+    },
+    "/commentRateLimits/{userId}": {
+      "schema": {
+        "$ref": "#/entities/CommentRateLimit"
+      },
+      "description": "Server-time rate limiting checkpoints for comment spam prevention."
     }
   }
 }

@@ -69,6 +69,10 @@ export async function getPublicProfile(
       displayName: String(data.displayName),
       bio: typeof data.bio === 'string' ? data.bio : '',
       avatarUrl: typeof data.avatarUrl === 'string' ? data.avatarUrl : '',
+      followersCount:
+        typeof data.followersCount === 'number' ? data.followersCount : 0,
+      followingCount:
+        typeof data.followingCount === 'number' ? data.followingCount : 0,
       createdAt: toDateOrNull(data.createdAt),
       updatedAt: toDateOrNull(data.updatedAt),
     };

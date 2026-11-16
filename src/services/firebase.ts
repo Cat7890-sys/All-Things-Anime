@@ -6,6 +6,7 @@ import {
   getFirestore,
   type Firestore,
 } from 'firebase/firestore';
+import { getStorage, type FirebaseStorage } from 'firebase/storage';
 import appletConfig from '../../firebase-applet-config.json';
 
 interface FirebaseWebConfig {
@@ -58,9 +59,12 @@ export const isFirebaseConfigured = Boolean(
     resolvedConfig.appId
 );
 
+export const isStorageConfigured = Boolean(resolvedConfig.storageBucket);
+
 export const firebaseProjectMeta = {
   projectId: resolvedConfig.projectId,
   firestoreDatabaseId: resolvedConfig.firestoreDatabaseId || '(default)',
+  storageBucket: resolvedConfig.storageBucket || '',
 } as const;
 
 export const firebaseApp: FirebaseApp = initializeApp(resolvedConfig);
@@ -68,6 +72,9 @@ export const auth: Auth = getAuth(firebaseApp);
 export const db: Firestore = resolvedConfig.firestoreDatabaseId
   ? getFirestore(firebaseApp, resolvedConfig.firestoreDatabaseId)
   : getFirestore(firebaseApp);
+export const storage: FirebaseStorage | null = resolvedConfig.storageBucket
+  ? getStorage(firebaseApp)
+  : null;
 
 export enum OperationType {
   CREATE = 'create',

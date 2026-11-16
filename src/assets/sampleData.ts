@@ -11,8 +11,8 @@ export const ATA_BRAND = {
   shortName: 'ATA',
   fullName: 'ALL THINGS ANIME',
   tagline: 'One Universe. Infinite Opinions.',
-  foundationLabel: 'Build 02 · Independent Accounts',
-  demonstrationNotice: 'Sample Demonstration Content — No live user feed connected yet.',
+  foundationLabel: 'Build 03 · Social Feed & Interactions',
+  demonstrationNotice: 'Sample Showcase Only — Demonstration entries below are separate from live community posts.',
 } as const;
 
 export const WELCOME_BANNER_IMAGE =

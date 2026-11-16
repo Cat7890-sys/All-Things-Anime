@@ -54,9 +54,9 @@ export const WelcomeSection: React.FC<WelcomeSectionProps> = ({
               through dedicated communities.
             </p>
             <p className="mt-2 text-xs text-[#52576B] dark:text-[#A7A9B8]">
-              Interface Preview <span aria-hidden="true">·</span> Feeds,
-              discussions, and series entries below use original demonstration
-              content while backend services remain unlinked.
+              Live Social Feed <span aria-hidden="true">·</span> Share anime
+              opinions, follow members, and join threads below. Showcase cards
+              further down are clearly marked as demonstration previews.
             </p>
           </div>
 
@@ -66,7 +66,7 @@ export const WelcomeSection: React.FC<WelcomeSectionProps> = ({
               onClick={onExploreDiscussions}
               className="inline-flex items-center justify-center gap-2 px-4 py-2.5 min-h-[44px] text-sm font-semibold text-white bg-[#EF3038] border border-[#B92335] rounded-xl hover:bg-[#B92335] transition-colors duration-150 whitespace-nowrap"
             >
-              <span>Sample Discussions</span>
+              <span>Community Feed</span>
               <ArrowDownRight className="h-4 w-4" aria-hidden="true" />
             </button>
 

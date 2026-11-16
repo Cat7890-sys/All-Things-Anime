@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   AlertCircle,
+  Ban,
   CheckCircle2,
   Edit3,
+  FileText,
   Lock,
   LogOut,
   MailCheck,
@@ -11,12 +13,34 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { AtaLoadingSpinner } from '../components/AtaLoadingSpinner';
+import { PostCard } from '../components/social/PostCard';
+import { PostDetailModal } from '../components/social/PostDetailModal';
+import { PublicProfileModal } from '../components/social/PublicProfileModal';
+import { ReportModal } from '../components/social/ReportModal';
 import { UserAvatar } from '../components/UserAvatar';
 import { useAuth } from '../hooks/useAuth';
-import { updateOwnProfile } from '../services/userProfileService';
+import {
+  fetchPostsByAuthor,
+  getUserLikedPostMap,
+  togglePostLike,
+} from '../services/postService';
+import {
+  blockUser,
+  fetchBlockedUsers,
+  unblockUser,
+} from '../services/socialGraphService';
+import {
+  getPublicProfile,
+  updateOwnProfile,
+} from '../services/userProfileService';
 import { validateProfileEditForm } from '../services/validation';
 import type {
+  AtaComment,
+  AtaPost,
+  AtaPublicProfile,
   AuthViewMode,
+  BlockedUserRecord,
+  UpdatePostInput,
   UpdateProfileInput,
   ValidationErrors,
 } from '../types';
@@ -59,6 +83,56 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const [isCheckingVerification, setIsCheckingVerification] = useState(false);
   const [isResendingEmail, setIsResendingEmail] = useState(false);
 
+  // Build 03 Social Profile Data
+  const [publicSocialProfile, setPublicSocialProfile] =
+    useState<AtaPublicProfile | null>(null);
+  const [ownPosts, setOwnPosts] = useState<AtaPost[]>([]);
+  const [isLoadingOwnPosts, setIsLoadingOwnPosts] = useState(false);
+  const [ownPostsError, setOwnPostsError] = useState<string | null>(null);
+  const [likedPostMap, setLikedPostMap] = useState<Record<string, boolean>>({});
+  const [blockedUsers, setBlockedUsers] = useState<BlockedUserRecord[]>([]);
+  const [isLoadingBlocked, setIsLoadingBlocked] = useState(false);
+  const [unblockingId, setUnblockingId] = useState<string | null>(null);
+  const [detailPostId, setDetailPostId] = useState<string | null>(null);
+  const [inspectProfileUid, setInspectProfileUid] = useState<string | null>(
+    null
+  );
+  const [reportCommentTarget, setReportCommentTarget] =
+    useState<AtaComment | null>(null);
+
+  const loadSocialProfileData = useCallback(async (uid: string) => {
+    setIsLoadingOwnPosts(true);
+    setIsLoadingBlocked(true);
+    setOwnPostsError(null);
+    try {
+      const [pubProf, postsRes, blockedList] = await Promise.all([
+        getPublicProfile(uid),
+        fetchPostsByAuthor(uid, 15),
+        fetchBlockedUsers(uid),
+      ]);
+      setPublicSocialProfile(pubProf);
+      setOwnPosts(postsRes.posts);
+      setBlockedUsers(blockedList);
+
+      if (postsRes.posts.length > 0) {
+        const likes = await getUserLikedPostMap(
+          postsRes.posts.map((p) => p.id),
+          uid
+        );
+        setLikedPostMap(likes);
+      }
+    } catch (err) {
+      setOwnPostsError(
+        err instanceof Error
+          ? err.message
+          : 'Unable to load your social activity.'
+      );
+    } finally {
+      setIsLoadingOwnPosts(false);
+      setIsLoadingBlocked(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (profile) {
       setEditForm({
@@ -73,7 +147,11 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         avatarUrl: '',
       });
     }
-  }, [profile, firebaseUser]);
+
+    if (firebaseUser) {
+      void loadSocialProfileData(firebaseUser.uid);
+    }
+  }, [profile, firebaseUser, loadSocialProfileData]);
 
   if (isLoadingAuth) {
     return (
@@ -314,6 +392,20 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                   @{username} <span aria-hidden="true">·</span> Joined{' '}
                   {memberSince}
                 </p>
+                <div className="mt-2 flex items-center gap-4 text-xs text-[#A7A9B8] tabular-nums">
+                  <span>
+                    <strong className="font-display-space text-white">
+                      {publicSocialProfile?.followersCount ?? 0}
+                    </strong>{' '}
+                    Followers
+                  </span>
+                  <span>
+                    <strong className="font-display-space text-white">
+                      {publicSocialProfile?.followingCount ?? 0}
+                    </strong>{' '}
+                    Following
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -517,6 +609,242 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           </div>
         </form>
       </section>
+
+      {/* My Posts */}
+      <section
+        aria-labelledby="ata-my-posts-heading"
+        className="bg-white dark:bg-[#171923] border border-[#D4D7E2] dark:border-[#303342] rounded-2xl p-6 space-y-4"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#D4D7E2] dark:border-[#303342] pb-3.5">
+          <div className="flex items-center gap-2">
+            <FileText className="h-4 w-4 text-[#EF3038]" aria-hidden="true" />
+            <h2
+              id="ata-my-posts-heading"
+              className="font-display-space font-bold text-xl text-[#090B14] dark:text-white"
+            >
+              My Posts ({ownPosts.length})
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={() => void loadSocialProfileData(firebaseUser.uid)}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#52576B] dark:text-[#A7A9B8] hover:text-[#EF3038]"
+          >
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>Refresh</span>
+          </button>
+        </div>
+
+        {isLoadingOwnPosts ? (
+          <div className="py-6 flex items-center justify-center gap-2 text-xs text-[#52576B] dark:text-[#A7A9B8]">
+            <AtaLoadingSpinner size="sm" label="Loading your posts" />
+            <span>Loading your posts...</span>
+          </div>
+        ) : ownPostsError ? (
+          <div
+            role="alert"
+            className="rounded-xl bg-[#EF3038]/10 border border-[#EF3038] p-3.5 text-xs text-[#090B14] dark:text-white"
+          >
+            {ownPostsError}
+          </div>
+        ) : ownPosts.length === 0 ? (
+          <p className="text-xs sm:text-sm text-[#52576B] dark:text-[#A7A9B8] py-3">
+            You haven&apos;t published any posts yet. Head to the Home Feed to
+            share your first anime opinion.
+          </p>
+        ) : (
+          <div className="space-y-4">
+            {ownPosts.map((post) => (
+              <PostCard
+                key={post.id}
+                post={post}
+                isLiked={Boolean(likedPostMap[post.id])}
+                onToggleLike={async (target) => {
+                  const res = await togglePostLike(target.id, firebaseUser.uid);
+                  setLikedPostMap((prev) => ({
+                    ...prev,
+                    [target.id]: res.liked,
+                  }));
+                  setOwnPosts((prev) =>
+                    prev.map((p) =>
+                      p.id === target.id ? { ...p, likeCount: res.likeCount } : p
+                    )
+                  );
+                }}
+                onOpenDetail={(p) => setDetailPostId(p.id)}
+                onOpenAuthorProfile={(uid) => setInspectProfileUid(uid)}
+                onPostUpdated={(postId, updated: UpdatePostInput) => {
+                  setOwnPosts((prev) =>
+                    prev.map((p) =>
+                      p.id === postId
+                        ? {
+                            ...p,
+                            content: updated.content.trim(),
+                            animeTitle: updated.animeTitle.trim(),
+                            hasSpoiler: updated.hasSpoiler,
+                            spoilerLabel: updated.hasSpoiler
+                              ? updated.spoilerLabel.trim()
+                              : '',
+                            isEdited: true,
+                          }
+                        : p
+                    )
+                  );
+                }}
+                onPostDeleted={(postId) => {
+                  setOwnPosts((prev) => prev.filter((p) => p.id !== postId));
+                }}
+                onRequestReport={() => {}}
+                onBlockAuthor={async () => {}}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Blocked Accounts Management */}
+      <section
+        aria-labelledby="ata-blocked-accounts-heading"
+        className="bg-white dark:bg-[#171923] border border-[#D4D7E2] dark:border-[#303342] rounded-2xl p-6 space-y-4"
+      >
+        <div className="flex items-center gap-2 border-b border-[#D4D7E2] dark:border-[#303342] pb-3.5">
+          <Ban className="h-4 w-4 text-[#EF3038]" aria-hidden="true" />
+          <h2
+            id="ata-blocked-accounts-heading"
+            className="font-display-space font-bold text-xl text-[#090B14] dark:text-white"
+          >
+            Blocked Accounts ({blockedUsers.length})
+          </h2>
+        </div>
+
+        {isLoadingBlocked ? (
+          <p className="text-xs text-[#52576B] dark:text-[#A7A9B8]">
+            Loading block list...
+          </p>
+        ) : blockedUsers.length === 0 ? (
+          <p className="text-xs sm:text-sm text-[#52576B] dark:text-[#A7A9B8]">
+            You haven&apos;t blocked any accounts. Blocked members&apos; posts
+            and comments are hidden from your feed.
+          </p>
+        ) : (
+          <ul className="space-y-2.5">
+            {blockedUsers.map((entry) => (
+              <li
+                key={entry.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] px-4 py-3"
+              >
+                <div>
+                  <p className="text-xs sm:text-sm font-semibold text-[#090B14] dark:text-white">
+                    @{entry.blockedUsername}
+                  </p>
+                  <p className="text-[11px] text-[#52576B] dark:text-[#A7A9B8]">
+                    Posts and comments hidden
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={!isVerified || unblockingId === entry.blockedId}
+                  onClick={async () => {
+                    setUnblockingId(entry.blockedId);
+                    try {
+                      await unblockUser(firebaseUser.uid, entry.blockedId);
+                      setBlockedUsers((prev) =>
+                        prev.filter((b) => b.blockedId !== entry.blockedId)
+                      );
+                    } finally {
+                      setUnblockingId(null);
+                    }
+                  }}
+                  className="px-3.5 py-1.5 min-h-[38px] text-xs font-semibold text-[#090B14] dark:text-white bg-white dark:bg-[#171923] border border-[#D4D7E2] dark:border-[#303342] rounded-xl hover:border-[#EF3038] disabled:opacity-50"
+                >
+                  {unblockingId === entry.blockedId ? 'Unblocking...' : 'Unblock'}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <PostDetailModal
+        post={ownPosts.find((p) => p.id === detailPostId) || null}
+        isLiked={
+          detailPostId ? Boolean(likedPostMap[detailPostId]) : false
+        }
+        blockedUserIds={new Set(blockedUsers.map((b) => b.blockedId))}
+        onClose={() => setDetailPostId(null)}
+        onToggleLike={async (target) => {
+          const res = await togglePostLike(target.id, firebaseUser.uid);
+          setLikedPostMap((prev) => ({
+            ...prev,
+            [target.id]: res.liked,
+          }));
+          setOwnPosts((prev) =>
+            prev.map((p) =>
+              p.id === target.id ? { ...p, likeCount: res.likeCount } : p
+            )
+          );
+        }}
+        onOpenAuthorProfile={(uid) => setInspectProfileUid(uid)}
+        onPostUpdated={(postId, updated) => {
+          setOwnPosts((prev) =>
+            prev.map((p) =>
+              p.id === postId
+                ? {
+                    ...p,
+                    content: updated.content.trim(),
+                    animeTitle: updated.animeTitle.trim(),
+                    hasSpoiler: updated.hasSpoiler,
+                    spoilerLabel: updated.hasSpoiler
+                      ? updated.spoilerLabel.trim()
+                      : '',
+                    isEdited: true,
+                  }
+                : p
+            )
+          );
+        }}
+        onPostDeleted={(postId) => {
+          setOwnPosts((prev) => prev.filter((p) => p.id !== postId));
+        }}
+        onRequestReportPost={() => {}}
+        onRequestReportComment={(c) => setReportCommentTarget(c)}
+        onBlockAuthor={async (authorId, authorUsername) => {
+          await blockUser(firebaseUser.uid, authorId, authorUsername);
+          void loadSocialProfileData(firebaseUser.uid);
+        }}
+        onCommentCountSync={(postId, count) => {
+          setOwnPosts((prev) =>
+            prev.map((p) =>
+              p.id === postId ? { ...p, commentCount: count } : p
+            )
+          );
+        }}
+      />
+
+      <PublicProfileModal
+        targetUserId={inspectProfileUid}
+        onClose={() => setInspectProfileUid(null)}
+        onFollowStateChanged={() => {
+          void loadSocialProfileData(firebaseUser.uid);
+        }}
+        onBlockStateChanged={() => {
+          void loadSocialProfileData(firebaseUser.uid);
+        }}
+      />
+
+      {reportCommentTarget && (
+        <ReportModal
+          isOpen
+          targetType="comment"
+          targetId={reportCommentTarget.id}
+          postId={reportCommentTarget.postId}
+          targetAuthorId={reportCommentTarget.authorId}
+          targetAuthorUsername={reportCommentTarget.authorUsername}
+          reporterId={firebaseUser.uid}
+          onClose={() => setReportCommentTarget(null)}
+        />
+      )}
     </div>
   );
 };

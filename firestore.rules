@@ -31,6 +31,10 @@ service cloud.firestore {
       return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isValidPairId(id) {
+      return id is string && id.size() >= 3 && id.size() <= 260 && id.matches('^[a-zA-Z0-9_\\-]+__[a-zA-Z0-9_\\-]+$');
+    }
+
     function isValidUsernameFormat(username) {
       return username is string && username.size() >= 3 && username.size() <= 20 && username.matches('^[a-zA-Z0-9_]{3,20}$');
     }
@@ -39,8 +43,13 @@ service cloud.firestore {
       return usernameLower is string && usernameLower.size() >= 3 && usernameLower.size() <= 20 && usernameLower.matches('^[a-z0-9_]{3,20}$');
     }
 
-    function isValidAvatarUrl(url) {
-      return url is string && url.size() <= 500 && (url == '' || url.matches('^https://.+'));
+    function isValidOptionalHttpsUrl(url, maxLen) {
+      return url is string && url.size() <= maxLen && (url == '' || url.matches('^https://.+'));
+    }
+
+    function isBlockedBetween(uidA, uidB) {
+      return exists(/databases/$(database)/documents/blocks/$(uidA + '__' + uidB))
+        || exists(/databases/$(database)/documents/blocks/$(uidB + '__' + uidA));
     }
 
     function isValidUserAccount(data, userId) {
@@ -83,7 +92,7 @@ service cloud.firestore {
         && data.email.size() <= 254
         && data.bio is string
         && data.bio.size() <= 280
-        && isValidAvatarUrl(data.avatarUrl)
+        && isValidOptionalHttpsUrl(data.avatarUrl, 500)
         && data.emailVerified is bool
         && data.accountStatus in ['pending_verification', 'active']
         && data.createdAt is timestamp
@@ -108,6 +117,8 @@ service cloud.firestore {
           'displayName',
           'bio',
           'avatarUrl',
+          'followersCount',
+          'followingCount',
           'createdAt',
           'updatedAt'
         ])
@@ -121,7 +132,9 @@ service cloud.firestore {
         && data.displayName.size() <= 40
         && data.bio is string
         && data.bio.size() <= 280
-        && isValidAvatarUrl(data.avatarUrl)
+        && isValidOptionalHttpsUrl(data.avatarUrl, 500)
+        && (!('followersCount' in data) || (data.followersCount is int && data.followersCount >= 0))
+        && (!('followingCount' in data) || (data.followingCount is int && data.followingCount >= 0))
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -133,6 +146,200 @@ service cloud.firestore {
         && isValidId(data.uid)
         && isValidUsernameFormat(data.username)
         && data.username.lower() == usernameLower
+        && data.createdAt is timestamp;
+    }
+
+    function isValidPost(data, postId) {
+      return data.keys().hasAll([
+          'id',
+          'authorId',
+          'authorUsername',
+          'authorDisplayName',
+          'authorAvatarUrl',
+          'content',
+          'animeTitle',
+          'hasSpoiler',
+          'spoilerLabel',
+          'imageUrl',
+          'imagePath',
+          'likeCount',
+          'commentCount',
+          'isEdited',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'authorId',
+          'authorUsername',
+          'authorDisplayName',
+          'authorAvatarUrl',
+          'content',
+          'animeTitle',
+          'hasSpoiler',
+          'spoilerLabel',
+          'imageUrl',
+          'imagePath',
+          'likeCount',
+          'commentCount',
+          'isEdited',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.id is string
+        && data.id == postId
+        && data.authorId is string
+        && isValidId(data.authorId)
+        && isValidUsernameFormat(data.authorUsername)
+        && data.authorDisplayName is string
+        && data.authorDisplayName.size() >= 2
+        && data.authorDisplayName.size() <= 40
+        && isValidOptionalHttpsUrl(data.authorAvatarUrl, 500)
+        && data.content is string
+        && data.content.size() >= 1
+        && data.content.size() <= 1500
+        && data.animeTitle is string
+        && data.animeTitle.size() <= 100
+        && data.hasSpoiler is bool
+        && data.spoilerLabel is string
+        && data.spoilerLabel.size() <= 80
+        && isValidOptionalHttpsUrl(data.imageUrl, 1000)
+        && data.imagePath is string
+        && data.imagePath.size() <= 300
+        && data.likeCount is int
+        && data.likeCount >= 0
+        && data.commentCount is int
+        && data.commentCount >= 0
+        && data.isEdited is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidComment(data, postId, commentId) {
+      return data.keys().hasAll([
+          'id',
+          'postId',
+          'authorId',
+          'authorUsername',
+          'authorDisplayName',
+          'authorAvatarUrl',
+          'content',
+          'parentCommentId',
+          'replyToAuthorUsername',
+          'hasSpoiler',
+          'isEdited',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'postId',
+          'authorId',
+          'authorUsername',
+          'authorDisplayName',
+          'authorAvatarUrl',
+          'content',
+          'parentCommentId',
+          'replyToAuthorUsername',
+          'hasSpoiler',
+          'isEdited',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.id is string
+        && data.id == commentId
+        && data.postId is string
+        && data.postId == postId
+        && data.authorId is string
+        && isValidId(data.authorId)
+        && isValidUsernameFormat(data.authorUsername)
+        && data.authorDisplayName is string
+        && data.authorDisplayName.size() >= 2
+        && data.authorDisplayName.size() <= 40
+        && isValidOptionalHttpsUrl(data.authorAvatarUrl, 500)
+        && data.content is string
+        && data.content.size() >= 1
+        && data.content.size() <= 800
+        && data.parentCommentId is string
+        && data.parentCommentId.size() <= 128
+        && data.replyToAuthorUsername is string
+        && data.replyToAuthorUsername.size() <= 20
+        && data.hasSpoiler is bool
+        && data.isEdited is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidReaction(data) {
+      return data.keys().hasAll(['uid', 'type', 'createdAt'])
+        && data.keys().hasOnly(['uid', 'type', 'createdAt'])
+        && data.uid is string
+        && isValidId(data.uid)
+        && data.type == 'like'
+        && data.createdAt is timestamp;
+    }
+
+    function isValidFollow(data, followId) {
+      return data.keys().hasAll(['id', 'followerId', 'followingId', 'createdAt'])
+        && data.keys().hasOnly(['id', 'followerId', 'followingId', 'createdAt'])
+        && data.id is string
+        && data.id == followId
+        && isValidId(data.followerId)
+        && isValidId(data.followingId)
+        && data.followerId != data.followingId
+        && followId == data.followerId + '__' + data.followingId
+        && data.createdAt is timestamp;
+    }
+
+    function isValidBlock(data, blockId) {
+      return data.keys().hasAll(['id', 'blockerId', 'blockedId', 'blockedUsername', 'createdAt'])
+        && data.keys().hasOnly(['id', 'blockerId', 'blockedId', 'blockedUsername', 'createdAt'])
+        && data.id is string
+        && data.id == blockId
+        && isValidId(data.blockerId)
+        && isValidId(data.blockedId)
+        && data.blockerId != data.blockedId
+        && blockId == data.blockerId + '__' + data.blockedId
+        && isValidUsernameFormat(data.blockedUsername)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidReport(data, reportId) {
+      return data.keys().hasAll([
+          'id',
+          'reporterId',
+          'targetType',
+          'targetId',
+          'postId',
+          'targetAuthorId',
+          'reason',
+          'details',
+          'status',
+          'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'reporterId',
+          'targetType',
+          'targetId',
+          'postId',
+          'targetAuthorId',
+          'reason',
+          'details',
+          'status',
+          'createdAt'
+        ])
+        && data.id is string
+        && data.id == reportId
+        && isValidId(data.reporterId)
+        && data.targetType in ['post', 'comment']
+        && isValidId(data.targetId)
+        && isValidId(data.postId)
+        && isValidId(data.targetAuthorId)
+        && data.reason in ['spam', 'harassment', 'unmarked_spoiler', 'hate_speech', 'other']
+        && data.details is string
+        && data.details.size() <= 500
+        && data.status == 'open'
         && data.createdAt is timestamp;
     }
 
@@ -163,7 +370,6 @@ service cloud.firestore {
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
         && (
-          // Action 1: Sync verified activation once Firebase Auth confirms email verification
           (
             existing().emailVerified == false
             && incoming().emailVerified == true
@@ -172,7 +378,6 @@ service cloud.firestore {
             && incoming().diff(existing()).affectedKeys().hasOnly(['emailVerified', 'accountStatus', 'updatedAt'])
           )
           ||
-          // Action 2: Edit permitted public profile fields (verified owner only)
           (
             existing().emailVerified == true
             && existing().accountStatus == 'active'
@@ -185,7 +390,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Public non-PII profile document (never contains email or accountStatus)
+    // Public non-PII profile document
     match /publicProfiles/{userId} {
       allow get: if isValidId(userId);
       allow list: if false;
@@ -199,15 +404,53 @@ service cloud.firestore {
         && existsAfter(/databases/$(database)/documents/usernames/$(incoming().usernameLowercase));
 
       allow update: if isValidId(userId)
-        && isOwner(userId)
         && isEmailVerified()
         && isValidPublicProfile(incoming(), userId)
         && incoming().uid == existing().uid
         && incoming().username == existing().username
         && incoming().usernameLowercase == existing().usernameLowercase
         && incoming().createdAt == existing().createdAt
-        && incoming().updatedAt == request.time
-        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'bio', 'avatarUrl', 'updatedAt']);
+        && (
+          (
+            isOwner(userId)
+            && incoming().updatedAt == request.time
+            && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'bio', 'avatarUrl', 'updatedAt'])
+          )
+          ||
+          (
+            !isOwner(userId)
+            && incoming().updatedAt == existing().updatedAt
+            && incoming().diff(existing()).affectedKeys().hasOnly(['followersCount'])
+            && (
+              (
+                !exists(/databases/$(database)/documents/follows/$(request.auth.uid + '__' + userId))
+                && existsAfter(/databases/$(database)/documents/follows/$(request.auth.uid + '__' + userId))
+                && (
+                  ('followersCount' in existing() && incoming().followersCount == existing().followersCount + 1)
+                  || (!('followersCount' in existing()) && incoming().followersCount == 1)
+                )
+              )
+              ||
+              (
+                exists(/databases/$(database)/documents/follows/$(request.auth.uid + '__' + userId))
+                && !existsAfter(/databases/$(database)/documents/follows/$(request.auth.uid + '__' + userId))
+                && 'followersCount' in existing()
+                && existing().followersCount >= 1
+                && incoming().followersCount == existing().followersCount - 1
+              )
+            )
+          )
+          ||
+          (
+            isOwner(userId)
+            && incoming().updatedAt == existing().updatedAt
+            && incoming().diff(existing()).affectedKeys().hasOnly(['followingCount'])
+            && (
+              ('followingCount' in existing() && (incoming().followingCount == existing().followingCount + 1 || (existing().followingCount >= 1 && incoming().followingCount == existing().followingCount - 1)))
+              || (!('followingCount' in existing()) && incoming().followingCount == 1)
+            )
+          )
+        );
 
       allow delete: if false;
     }
@@ -227,6 +470,236 @@ service cloud.firestore {
         && existsAfter(/databases/$(database)/documents/publicProfiles/$(request.auth.uid));
 
       allow update, delete: if false;
+    }
+
+    // Community Posts
+    match /posts/{postId} {
+      allow get: if isValidId(postId);
+      allow list: if true;
+
+      allow create: if isValidId(postId)
+        && isEmailVerified()
+        && isValidPost(incoming(), postId)
+        && incoming().authorId == request.auth.uid
+        && incoming().likeCount == 0
+        && incoming().commentCount == 0
+        && incoming().isEdited == false
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/publicProfiles/$(request.auth.uid))
+        && existsAfter(/databases/$(database)/documents/postRateLimits/$(request.auth.uid))
+        && (
+          !exists(/databases/$(database)/documents/postRateLimits/$(request.auth.uid))
+          || request.time >= get(/databases/$(database)/documents/postRateLimits/$(request.auth.uid)).data.lastPostAt + duration.value(10, 's')
+        );
+
+      allow update: if isValidId(postId)
+        && isEmailVerified()
+        && isValidPost(incoming(), postId)
+        && incoming().id == existing().id
+        && incoming().authorId == existing().authorId
+        && incoming().authorUsername == existing().authorUsername
+        && incoming().createdAt == existing().createdAt
+        && (
+          (
+            isOwner(existing().authorId)
+            && incoming().likeCount == existing().likeCount
+            && incoming().commentCount == existing().commentCount
+            && incoming().isEdited == true
+            && incoming().updatedAt == request.time
+            && incoming().diff(existing()).affectedKeys().hasOnly(['content', 'animeTitle', 'hasSpoiler', 'spoilerLabel', 'isEdited', 'updatedAt'])
+          )
+          ||
+          (
+            !isBlockedBetween(existing().authorId, request.auth.uid)
+            && incoming().updatedAt == existing().updatedAt
+            && incoming().diff(existing()).affectedKeys().hasOnly(['likeCount'])
+            && (
+              (
+                !exists(/databases/$(database)/documents/posts/$(postId)/reactions/$(request.auth.uid))
+                && existsAfter(/databases/$(database)/documents/posts/$(postId)/reactions/$(request.auth.uid))
+                && incoming().likeCount == existing().likeCount + 1
+              )
+              ||
+              (
+                exists(/databases/$(database)/documents/posts/$(postId)/reactions/$(request.auth.uid))
+                && !existsAfter(/databases/$(database)/documents/posts/$(postId)/reactions/$(request.auth.uid))
+                && existing().likeCount >= 1
+                && incoming().likeCount == existing().likeCount - 1
+              )
+            )
+          )
+          ||
+          (
+            !isBlockedBetween(existing().authorId, request.auth.uid)
+            && incoming().updatedAt == existing().updatedAt
+            && incoming().diff(existing()).affectedKeys().hasOnly(['commentCount'])
+            && (
+              incoming().commentCount == existing().commentCount + 1
+              || (existing().commentCount >= 1 && incoming().commentCount == existing().commentCount - 1)
+            )
+          )
+        );
+
+      allow delete: if isValidId(postId)
+        && isEmailVerified()
+        && isOwner(existing().authorId);
+
+      // Scalable per-user reactions subcollection
+      match /reactions/{userId} {
+        allow get: if isValidId(postId) && isValidId(userId) && isOwner(userId);
+        allow list: if false;
+
+        allow create: if isValidId(postId)
+          && isValidId(userId)
+          && isOwner(userId)
+          && isEmailVerified()
+          && isValidReaction(incoming())
+          && incoming().uid == request.auth.uid
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/posts/$(postId))
+          && !isBlockedBetween(get(/databases/$(database)/documents/posts/$(postId)).data.authorId, request.auth.uid);
+
+        allow delete: if isValidId(postId)
+          && isValidId(userId)
+          && isOwner(userId)
+          && isEmailVerified();
+
+        allow update: if false;
+      }
+
+      // Post comments & replies subcollection
+      match /comments/{commentId} {
+        allow get: if isValidId(postId) && isValidId(commentId);
+        allow list: if isValidId(postId);
+
+        allow create: if isValidId(postId)
+          && isValidId(commentId)
+          && isEmailVerified()
+          && isValidComment(incoming(), postId, commentId)
+          && incoming().authorId == request.auth.uid
+          && incoming().isEdited == false
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/posts/$(postId))
+          && !isBlockedBetween(get(/databases/$(database)/documents/posts/$(postId)).data.authorId, request.auth.uid)
+          && existsAfter(/databases/$(database)/documents/commentRateLimits/$(request.auth.uid))
+          && (
+            !exists(/databases/$(database)/documents/commentRateLimits/$(request.auth.uid))
+            || request.time >= get(/databases/$(database)/documents/commentRateLimits/$(request.auth.uid)).data.lastCommentAt + duration.value(4, 's')
+          );
+
+        allow update: if isValidId(postId)
+          && isValidId(commentId)
+          && isEmailVerified()
+          && isOwner(existing().authorId)
+          && isValidComment(incoming(), postId, commentId)
+          && incoming().id == existing().id
+          && incoming().postId == existing().postId
+          && incoming().authorId == existing().authorId
+          && incoming().authorUsername == existing().authorUsername
+          && incoming().parentCommentId == existing().parentCommentId
+          && incoming().replyToAuthorUsername == existing().replyToAuthorUsername
+          && incoming().createdAt == existing().createdAt
+          && incoming().isEdited == true
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['content', 'hasSpoiler', 'isEdited', 'updatedAt']);
+
+        allow delete: if isValidId(postId)
+          && isValidId(commentId)
+          && isEmailVerified()
+          && isOwner(existing().authorId);
+      }
+    }
+
+    // Deterministic Follow Relationships ({followerId}__{followingId})
+    match /follows/{followId} {
+      allow get: if isValidPairId(followId)
+        && isSignedIn()
+        && (resource == null || existing().followerId == request.auth.uid || existing().followingId == request.auth.uid);
+
+      allow list: if isSignedIn()
+        && (existing().followerId == request.auth.uid || existing().followingId == request.auth.uid);
+
+      allow create: if isValidPairId(followId)
+        && isEmailVerified()
+        && isValidFollow(incoming(), followId)
+        && incoming().followerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && exists(/databases/$(database)/documents/publicProfiles/$(incoming().followingId))
+        && !isBlockedBetween(request.auth.uid, incoming().followingId);
+
+      allow delete: if isValidPairId(followId)
+        && isEmailVerified()
+        && existing().followerId == request.auth.uid;
+
+      allow update: if false;
+    }
+
+    // Deterministic Block Relationships ({blockerId}__{blockedId})
+    match /blocks/{blockId} {
+      allow get: if isValidPairId(blockId)
+        && isSignedIn()
+        && (resource == null || existing().blockerId == request.auth.uid || existing().blockedId == request.auth.uid);
+
+      allow list: if isSignedIn()
+        && existing().blockerId == request.auth.uid;
+
+      allow create: if isValidPairId(blockId)
+        && isEmailVerified()
+        && isValidBlock(incoming(), blockId)
+        && incoming().blockerId == request.auth.uid
+        && incoming().createdAt == request.time;
+
+      allow delete: if isValidPairId(blockId)
+        && isEmailVerified()
+        && existing().blockerId == request.auth.uid;
+
+      allow update: if false;
+    }
+
+    // Private Moderation Reports (never publicly readable)
+    match /reports/{reportId} {
+      allow read: if false;
+
+      allow create: if isValidId(reportId)
+        && isEmailVerified()
+        && isValidReport(incoming(), reportId)
+        && incoming().reporterId == request.auth.uid
+        && incoming().createdAt == request.time;
+
+      allow update, delete: if false;
+    }
+
+    // Per-user server-timestamp rate limits
+    match /postRateLimits/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+
+      allow create, update: if isValidId(userId)
+        && isOwner(userId)
+        && isEmailVerified()
+        && incoming().keys().hasAll(['uid', 'lastPostAt'])
+        && incoming().keys().hasOnly(['uid', 'lastPostAt'])
+        && incoming().uid == userId
+        && incoming().lastPostAt == request.time;
+
+      allow delete: if false;
+    }
+
+    match /commentRateLimits/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+
+      allow create, update: if isValidId(userId)
+        && isOwner(userId)
+        && isEmailVerified()
+        && incoming().keys().hasAll(['uid', 'lastCommentAt'])
+        && incoming().keys().hasOnly(['uid', 'lastCommentAt'])
+        && incoming().uid == userId
+        && incoming().lastCommentAt == request.time;
+
+      allow delete: if false;
     }
   }
 }

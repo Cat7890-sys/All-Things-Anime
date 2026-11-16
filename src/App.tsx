@@ -90,6 +90,7 @@ export default function App() {
           discussions={discussions}
           featuredSeries={featuredSeries}
           onNavigate={handleSelectDestination}
+          onOpenAuth={handleOpenAuth}
         />
       ) : activeDestination === 'profile' ? (
         <ProfilePage initialAuthMode={authMode} />

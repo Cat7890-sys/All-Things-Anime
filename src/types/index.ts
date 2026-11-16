@@ -114,6 +114,8 @@ export interface AtaPublicProfile {
   displayName: string;
   bio: string;
   avatarUrl: string;
+  followersCount: number;
+  followingCount: number;
   createdAt: Date | null;
   updatedAt: Date | null;
 }
@@ -141,3 +143,92 @@ export interface UpdateProfileInput {
 export type AuthViewMode = 'login' | 'register' | 'reset';
 
 export type ValidationErrors<T> = Partial<Record<keyof T, string>>;
+
+// ==========================================
+// Build 03: Social Feed, Reactions, Comments, Follows, Safety
+// ==========================================
+
+export type FeedTabMode = 'community' | 'following';
+
+export interface AtaPost {
+  id: string;
+  authorId: string;
+  authorUsername: string;
+  authorDisplayName: string;
+  authorAvatarUrl: string;
+  content: string;
+  animeTitle: string;
+  hasSpoiler: boolean;
+  spoilerLabel: string;
+  imageUrl: string;
+  imagePath: string;
+  likeCount: number;
+  commentCount: number;
+  isEdited: boolean;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export interface CreatePostInput {
+  content: string;
+  animeTitle: string;
+  hasSpoiler: boolean;
+  spoilerLabel: string;
+  imageFile?: File | null;
+}
+
+export interface UpdatePostInput {
+  content: string;
+  animeTitle: string;
+  hasSpoiler: boolean;
+  spoilerLabel: string;
+}
+
+export interface AtaComment {
+  id: string;
+  postId: string;
+  authorId: string;
+  authorUsername: string;
+  authorDisplayName: string;
+  authorAvatarUrl: string;
+  content: string;
+  parentCommentId: string;
+  replyToAuthorUsername: string;
+  hasSpoiler: boolean;
+  isEdited: boolean;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export interface CreateCommentInput {
+  content: string;
+  parentCommentId?: string;
+  replyToAuthorUsername?: string;
+  hasSpoiler?: boolean;
+}
+
+export type ReportTargetType = 'post' | 'comment';
+
+export type ReportReason =
+  | 'spam'
+  | 'harassment'
+  | 'unmarked_spoiler'
+  | 'hate_speech'
+  | 'other';
+
+export interface CreateReportInput {
+  targetType: ReportTargetType;
+  targetId: string;
+  postId: string;
+  targetAuthorId: string;
+  reason: ReportReason;
+  details: string;
+}
+
+export interface BlockedUserRecord {
+  id: string;
+  blockerId: string;
+  blockedId: string;
+  blockedUsername: string;
+  createdAt: Date | null;
+}

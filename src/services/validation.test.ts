@@ -2,14 +2,21 @@ import assert from 'node:assert/strict';
 import {
   normalizeEmail,
   normalizeUsername,
+  validateAnimeTitle,
   validateAvatarUrl,
   validateBio,
+  validateCommentContent,
   validateDisplayName,
   validateEmail,
   validateLoginForm,
   validatePassword,
+  validatePostContent,
+  validatePostForm,
+  validatePostImageFile,
   validateProfileEditForm,
   validateRegistrationForm,
+  validateReportDetails,
+  validateSpoilerLabel,
   validateUsername,
 } from './validation.ts';
 
@@ -90,4 +97,53 @@ assert.deepEqual(
   {}
 );
 
-console.log('All ATA Build 02 validation assertions passed.');
+// 8. Build 03: Post content, anime association, spoiler label, and image checks
+assert.equal(validatePostContent('Episode 12 pacing was phenomenal.'), null);
+assert.ok(validatePostContent('   ')); // empty after trim
+assert.ok(validatePostContent('a'.repeat(1501))); // exceeds 1500 chars
+assert.equal(validateAnimeTitle('Mob Psycho 100'), null);
+assert.ok(validateAnimeTitle('a'.repeat(101))); // exceeds 100 chars
+assert.equal(validateSpoilerLabel('Season 2 Finale'), null);
+assert.ok(validateSpoilerLabel('a'.repeat(81))); // exceeds 80 chars
+
+assert.equal(
+  validatePostImageFile({ size: 1024 * 512, type: 'image/webp', name: 'scene.webp' }),
+  null
+);
+assert.ok(
+  validatePostImageFile({ size: 1024, type: 'image/svg+xml', name: 'bad.svg' })
+); // rejects SVG
+assert.ok(
+  validatePostImageFile({ size: 6 * 1024 * 1024, type: 'image/png', name: 'huge.png' })
+); // exceeds 5MB
+assert.ok(
+  validatePostImageFile({ size: 0, type: 'image/jpeg', name: 'empty.jpg' })
+);
+
+assert.equal(
+  validatePostForm({
+    content: 'Great match cut in episode 4.',
+    animeTitle: 'Frieren',
+    hasSpoiler: true,
+    spoilerLabel: 'Episode 4',
+  }),
+  null
+);
+assert.ok(
+  validatePostForm({
+    content: '',
+    animeTitle: 'Frieren',
+    hasSpoiler: false,
+    spoilerLabel: '',
+  })
+);
+
+// 9. Build 03: Comment & moderation report validation
+assert.equal(validateCommentContent('Agreed — the soundtrack elevated that scene.'), null);
+assert.ok(validateCommentContent('   '));
+assert.ok(validateCommentContent('c'.repeat(801)));
+
+assert.equal(validateReportDetails({ details: 'Contains untagged finale spoiler.' }), null);
+assert.ok(validateReportDetails({ details: 'd'.repeat(501) }));
+
+console.log('All ATA Build 02 & Build 03 validation assertions passed.');
