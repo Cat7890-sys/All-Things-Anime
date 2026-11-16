@@ -8,9 +8,11 @@ import {
   Send,
   ShieldAlert,
   UserPlus,
+  WifiOff,
   X,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { isStorageConfigured } from '../../services/firebase';
 import { createPost } from '../../services/postService';
 import {
@@ -35,6 +37,7 @@ export const PostComposer: React.FC<PostComposerProps> = ({
   onNavigateProfile,
 }) => {
   const { firebaseUser, profile, isLoadingAuth } = useAuth();
+  const { isOnline } = useOnlineStatus();
 
   const [content, setContent] = useState('');
   const [animeTitle, setAnimeTitle] = useState('');
@@ -94,6 +97,13 @@ export const PostComposer: React.FC<PostComposerProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting || !profile) return;
+
+    if (!isOnline) {
+      setError(
+        'You are offline. Publishing posts requires an active internet connection and will not sync offline.'
+      );
+      return;
+    }
 
     setError(null);
     const formError = validatePostForm({
@@ -274,6 +284,22 @@ export const PostComposer: React.FC<PostComposerProps> = ({
       </div>
 
       <form onSubmit={handleSubmit} className="mt-4 space-y-3.5">
+        {!isOnline && (
+          <div
+            role="status"
+            className="flex items-start gap-2 rounded-xl bg-[#F4F5F8] dark:bg-[#090B14] border border-[#EF3038]/70 p-3 text-xs text-[#090B14] dark:text-white"
+          >
+            <WifiOff
+              className="h-4 w-4 text-[#EF3038] shrink-0 mt-0.5"
+              aria-hidden="true"
+            />
+            <span>
+              Offline mode — publishing posts and uploading images require an
+              internet connection.
+            </span>
+          </div>
+        )}
+
         {error && (
           <div
             role="alert"
@@ -411,11 +437,17 @@ export const PostComposer: React.FC<PostComposerProps> = ({
 
           <button
             type="submit"
-            disabled={isSubmitting || !profile || trimmedLength === 0}
+            disabled={isSubmitting || !profile || trimmedLength === 0 || !isOnline}
             className="inline-flex items-center gap-2 px-5 py-2.5 min-h-[44px] text-xs sm:text-sm font-semibold text-white bg-[#EF3038] border border-[#B92335] rounded-xl hover:bg-[#B92335] disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150 whitespace-nowrap"
           >
             <Send className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>{isSubmitting ? 'Publishing...' : 'Publish Post'}</span>
+            <span>
+              {!isOnline
+                ? 'Offline'
+                : isSubmitting
+                ? 'Publishing...'
+                : 'Publish Post'}
+            </span>
           </button>
         </div>
       </form>

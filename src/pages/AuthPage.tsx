@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { ShieldCheck } from 'lucide-react';
+import { ShieldCheck, WifiOff } from 'lucide-react';
 import type { AuthViewMode } from '../types';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { AtaLogo } from '../components/AtaLogo';
 import { ForgotPasswordForm } from '../components/auth/ForgotPasswordForm';
 import { LoginForm } from '../components/auth/LoginForm';
@@ -16,6 +17,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   onAuthComplete,
 }) => {
   const [mode, setMode] = useState<AuthViewMode>(initialMode);
+  const { isOnline } = useOnlineStatus();
 
   useEffect(() => {
     setMode(initialMode);
@@ -84,6 +86,22 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
       {/* Auth Mode Switcher & Form Body */}
       <div className="p-6 sm:p-8 space-y-6">
+        {!isOnline && (
+          <div
+            role="status"
+            className="flex items-start gap-2.5 rounded-xl bg-[#F4F5F8] dark:bg-[#090B14] border border-[#EF3038] p-3.5 text-xs sm:text-sm text-[#090B14] dark:text-white"
+          >
+            <WifiOff
+              className="h-4 w-4 text-[#EF3038] shrink-0 mt-0.5"
+              aria-hidden="true"
+            />
+            <span>
+              You are currently offline. Signing in, creating an account, and
+              resetting passwords require an active internet connection.
+            </span>
+          </div>
+        )}
+
         {mode !== 'reset' && (
           <div
             className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342]"

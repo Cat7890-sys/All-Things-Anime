@@ -44,6 +44,8 @@ jobs:
       - name: Verify production bundle output
         run: |
           test -f dist/index.html
+          test -f dist/manifest.webmanifest
+          test -f dist/sw.js
           grep -q '/All-Things-Anime/assets/' dist/index.html
           if grep -q '/src/main.tsx' dist/index.html; then
             echo "Error: dist/index.html still references /src/main.tsx"

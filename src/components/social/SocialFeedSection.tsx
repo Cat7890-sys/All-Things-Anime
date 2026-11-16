@@ -6,8 +6,10 @@ import {
   Flame,
   RefreshCw,
   Users,
+  WifiOff,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import {
   fetchFollowingPosts,
   fetchMoreCommunityPosts,
@@ -55,6 +57,7 @@ export const SocialFeedSection: React.FC<SocialFeedSectionProps> = ({
   onNavigateProfile,
 }) => {
   const { firebaseUser } = useAuth();
+  const { isOnline } = useOnlineStatus();
 
   const [activeTab, setActiveTab] = useState<FeedTabMode>('community');
 
@@ -465,6 +468,20 @@ export const SocialFeedSection: React.FC<SocialFeedSectionProps> = ({
                 <span>Retry</span>
               </button>
             )}
+          </div>
+        ) : !isOnline && displayedPosts.length === 0 ? (
+          <div className="bg-white dark:bg-[#171923] border border-[#EF3038]/70 rounded-2xl p-8 text-center space-y-2.5">
+            <WifiOff
+              className="h-6 w-6 text-[#EF3038] mx-auto"
+              aria-hidden="true"
+            />
+            <p className="font-display-space font-bold text-lg text-[#090B14] dark:text-white">
+              You&apos;re Offline
+            </p>
+            <p className="text-xs sm:text-sm text-[#52576B] dark:text-[#A7A9B8] max-w-md mx-auto">
+              Live community and following streams require an active internet
+              connection. Reconnect to browse posts, like, comment, or publish.
+            </p>
           </div>
         ) : displayedPosts.length === 0 ? (
           <div className="bg-white dark:bg-[#171923] border border-[#D4D7E2] dark:border-[#303342] rounded-2xl p-8 text-center space-y-2">

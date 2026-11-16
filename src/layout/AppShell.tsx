@@ -17,6 +17,11 @@ import { AtaLogo } from '../components/AtaLogo';
 import { UserAvatar } from '../components/UserAvatar';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../hooks/useAuth';
+import {
+  PWAInstallBanner,
+  PWAInstallButton,
+} from '../components/pwa/PWAInstallExperience';
+import { PWASystemBanners } from '../components/pwa/PWASystemBanners';
 import type { AuthViewMode, NavDestinationId } from '../types';
 
 interface AppShellProps {
@@ -71,8 +76,8 @@ export const AppShell: React.FC<AppShellProps> = ({
         Skip to main content
       </a>
 
-      {/* Mobile Compact Top Header (< lg) — 56px tall */}
-      <header className="lg:hidden sticky top-0 z-30 h-14 bg-white/95 dark:bg-[#171923]/95 backdrop-blur-md border-b border-[#D4D7E2] dark:border-[#303342] px-4 flex items-center justify-between gap-2">
+      {/* Mobile Compact Top Header (< lg) — 56px tall + safe-area top */}
+      <header className="lg:hidden sticky top-0 z-30 min-h-14 pt-[env(safe-area-inset-top)] bg-white/95 dark:bg-[#171923]/95 backdrop-blur-md border-b border-[#D4D7E2] dark:border-[#303342] px-4 flex items-center justify-between gap-2">
         <button
           type="button"
           onClick={() => onSelectDestination('home')}
@@ -82,8 +87,9 @@ export const AppShell: React.FC<AppShellProps> = ({
           <AtaLogo variant="compact" />
         </button>
 
-        {/* Secondary top-bar actions + Theme toggle */}
+        {/* Secondary top-bar actions + Install trigger + Theme toggle */}
         <div className="flex items-center gap-1">
+          <PWAInstallButton compact />
           <button
             type="button"
             onClick={toggleTheme}
@@ -137,7 +143,7 @@ export const AppShell: React.FC<AppShellProps> = ({
       </header>
 
       {/* Main Responsive 3-Column Container */}
-      <div className="mx-auto w-full max-w-[1440px] flex-1 px-4 sm:px-6 lg:px-8 pt-5 pb-24 lg:py-8">
+      <div className="mx-auto w-full max-w-[1440px] flex-1 px-4 sm:px-6 lg:px-8 pt-5 pb-[calc(5.5rem+env(safe-area-inset-bottom))] lg:py-8">
         <div className="grid grid-cols-1 lg:grid-cols-[248px_minmax(0,1fr)] xl:grid-cols-[248px_minmax(0,1fr)_320px] gap-6 xl:gap-8 items-start">
           {/* Desktop Left Sidebar */}
           <aside
@@ -270,6 +276,9 @@ export const AppShell: React.FC<AppShellProps> = ({
                   </div>
                 )}
 
+                {/* Install App Trigger (shown when installable or iOS Safari) */}
+                <PWAInstallButton />
+
                 {/* Theme Switcher */}
                 <button
                   type="button"
@@ -306,6 +315,8 @@ export const AppShell: React.FC<AppShellProps> = ({
 
           {/* Center Main Content Column */}
           <main id="ata-main-content" className="min-w-0 space-y-6">
+            <PWASystemBanners />
+            <PWAInstallBanner />
             {children}
 
             <div className="xl:hidden pt-2">{rightSidebar}</div>
@@ -321,12 +332,12 @@ export const AppShell: React.FC<AppShellProps> = ({
         </div>
       </div>
 
-      {/* Mobile Compact Bottom Navigation (< lg) — 56px tall */}
+      {/* Mobile Compact Bottom Navigation (< lg) — 56px tall + safe-area bottom */}
       <nav
         aria-label="Mobile primary navigation"
-        className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-[#171923]/95 backdrop-blur-md border-t border-[#D4D7E2] dark:border-[#303342] h-14 px-1"
+        className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-[#171923]/95 backdrop-blur-md border-t border-[#D4D7E2] dark:border-[#303342] pb-[env(safe-area-inset-bottom)] px-1"
       >
-        <div className="grid grid-cols-4 h-full">
+        <div className="grid grid-cols-4 h-14">
           {MOBILE_BOTTOM_IDS.map((id) => {
             const dest = NAV_DESTINATIONS.find((item) => item.id === id);
             if (!dest) return null;

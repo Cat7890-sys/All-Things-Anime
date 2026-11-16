@@ -3,13 +3,120 @@ import react from '@vitejs/plugin-react';
 import fs from 'fs';
 import path from 'path';
 import {defineConfig} from 'vite';
+import {VitePWA} from 'vite-plugin-pwa';
 
 export default defineConfig(({command}) => {
+  const base =
+    command === 'build'
+      ? process.env.VITE_BASE_PATH || '/All-Things-Anime/'
+      : '/';
+
   return {
-    base: command === 'build' ? '/All-Things-Anime/' : '/',
+    base,
     plugins: [
       react(),
       tailwindcss(),
+      VitePWA({
+        registerType: 'prompt',
+        injectRegister: false,
+        manifest: {
+          id: base,
+          name: 'All Things Anime',
+          short_name: 'ATA',
+          description: 'One Universe. Infinite Opinions.',
+          display: 'standalone',
+          orientation: 'portrait-primary',
+          theme_color: '#090B14',
+          background_color: '#090B14',
+          start_url: base,
+          scope: base,
+          categories: ['entertainment', 'social'],
+          icons: [
+            {
+              src: `${base}pwa-192x192.png`,
+              sizes: '192x192',
+              type: 'image/png',
+              purpose: 'any',
+            },
+            {
+              src: `${base}pwa-512x512.png`,
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'any',
+            },
+            {
+              src: `${base}pwa-maskable-512x512.png`,
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'maskable',
+            },
+          ],
+        },
+        workbox: {
+          cleanupOutdatedCaches: true,
+          clientsClaim: false,
+          skipWaiting: false,
+          maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,jpg,webp}'],
+          globIgnores: ['src/**/*', '**/.nojekyll'],
+          navigateFallback: `${base}index.html`,
+          navigateFallbackDenylist: [
+            /^\/__\/auth/,
+            /^\/__\/firebase/,
+            /offline\.html$/,
+          ],
+          runtimeCaching: [
+            // Strictly never cache Firebase Auth, Token, Firestore, or Storage traffic
+            {
+              urlPattern: /^https:\/\/(identitytoolkit|securetoken|firestore|firebasestorage|firebaseinstallations)\.googleapis\.com\/.*/i,
+              handler: 'NetworkOnly',
+              method: 'GET',
+            },
+            {
+              urlPattern: /^https:\/\/(identitytoolkit|securetoken|firestore|firebasestorage|firebaseinstallations)\.googleapis\.com\/.*/i,
+              handler: 'NetworkOnly',
+              method: 'POST',
+            },
+            {
+              urlPattern: /^https:\/\/.*\.firebaseapp\.com\/__\/.*/i,
+              handler: 'NetworkOnly',
+              method: 'GET',
+            },
+            // Cache Google Fonts stylesheets and webfont files safely
+            {
+              urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'ata-google-fonts-stylesheets',
+                expiration: {
+                  maxEntries: 10,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
+              urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'ata-google-fonts-webfonts',
+                expiration: {
+                  maxEntries: 20,
+                  maxAgeSeconds: 60 * 60 * 24 * 365,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+          ],
+        },
+        devOptions: {
+          enabled: false,
+        },
+      }),
       // Copies src/assets into dist/ so root-relative URLs like
       // "/src/assets/images/..." (e.g. generate_image output) still resolve
       // in production builds. Do not remove.
@@ -20,8 +127,8 @@ export default defineConfig(({command}) => {
           if (error) {
             return;
           }
-          const distDir = path.resolve(__dirname, 'dist');
-          const srcAssets = path.resolve(__dirname, 'src/assets');
+          const distDir = path.resolve(import.meta.dirname, 'dist');
+          const srcAssets = path.resolve(import.meta.dirname, 'src/assets');
           const distAssets = path.resolve(distDir, 'src/assets');
           if (fs.existsSync(distDir) && fs.existsSync(srcAssets)) {
             fs.cpSync(srcAssets, distAssets, {recursive: true, force: true});
@@ -31,7 +138,7 @@ export default defineConfig(({command}) => {
     ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(import.meta.dirname, '.'),
       },
     },
     server: {

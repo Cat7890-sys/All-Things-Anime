@@ -19,10 +19,16 @@
   html {
     font-family: var(--font-sans);
     color-scheme: light;
+    overflow-x: clip;
   }
 
   html.dark {
     color-scheme: dark;
+  }
+
+  body {
+    overflow-x: clip;
+    overscroll-behavior-y: contain;
   }
 
   :focus-visible {
