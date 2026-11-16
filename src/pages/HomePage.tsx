@@ -15,6 +15,7 @@ interface HomePageProps {
   featuredSeries: DiscoverySeriesItem[];
   onNavigate: (destination: NavDestinationId) => void;
   onOpenAuth: (mode: AuthViewMode) => void;
+  onStartDirectMessage?: (targetUserId: string) => void;
 }
 
 export const HomePage: React.FC<HomePageProps> = ({
@@ -22,6 +23,7 @@ export const HomePage: React.FC<HomePageProps> = ({
   featuredSeries,
   onNavigate,
   onOpenAuth,
+  onStartDirectMessage,
 }) => {
   const scrollToSection = (elementId: string) => {
     const el = document.getElementById(elementId);
@@ -45,6 +47,7 @@ export const HomePage: React.FC<HomePageProps> = ({
       <SocialFeedSection
         onOpenAuth={onOpenAuth}
         onNavigateProfile={() => onNavigate('profile')}
+        onStartDirectMessage={onStartDirectMessage}
       />
 
       {/* Explicit Separation Between Live Firestore Content & Build 01 Showcase Previews */}

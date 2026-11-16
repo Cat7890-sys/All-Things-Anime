@@ -15,7 +15,7 @@ export const ATA_BRAND = {
   shortName: 'ATA',
   fullName: 'ALL THINGS ANIME',
   tagline: 'One Universe. Infinite Opinions.',
-  foundationLabel: 'Build 04A · Anime Communities',
+  foundationLabel: 'Build 04B · Private Messaging',
   demonstrationNotice: 'Sample Showcase Only — Demonstration entries below are separate from live community posts.',
 } as const;
 
@@ -47,8 +47,8 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     id: 'messages',
     label: 'Messages',
     shortLabel: 'Messages',
-    description: 'Direct conversations and watch-party threads with friends.',
-    isImplemented: false,
+    description: 'Real-time direct chats, message requests, and private group conversations.',
+    isImplemented: true,
   },
   {
     id: 'notifications',

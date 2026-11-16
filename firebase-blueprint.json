@@ -447,22 +447,27 @@
         },
         "targetType": {
           "type": "string",
-          "enum": ["post", "comment", "community"]
+          "enum": ["post", "comment", "community", "message", "conversation"]
         },
         "targetId": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 128
+          "maxLength": 300
         },
         "postId": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 128
+          "maxLength": 300
         },
         "communityId": {
           "type": "string",
           "minLength": 0,
           "maxLength": 128
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 300
         },
         "targetAuthorId": {
           "type": "string",
@@ -853,6 +858,501 @@
         }
       },
       "required": ["uid", "lastCreatedAt"]
+    },
+    "MessageSettings": {
+      "title": "MessageSettings",
+      "description": "Per-user private messaging preferences governing requests, read receipts, online visibility, and typing indicators.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "allowRequests": {
+          "type": "boolean"
+        },
+        "requestPermission": {
+          "type": "string",
+          "enum": ["everyone", "following", "mutuals"]
+        },
+        "readReceiptsEnabled": {
+          "type": "boolean"
+        },
+        "onlineStatusVisible": {
+          "type": "boolean"
+        },
+        "typingIndicatorsEnabled": {
+          "type": "boolean"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "uid",
+        "allowRequests",
+        "requestPermission",
+        "readReceiptsEnabled",
+        "onlineStatusVisible",
+        "typingIndicatorsEnabled",
+        "updatedAt"
+      ]
+    },
+    "UserPresence": {
+      "title": "UserPresence",
+      "description": "Conservative last-active / visibility-gated user presence status in Firestore.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["online", "away"]
+        },
+        "visible": {
+          "type": "boolean"
+        },
+        "lastActiveAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "status", "visible", "lastActiveAt", "updatedAt"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "Private 1:1 or group conversation document accessible strictly to active participants.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["direct", "group"]
+        },
+        "directKey": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 280
+        },
+        "name": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 60
+        },
+        "description": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 300
+        },
+        "avatarUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 1000
+        },
+        "avatarPath": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 300
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 128
+        },
+        "adminIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "maxItems": 25
+        },
+        "participantIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "minItems": 1,
+          "maxItems": 25
+        },
+        "lastMessageText": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 200
+        },
+        "lastMessageSenderId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 128
+        },
+        "lastMessageType": {
+          "type": "string",
+          "enum": ["text", "system", "none"]
+        },
+        "lastMessageAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "archived"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "directKey",
+        "name",
+        "description",
+        "avatarUrl",
+        "avatarPath",
+        "ownerId",
+        "adminIds",
+        "participantIds",
+        "lastMessageText",
+        "lastMessageSenderId",
+        "lastMessageType",
+        "lastMessageAt",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ConversationMember": {
+      "title": "ConversationMember",
+      "description": "Deterministic per-member conversation membership, role, read cursor, mute, archive, and unread counter state.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 440
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "username": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20,
+          "pattern": "^[a-zA-Z0-9_]{3,20}$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40
+        },
+        "avatarUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500
+        },
+        "role": {
+          "type": "string",
+          "enum": ["owner", "admin", "member"]
+        },
+        "unreadCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lastReadAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "muted": {
+          "type": "boolean"
+        },
+        "archived": {
+          "type": "boolean"
+        },
+        "joinedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "conversationId",
+        "userId",
+        "username",
+        "displayName",
+        "avatarUrl",
+        "role",
+        "unreadCount",
+        "lastReadAt",
+        "muted",
+        "archived",
+        "joinedAt",
+        "updatedAt"
+      ]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Private direct or group message stored under a conversation.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "senderId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "senderUsername": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20
+        },
+        "senderDisplayName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40
+        },
+        "senderAvatarUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500
+        },
+        "messageType": {
+          "type": "string",
+          "enum": ["text", "system"]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 2000
+        },
+        "replyToMessageId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 128
+        },
+        "replyToPreview": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 160
+        },
+        "replyToSenderName": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 40
+        },
+        "editedAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "deletedAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "conversationId",
+        "senderId",
+        "senderUsername",
+        "senderDisplayName",
+        "senderAvatarUrl",
+        "messageType",
+        "text",
+        "replyToMessageId",
+        "replyToPreview",
+        "replyToSenderName",
+        "editedAt",
+        "deletedAt",
+        "createdAt"
+      ]
+    },
+    "MessageRequest": {
+      "title": "MessageRequest",
+      "description": "First-contact private message request keyed by {senderId}__{recipientId}.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 260
+        },
+        "senderId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "senderUsername": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20
+        },
+        "senderDisplayName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40
+        },
+        "senderAvatarUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500
+        },
+        "recipientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "recipientUsername": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20
+        },
+        "recipientDisplayName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40
+        },
+        "recipientAvatarUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500
+        },
+        "initialMessage": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "accepted", "declined", "cancelled"]
+        },
+        "conversationId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 300
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "senderId",
+        "senderUsername",
+        "senderDisplayName",
+        "senderAvatarUrl",
+        "recipientId",
+        "recipientUsername",
+        "recipientDisplayName",
+        "recipientAvatarUrl",
+        "initialMessage",
+        "status",
+        "conversationId",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "TypingIndicator": {
+      "title": "TypingIndicator",
+      "description": "Ephemeral per-user typing state in a private conversation.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40
+        },
+        "isTyping": {
+          "type": "boolean"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "displayName", "isTyping", "updatedAt"]
+    },
+    "MessageRateLimit": {
+      "title": "MessageRateLimit",
+      "description": "Server-time rate limit checkpoints for messages, requests, and group creations.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "lastMessageAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "lastRequestAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "lastGroupCreatedAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "lastMessageAt", "lastRequestAt", "lastGroupCreatedAt"]
     }
   },
   "firestore": {
@@ -969,6 +1469,54 @@
         "$ref": "#/entities/CommentRateLimit"
       },
       "description": "Server-time rate limiting checkpoints for comment spam prevention."
+    },
+    "/messageSettings/{userId}": {
+      "schema": {
+        "$ref": "#/entities/MessageSettings"
+      },
+      "description": "Per-user private messaging privacy and indicator settings."
+    },
+    "/userPresence/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserPresence"
+      },
+      "description": "Conservative last-active status visible only when enabled and not blocked."
+    },
+    "/conversations/{conversationId}": {
+      "schema": {
+        "$ref": "#/entities/Conversation"
+      },
+      "description": "Private 1:1 and group conversation threads accessible strictly to active participants."
+    },
+    "/conversations/{conversationId}/messages/{messageId}": {
+      "schema": {
+        "$ref": "#/entities/Message"
+      },
+      "description": "Real-time messages inside a private conversation."
+    },
+    "/conversations/{conversationId}/typing/{userId}": {
+      "schema": {
+        "$ref": "#/entities/TypingIndicator"
+      },
+      "description": "Ephemeral typing indicator state per participant inside a conversation."
+    },
+    "/conversationMembers/{memberDocId}": {
+      "schema": {
+        "$ref": "#/entities/ConversationMember"
+      },
+      "description": "Deterministic per-member role, unread counter, mute, archive, and read cursor state ({conversationId}__{userId})."
+    },
+    "/messageRequests/{requestId}": {
+      "schema": {
+        "$ref": "#/entities/MessageRequest"
+      },
+      "description": "Private first-contact message requests keyed by {senderId}__{recipientId}."
+    },
+    "/messageRateLimits/{userId}": {
+      "schema": {
+        "$ref": "#/entities/MessageRateLimit"
+      },
+      "description": "Server-time rate limiting checkpoints for messaging actions."
     }
   }
 }

@@ -207,7 +207,12 @@ export interface CreateCommentInput {
   hasSpoiler?: boolean;
 }
 
-export type ReportTargetType = 'post' | 'comment' | 'community';
+export type ReportTargetType =
+  | 'post'
+  | 'comment'
+  | 'community'
+  | 'message'
+  | 'conversation';
 
 export type ReportReason =
   | 'spam'
@@ -223,6 +228,7 @@ export interface CreateReportInput {
   targetId: string;
   postId: string;
   communityId?: string;
+  conversationId?: string;
   targetAuthorId: string;
   reason: ReportReason;
   details: string;
@@ -331,4 +337,155 @@ export interface CommunityJoinRequest {
   reviewedBy: string;
   createdAt: Date | null;
   updatedAt: Date | null;
+}
+
+// ==========================================
+// Build 04B: Private Messaging System
+// ==========================================
+
+export type ConversationType = 'direct' | 'group';
+export type ConversationStatus = 'active' | 'archived';
+export type ConversationMemberRole = 'owner' | 'admin' | 'member';
+export type MessageType = 'text' | 'system';
+export type MessageRequestStatus =
+  | 'pending'
+  | 'accepted'
+  | 'declined'
+  | 'cancelled';
+export type MessageRequestPermission = 'everyone' | 'following' | 'mutuals';
+
+export interface AtaMessageSettings {
+  uid: string;
+  allowRequests: boolean;
+  requestPermission: MessageRequestPermission;
+  readReceiptsEnabled: boolean;
+  onlineStatusVisible: boolean;
+  typingIndicatorsEnabled: boolean;
+  updatedAt: Date | null;
+}
+
+export interface UpdateMessageSettingsInput {
+  allowRequests: boolean;
+  requestPermission: MessageRequestPermission;
+  readReceiptsEnabled: boolean;
+  onlineStatusVisible: boolean;
+  typingIndicatorsEnabled: boolean;
+}
+
+export interface AtaUserPresence {
+  uid: string;
+  status: 'online' | 'away';
+  visible: boolean;
+  lastActiveAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export interface AtaConversation {
+  id: string;
+  type: ConversationType;
+  directKey: string;
+  name: string;
+  description: string;
+  avatarUrl: string;
+  avatarPath: string;
+  ownerId: string;
+  adminIds: string[];
+  participantIds: string[];
+  lastMessageText: string;
+  lastMessageSenderId: string;
+  lastMessageType: 'text' | 'system' | 'none';
+  lastMessageAt: Date | null;
+  status: ConversationStatus;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export interface AtaConversationMember {
+  id: string;
+  conversationId: string;
+  userId: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+  role: ConversationMemberRole;
+  unreadCount: number;
+  lastReadAt: Date | null;
+  muted: boolean;
+  archived: boolean;
+  joinedAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export interface AtaMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  senderUsername: string;
+  senderDisplayName: string;
+  senderAvatarUrl: string;
+  messageType: MessageType;
+  text: string;
+  replyToMessageId: string;
+  replyToPreview: string;
+  replyToSenderName: string;
+  editedAt: Date | null;
+  deletedAt: Date | null;
+  createdAt: Date | null;
+}
+
+export interface AtaMessageRequest {
+  id: string;
+  senderId: string;
+  senderUsername: string;
+  senderDisplayName: string;
+  senderAvatarUrl: string;
+  recipientId: string;
+  recipientUsername: string;
+  recipientDisplayName: string;
+  recipientAvatarUrl: string;
+  initialMessage: string;
+  status: MessageRequestStatus;
+  conversationId: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export interface AtaTypingIndicator {
+  uid: string;
+  displayName: string;
+  isTyping: boolean;
+  updatedAt: Date | null;
+}
+
+export interface CreateGroupConversationInput {
+  name: string;
+  description: string;
+  participantIds: string[];
+  avatarUrl?: string;
+  avatarFile?: File | null;
+}
+
+export interface UpdateGroupConversationInput {
+  name: string;
+  description: string;
+  avatarUrl?: string;
+  avatarFile?: File | null;
+  removeAvatar?: boolean;
+}
+
+export type MessagingNotificationEventType =
+  | 'new_message_request'
+  | 'accepted_message_request'
+  | 'new_direct_message'
+  | 'new_group_message'
+  | 'group_membership_change';
+
+export interface MessagingNotificationEvent {
+  type: MessagingNotificationEventType;
+  recipientIds: string[];
+  actorId: string;
+  conversationId?: string;
+  requestId?: string;
+  neutralPreviewText: string;
+  createdAtMs: number;
 }

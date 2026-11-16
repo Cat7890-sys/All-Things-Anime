@@ -80,6 +80,7 @@ interface CommunityDetailViewProps {
   onMembershipChanged: () => void;
   onOpenAuth?: (mode: AuthViewMode) => void;
   onNavigateProfile?: () => void;
+  onStartDirectMessage?: (targetUserId: string) => void;
 }
 
 type CommunityDetailTab = 'discussions' | 'rules' | 'members' | 'manage';
@@ -103,6 +104,7 @@ export const CommunityDetailView: React.FC<CommunityDetailViewProps> = ({
   onMembershipChanged,
   onOpenAuth,
   onNavigateProfile,
+  onStartDirectMessage,
 }) => {
   const { firebaseUser, profile } = useAuth();
   const { isOnline } = useOnlineStatus();
@@ -1325,6 +1327,7 @@ export const CommunityDetailView: React.FC<CommunityDetailViewProps> = ({
           });
         }}
         onOpenAuth={onOpenAuth}
+        onStartDirectMessage={onStartDirectMessage}
       />
 
       {reportTarget && firebaseUser && (

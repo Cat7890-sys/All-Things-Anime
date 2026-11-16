@@ -3,13 +3,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { TrendingSidebarSection } from './components/TrendingSidebarSection';
+import { useAuth } from './hooks/useAuth';
 import { AppShell } from './layout/AppShell';
 import { ComingSoonPage } from './pages/ComingSoonPage';
 import { CommunitiesPage } from './pages/CommunitiesPage';
 import { HomePage } from './pages/HomePage';
+import { MessagesPage } from './pages/MessagesPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { subscribeToUserMemberStates } from './services/messaging/conversationService';
+import { subscribeToMessageSettings } from './services/messaging/messagingSettingsService';
+import { publishOwnPresence } from './services/messaging/presenceService';
 import { sampleContentService } from './services/sampleContentService';
 import type {
   AuthViewMode,
@@ -21,9 +26,15 @@ import type {
 } from './types';
 
 export default function App() {
+  const { firebaseUser } = useAuth();
   const [activeDestination, setActiveDestination] =
     useState<NavDestinationId>('home');
   const [authMode, setAuthMode] = useState<AuthViewMode>('login');
+  const [pendingDirectMessageUserId, setPendingDirectMessageUserId] = useState<
+    string | null
+  >(null);
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+
   const [discussions, setDiscussions] = useState<DiscussionThread[]>([]);
   const [featuredSeries, setFeaturedSeries] = useState<DiscoverySeriesItem[]>(
     []
@@ -56,7 +67,63 @@ export default function App() {
     };
   }, []);
 
-  const handleSelectDestination = (destination: NavDestinationId) => {
+  // Global unread message count + conservative visibility-aware presence heartbeat
+  useEffect(() => {
+    if (!firebaseUser || !firebaseUser.emailVerified) {
+      setUnreadMessagesCount(0);
+      return;
+    }
+
+    const uid = firebaseUser.uid;
+    let onlineStatusVisible = true;
+
+    const unsubMembers = subscribeToUserMemberStates(uid, (states) => {
+      const total = Object.values(states).reduce((sum, member) => {
+        if (member.archived) return sum;
+        return sum + (member.unreadCount || 0);
+      }, 0);
+      setUnreadMessagesCount(total);
+    });
+
+    const unsubSettings = subscribeToMessageSettings(uid, (settings) => {
+      onlineStatusVisible = settings.onlineStatusVisible;
+      const status =
+        document.visibilityState === 'visible' ? 'online' : 'away';
+      void publishOwnPresence(uid, status, onlineStatusVisible);
+    });
+
+    const syncPresence = () => {
+      const status =
+        document.visibilityState === 'visible' ? 'online' : 'away';
+      void publishOwnPresence(uid, status, onlineStatusVisible);
+    };
+
+    syncPresence();
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible' && onlineStatusVisible) {
+        void publishOwnPresence(uid, 'online', true);
+      }
+    }, 3 * 60 * 1000);
+
+    const handleVisibility = () => syncPresence();
+    const handlePageHide = () => {
+      void publishOwnPresence(uid, 'away', onlineStatusVisible);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('pagehide', handlePageHide);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('pagehide', handlePageHide);
+      void publishOwnPresence(uid, 'away', onlineStatusVisible);
+      unsubMembers();
+      unsubSettings();
+    };
+  }, [firebaseUser]);
+
+  const handleSelectDestination = useCallback((destination: NavDestinationId) => {
     setActiveDestination(destination);
     const prefersReducedMotion = window.matchMedia(
       '(prefers-reduced-motion: reduce)'
@@ -65,18 +132,34 @@ export default function App() {
       top: 0,
       behavior: prefersReducedMotion ? 'auto' : 'smooth',
     });
-  };
+  }, []);
 
-  const handleOpenAuth = (mode: AuthViewMode) => {
-    setAuthMode(mode);
-    handleSelectDestination('profile');
-  };
+  const handleOpenAuth = useCallback(
+    (mode: AuthViewMode) => {
+      setAuthMode(mode);
+      handleSelectDestination('profile');
+    },
+    [handleSelectDestination]
+  );
+
+  const handleStartDirectMessage = useCallback(
+    (targetUserId: string) => {
+      setPendingDirectMessageUserId(targetUserId);
+      handleSelectDestination('messages');
+    },
+    [handleSelectDestination]
+  );
+
+  const handleConsumeDirectTarget = useCallback(() => {
+    setPendingDirectMessageUserId(null);
+  }, []);
 
   return (
     <AppShell
       activeDestination={activeDestination}
       onSelectDestination={handleSelectDestination}
       onOpenAuth={handleOpenAuth}
+      unreadMessagesCount={unreadMessagesCount}
       rightSidebar={
         <TrendingSidebarSection
           trending={trendingAnime}
@@ -92,14 +175,26 @@ export default function App() {
           featuredSeries={featuredSeries}
           onNavigate={handleSelectDestination}
           onOpenAuth={handleOpenAuth}
+          onStartDirectMessage={handleStartDirectMessage}
         />
       ) : activeDestination === 'communities' ? (
         <CommunitiesPage
           onOpenAuth={handleOpenAuth}
           onNavigateProfile={() => handleSelectDestination('profile')}
+          onStartDirectMessage={handleStartDirectMessage}
+        />
+      ) : activeDestination === 'messages' ? (
+        <MessagesPage
+          initialDirectTargetUserId={pendingDirectMessageUserId}
+          onConsumeDirectTarget={handleConsumeDirectTarget}
+          onOpenAuth={handleOpenAuth}
+          onNavigateProfile={() => handleSelectDestination('profile')}
         />
       ) : activeDestination === 'profile' ? (
-        <ProfilePage initialAuthMode={authMode} />
+        <ProfilePage
+          initialAuthMode={authMode}
+          onStartDirectMessage={handleStartDirectMessage}
+        />
       ) : (
         <ComingSoonPage
           destinationId={activeDestination}

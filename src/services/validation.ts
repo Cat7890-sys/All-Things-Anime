@@ -494,3 +494,162 @@ export function validateUpdateCommunityForm(
 
   return null;
 }
+
+// ==========================================
+// Build 04B: Private Messaging Validation
+// ==========================================
+
+export const MESSAGE_MAX_LENGTH = 2000;
+export const MESSAGE_REQUEST_MAX_LENGTH = 1000;
+export const MESSAGE_EDIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+export const GROUP_NAME_MIN_LENGTH = 2;
+export const GROUP_NAME_MAX_LENGTH = 60;
+export const GROUP_DESC_MAX_LENGTH = 300;
+export const GROUP_MAX_PARTICIPANTS = 25;
+export const TYPING_STALE_MS = 8000;
+export const PRESENCE_ACTIVE_WINDOW_MS = 5 * 60 * 1000;
+
+export function buildDirectConversationId(uidA: string, uidB: string): string {
+  return uidA < uidB ? `dm__${uidA}__${uidB}` : `dm__${uidB}__${uidA}`;
+}
+
+export function buildDirectKey(uidA: string, uidB: string): string {
+  return uidA < uidB ? `${uidA}__${uidB}` : `${uidB}__${uidA}`;
+}
+
+export function validateMessageText(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return 'Message cannot be empty.';
+  }
+  if (trimmed.length > MESSAGE_MAX_LENGTH) {
+    return `Message must be ${MESSAGE_MAX_LENGTH} characters or fewer.`;
+  }
+  return null;
+}
+
+export function validateMessageRequestText(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return 'Please write an introductory message to send a request.';
+  }
+  if (trimmed.length > MESSAGE_REQUEST_MAX_LENGTH) {
+    return `Message request must be ${MESSAGE_REQUEST_MAX_LENGTH} characters or fewer.`;
+  }
+  return null;
+}
+
+export function canEditMessageWithinWindow(
+  createdAt: Date | null,
+  nowMs: number = Date.now()
+): boolean {
+  if (!createdAt) return false;
+  return nowMs - createdAt.getTime() <= MESSAGE_EDIT_WINDOW_MS;
+}
+
+export function validateGroupName(name: string): string | null {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return 'Group name is required.';
+  }
+  if (trimmed.length < GROUP_NAME_MIN_LENGTH) {
+    return `Group name must be at least ${GROUP_NAME_MIN_LENGTH} characters.`;
+  }
+  if (trimmed.length > GROUP_NAME_MAX_LENGTH) {
+    return `Group name must be ${GROUP_NAME_MAX_LENGTH} characters or fewer.`;
+  }
+  return null;
+}
+
+export function validateGroupDescription(description: string): string | null {
+  if (description.trim().length > GROUP_DESC_MAX_LENGTH) {
+    return `Group description must be ${GROUP_DESC_MAX_LENGTH} characters or fewer.`;
+  }
+  return null;
+}
+
+export function validateGroupParticipants(
+  creatorId: string,
+  participantIds: string[]
+): string | null {
+  const uniqueOthers = Array.from(
+    new Set(
+      participantIds.map((id) => id.trim()).filter((id) => id && id !== creatorId)
+    )
+  );
+  if (uniqueOthers.length === 0) {
+    return 'Select at least one verified member to start a group conversation.';
+  }
+  if (uniqueOthers.length + 1 > GROUP_MAX_PARTICIPANTS) {
+    return `Group conversations support up to ${GROUP_MAX_PARTICIPANTS} participants total.`;
+  }
+  return null;
+}
+
+export function validateCreateGroupForm(
+  creatorId: string,
+  input: {
+    name: string;
+    description: string;
+    participantIds: string[];
+    avatarUrl?: string;
+    avatarFile?: { size: number; type: string; name?: string } | null;
+  }
+): string | null {
+  const nameErr = validateGroupName(input.name);
+  if (nameErr) return nameErr;
+
+  const descErr = validateGroupDescription(input.description);
+  if (descErr) return descErr;
+
+  const partErr = validateGroupParticipants(creatorId, input.participantIds);
+  if (partErr) return partErr;
+
+  if (input.avatarFile) {
+    const fileErr = validatePostImageFile(input.avatarFile);
+    if (fileErr) return fileErr;
+  } else {
+    const urlErr = validateOptionalCommunityImageUrl(input.avatarUrl);
+    if (urlErr) return urlErr;
+  }
+
+  return null;
+}
+
+export function validateUpdateGroupForm(input: {
+  name: string;
+  description: string;
+  avatarUrl?: string;
+  avatarFile?: { size: number; type: string; name?: string } | null;
+  removeAvatar?: boolean;
+}): string | null {
+  const nameErr = validateGroupName(input.name);
+  if (nameErr) return nameErr;
+
+  const descErr = validateGroupDescription(input.description);
+  if (descErr) return descErr;
+
+  if (input.avatarFile) {
+    const fileErr = validatePostImageFile(input.avatarFile);
+    if (fileErr) return fileErr;
+  } else if (!input.removeAvatar) {
+    const urlErr = validateOptionalCommunityImageUrl(input.avatarUrl);
+    if (urlErr) return urlErr;
+  }
+
+  return null;
+}
+
+export function isValidDirectRecipient(
+  senderId: string,
+  recipientId: string
+): string | null {
+  if (!senderId || !recipientId) {
+    return 'Both sender and recipient accounts are required.';
+  }
+  if (senderId === recipientId) {
+    return 'You cannot send a private message to your own account.';
+  }
+  return null;
+}
+

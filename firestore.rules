@@ -363,6 +363,373 @@ service cloud.firestore {
         && data.createdAt is timestamp;
     }
 
+    function isValidConversationId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 300 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidMemberDocId(id) {
+      return id is string && id.size() >= 3 && id.size() <= 440 && id.matches('^[a-zA-Z0-9_\\-]+__[a-zA-Z0-9_\\-]+$');
+    }
+
+    function directConvId(uidA, uidB) {
+      return 'dm__' + (uidA < uidB ? uidA + '__' + uidB : uidB + '__' + uidA);
+    }
+
+    function isConversationExists(conversationId) {
+      return exists(/databases/$(database)/documents/conversations/$(conversationId));
+    }
+
+    function isConversationParticipant(conversationId, uid) {
+      return isSignedIn()
+        && isConversationExists(conversationId)
+        && uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participantIds;
+    }
+
+    function isConversationActive(conversationId) {
+      return isConversationExists(conversationId)
+        && get(/databases/$(database)/documents/conversations/$(conversationId)).data.status == 'active';
+    }
+
+    function isConversationAdmin(conversationId, uid) {
+      return isConversationParticipant(conversationId, uid)
+        && get(/databases/$(database)/documents/conversations/$(conversationId)).data.type == 'group'
+        && uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.adminIds;
+    }
+
+    function isConversationOwner(conversationId, uid) {
+      return isConversationParticipant(conversationId, uid)
+        && get(/databases/$(database)/documents/conversations/$(conversationId)).data.type == 'group'
+        && get(/databases/$(database)/documents/conversations/$(conversationId)).data.ownerId == uid;
+    }
+
+    function recipientAllowsMessageRequest(senderId, recipientId) {
+      return !isBlockedBetween(senderId, recipientId)
+        && exists(/databases/$(database)/documents/publicProfiles/$(recipientId))
+        && (
+          !exists(/databases/$(database)/documents/messageSettings/$(recipientId))
+          || (
+            get(/databases/$(database)/documents/messageSettings/$(recipientId)).data.allowRequests == true
+            && (
+              get(/databases/$(database)/documents/messageSettings/$(recipientId)).data.requestPermission == 'everyone'
+              || (
+                get(/databases/$(database)/documents/messageSettings/$(recipientId)).data.requestPermission == 'following'
+                && exists(/databases/$(database)/documents/follows/$(recipientId + '__' + senderId))
+              )
+              || (
+                get(/databases/$(database)/documents/messageSettings/$(recipientId)).data.requestPermission == 'mutuals'
+                && exists(/databases/$(database)/documents/follows/$(recipientId + '__' + senderId))
+                && exists(/databases/$(database)/documents/follows/$(senderId + '__' + recipientId))
+              )
+            )
+          )
+        );
+    }
+
+    function isValidMessageSettings(data, userId) {
+      return data.keys().hasAll([
+          'uid',
+          'allowRequests',
+          'requestPermission',
+          'readReceiptsEnabled',
+          'onlineStatusVisible',
+          'typingIndicatorsEnabled',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid',
+          'allowRequests',
+          'requestPermission',
+          'readReceiptsEnabled',
+          'onlineStatusVisible',
+          'typingIndicatorsEnabled',
+          'updatedAt'
+        ])
+        && data.uid is string
+        && data.uid == userId
+        && data.allowRequests is bool
+        && data.requestPermission in ['everyone', 'following', 'mutuals']
+        && data.readReceiptsEnabled is bool
+        && data.onlineStatusVisible is bool
+        && data.typingIndicatorsEnabled is bool
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUserPresence(data, userId) {
+      return data.keys().hasAll(['uid', 'status', 'visible', 'lastActiveAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'status', 'visible', 'lastActiveAt', 'updatedAt'])
+        && data.uid is string
+        && data.uid == userId
+        && data.status in ['online', 'away']
+        && data.visible is bool
+        && data.lastActiveAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidConversation(data, conversationId) {
+      return data.keys().hasAll([
+          'id',
+          'type',
+          'directKey',
+          'name',
+          'description',
+          'avatarUrl',
+          'avatarPath',
+          'ownerId',
+          'adminIds',
+          'participantIds',
+          'lastMessageText',
+          'lastMessageSenderId',
+          'lastMessageType',
+          'lastMessageAt',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'type',
+          'directKey',
+          'name',
+          'description',
+          'avatarUrl',
+          'avatarPath',
+          'ownerId',
+          'adminIds',
+          'participantIds',
+          'lastMessageText',
+          'lastMessageSenderId',
+          'lastMessageType',
+          'lastMessageAt',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.id is string
+        && data.id == conversationId
+        && data.type in ['direct', 'group']
+        && data.directKey is string
+        && data.directKey.size() <= 280
+        && data.name is string
+        && data.name.size() <= 60
+        && (data.type == 'direct' || data.name.size() >= 2)
+        && data.description is string
+        && data.description.size() <= 300
+        && isValidOptionalHttpsUrl(data.avatarUrl, 1000)
+        && data.avatarPath is string
+        && data.avatarPath.size() <= 300
+        && data.ownerId is string
+        && data.ownerId.size() <= 128
+        && data.adminIds is list
+        && data.adminIds.size() <= 25
+        && data.participantIds is list
+        && data.participantIds.size() >= 1
+        && data.participantIds.size() <= 25
+        && (
+          (data.type == 'direct' && data.participantIds.size() == 2 && data.ownerId == '' && data.adminIds.size() == 0 && data.directKey != '')
+          || (data.type == 'group' && data.ownerId != '' && data.ownerId in data.participantIds && data.ownerId in data.adminIds && data.directKey == '')
+        )
+        && data.lastMessageText is string
+        && data.lastMessageText.size() <= 200
+        && data.lastMessageSenderId is string
+        && data.lastMessageSenderId.size() <= 128
+        && data.lastMessageType in ['text', 'system', 'none']
+        && data.lastMessageAt is timestamp
+        && data.status in ['active', 'archived']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidConversationMember(data, memberDocId) {
+      return data.keys().hasAll([
+          'id',
+          'conversationId',
+          'userId',
+          'username',
+          'displayName',
+          'avatarUrl',
+          'role',
+          'unreadCount',
+          'lastReadAt',
+          'muted',
+          'archived',
+          'joinedAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'conversationId',
+          'userId',
+          'username',
+          'displayName',
+          'avatarUrl',
+          'role',
+          'unreadCount',
+          'lastReadAt',
+          'muted',
+          'archived',
+          'joinedAt',
+          'updatedAt'
+        ])
+        && data.id is string
+        && data.id == memberDocId
+        && isValidConversationId(data.conversationId)
+        && isValidId(data.userId)
+        && memberDocId == data.conversationId + '__' + data.userId
+        && isValidUsernameFormat(data.username)
+        && data.displayName is string
+        && data.displayName.size() >= 2
+        && data.displayName.size() <= 40
+        && isValidOptionalHttpsUrl(data.avatarUrl, 500)
+        && data.role in ['owner', 'admin', 'member']
+        && data.unreadCount is int
+        && data.unreadCount >= 0
+        && (data.lastReadAt == null || data.lastReadAt is timestamp)
+        && data.muted is bool
+        && data.archived is bool
+        && data.joinedAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidMessage(data, conversationId, messageId) {
+      return data.keys().hasAll([
+          'id',
+          'conversationId',
+          'senderId',
+          'senderUsername',
+          'senderDisplayName',
+          'senderAvatarUrl',
+          'messageType',
+          'text',
+          'replyToMessageId',
+          'replyToPreview',
+          'replyToSenderName',
+          'editedAt',
+          'deletedAt',
+          'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'conversationId',
+          'senderId',
+          'senderUsername',
+          'senderDisplayName',
+          'senderAvatarUrl',
+          'messageType',
+          'text',
+          'replyToMessageId',
+          'replyToPreview',
+          'replyToSenderName',
+          'editedAt',
+          'deletedAt',
+          'createdAt'
+        ])
+        && data.id is string
+        && data.id == messageId
+        && data.conversationId is string
+        && data.conversationId == conversationId
+        && data.senderId is string
+        && isValidId(data.senderId)
+        && isValidUsernameFormat(data.senderUsername)
+        && data.senderDisplayName is string
+        && data.senderDisplayName.size() >= 2
+        && data.senderDisplayName.size() <= 40
+        && isValidOptionalHttpsUrl(data.senderAvatarUrl, 500)
+        && data.messageType in ['text', 'system']
+        && data.text is string
+        && data.text.size() <= 2000
+        && (data.deletedAt != null || data.text.size() >= 1)
+        && data.replyToMessageId is string
+        && data.replyToMessageId.size() <= 128
+        && data.replyToPreview is string
+        && data.replyToPreview.size() <= 160
+        && data.replyToSenderName is string
+        && data.replyToSenderName.size() <= 40
+        && (data.editedAt == null || data.editedAt is timestamp)
+        && (data.deletedAt == null || data.deletedAt is timestamp)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidMessageRequest(data, requestId) {
+      return data.keys().hasAll([
+          'id',
+          'senderId',
+          'senderUsername',
+          'senderDisplayName',
+          'senderAvatarUrl',
+          'recipientId',
+          'recipientUsername',
+          'recipientDisplayName',
+          'recipientAvatarUrl',
+          'initialMessage',
+          'status',
+          'conversationId',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'senderId',
+          'senderUsername',
+          'senderDisplayName',
+          'senderAvatarUrl',
+          'recipientId',
+          'recipientUsername',
+          'recipientDisplayName',
+          'recipientAvatarUrl',
+          'initialMessage',
+          'status',
+          'conversationId',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.id is string
+        && data.id == requestId
+        && isValidId(data.senderId)
+        && isValidUsernameFormat(data.senderUsername)
+        && data.senderDisplayName is string
+        && data.senderDisplayName.size() >= 2
+        && data.senderDisplayName.size() <= 40
+        && isValidOptionalHttpsUrl(data.senderAvatarUrl, 500)
+        && isValidId(data.recipientId)
+        && data.senderId != data.recipientId
+        && requestId == data.senderId + '__' + data.recipientId
+        && isValidUsernameFormat(data.recipientUsername)
+        && data.recipientDisplayName is string
+        && data.recipientDisplayName.size() >= 2
+        && data.recipientDisplayName.size() <= 40
+        && isValidOptionalHttpsUrl(data.recipientAvatarUrl, 500)
+        && data.initialMessage is string
+        && data.initialMessage.size() >= 1
+        && data.initialMessage.size() <= 1000
+        && data.status in ['pending', 'accepted', 'declined', 'cancelled']
+        && data.conversationId is string
+        && data.conversationId.size() <= 300
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidTypingDoc(data, userId) {
+      return data.keys().hasAll(['uid', 'displayName', 'isTyping', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'isTyping', 'updatedAt'])
+        && data.uid is string
+        && data.uid == userId
+        && data.displayName is string
+        && data.displayName.size() >= 2
+        && data.displayName.size() <= 40
+        && data.isTyping is bool
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidMessageRateLimit(data, userId) {
+      return data.keys().hasAll(['uid', 'lastMessageAt', 'lastRequestAt', 'lastGroupCreatedAt'])
+        && data.keys().hasOnly(['uid', 'lastMessageAt', 'lastRequestAt', 'lastGroupCreatedAt'])
+        && data.uid is string
+        && data.uid == userId
+        && (data.lastMessageAt == null || data.lastMessageAt is timestamp)
+        && (data.lastRequestAt == null || data.lastRequestAt is timestamp)
+        && (data.lastGroupCreatedAt == null || data.lastGroupCreatedAt is timestamp);
+    }
+
     function isValidReport(data, reportId) {
       return data.keys().hasAll([
           'id',
@@ -383,6 +750,7 @@ service cloud.firestore {
           'targetId',
           'postId',
           'communityId',
+          'conversationId',
           'targetAuthorId',
           'reason',
           'details',
@@ -392,10 +760,11 @@ service cloud.firestore {
         && data.id is string
         && data.id == reportId
         && isValidId(data.reporterId)
-        && data.targetType in ['post', 'comment', 'community']
-        && isValidId(data.targetId)
-        && isValidId(data.postId)
+        && data.targetType in ['post', 'comment', 'community', 'message', 'conversation']
+        && isValidConversationId(data.targetId)
+        && isValidConversationId(data.postId)
         && (!('communityId' in data) || (data.communityId is string && data.communityId.size() <= 128))
+        && (!('conversationId' in data) || (data.conversationId is string && data.conversationId.size() <= 300))
         && isValidId(data.targetAuthorId)
         && data.reason in [
           'spam',
@@ -1487,6 +1856,592 @@ service cloud.firestore {
         && incoming().keys().hasOnly(['uid', 'lastCommentAt'])
         && incoming().uid == userId
         && incoming().lastCommentAt == request.time;
+
+      allow delete: if false;
+    }
+
+    // Build 04B: Per-user Private Messaging Settings
+    match /messageSettings/{userId} {
+      allow get: if isValidId(userId) && isSignedIn();
+      allow list: if false;
+
+      allow create, update: if isValidId(userId)
+        && isOwner(userId)
+        && isEmailVerified()
+        && isValidMessageSettings(incoming(), userId)
+        && incoming().updatedAt == request.time;
+
+      allow delete: if false;
+    }
+
+    // Build 04B: Conservative Last-Active / Visibility-Gated Presence Foundation
+    match /userPresence/{userId} {
+      allow get: if isValidId(userId)
+        && isSignedIn()
+        && (
+          resource == null
+          || isOwner(userId)
+          || (!isBlockedBetween(userId, request.auth.uid) && existing().visible == true)
+        );
+      allow list: if false;
+
+      allow create, update: if isValidId(userId)
+        && isOwner(userId)
+        && isEmailVerified()
+        && isValidUserPresence(incoming(), userId)
+        && incoming().lastActiveAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow delete: if false;
+    }
+
+    // Build 04B: Private Direct & Group Conversations
+    match /conversations/{conversationId} {
+      allow get: if isValidConversationId(conversationId)
+        && isSignedIn()
+        && (
+          (
+            resource == null
+            && (
+              conversationId.matches('^dm__' + request.auth.uid + '__[a-zA-Z0-9_\\-]+$')
+              || conversationId.matches('^dm__[a-zA-Z0-9_\\-]+__' + request.auth.uid + '$')
+            )
+          )
+          || (resource != null && request.auth.uid in existing().participantIds)
+        );
+
+      allow list: if isSignedIn()
+        && request.auth.uid in existing().participantIds;
+
+      allow create: if isValidConversationId(conversationId)
+        && isEmailVerified()
+        && isValidConversation(incoming(), conversationId)
+        && incoming().status == 'active'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && incoming().lastMessageAt == request.time
+        && (
+          // Direct conversation created atomically when recipient accepts a pending message request
+          (
+            incoming().type == 'direct'
+            && incoming().participantIds.size() == 2
+            && request.auth.uid in incoming().participantIds
+            && (
+              (
+                incoming().participantIds[0] == request.auth.uid
+                && conversationId == 'dm__' + (incoming().participantIds[1] < request.auth.uid ? incoming().participantIds[1] + '__' + request.auth.uid : request.auth.uid + '__' + incoming().participantIds[1])
+                && incoming().directKey == (incoming().participantIds[1] < request.auth.uid ? incoming().participantIds[1] + '__' + request.auth.uid : request.auth.uid + '__' + incoming().participantIds[1])
+                && !isBlockedBetween(request.auth.uid, incoming().participantIds[1])
+                && exists(/databases/$(database)/documents/messageRequests/$(incoming().participantIds[1] + '__' + request.auth.uid))
+                && get(/databases/$(database)/documents/messageRequests/$(incoming().participantIds[1] + '__' + request.auth.uid)).data.status == 'pending'
+                && getAfter(/databases/$(database)/documents/messageRequests/$(incoming().participantIds[1] + '__' + request.auth.uid)).data.status == 'accepted'
+              )
+              ||
+              (
+                incoming().participantIds[1] == request.auth.uid
+                && conversationId == 'dm__' + (incoming().participantIds[0] < request.auth.uid ? incoming().participantIds[0] + '__' + request.auth.uid : request.auth.uid + '__' + incoming().participantIds[0])
+                && incoming().directKey == (incoming().participantIds[0] < request.auth.uid ? incoming().participantIds[0] + '__' + request.auth.uid : request.auth.uid + '__' + incoming().participantIds[0])
+                && !isBlockedBetween(request.auth.uid, incoming().participantIds[0])
+                && exists(/databases/$(database)/documents/messageRequests/$(incoming().participantIds[0] + '__' + request.auth.uid))
+                && get(/databases/$(database)/documents/messageRequests/$(incoming().participantIds[0] + '__' + request.auth.uid)).data.status == 'pending'
+                && getAfter(/databases/$(database)/documents/messageRequests/$(incoming().participantIds[0] + '__' + request.auth.uid)).data.status == 'accepted'
+              )
+            )
+            && existsAfter(/databases/$(database)/documents/conversationMembers/$(conversationId + '__' + incoming().participantIds[0]))
+            && existsAfter(/databases/$(database)/documents/conversationMembers/$(conversationId + '__' + incoming().participantIds[1]))
+          )
+          ||
+          // Group conversation created by verified owner with atomic rate limit & owner membership
+          (
+            incoming().type == 'group'
+            && incoming().ownerId == request.auth.uid
+            && incoming().adminIds.size() == 1
+            && incoming().adminIds[0] == request.auth.uid
+            && incoming().participantIds.size() >= 2
+            && request.auth.uid in incoming().participantIds
+            && exists(/databases/$(database)/documents/publicProfiles/$(request.auth.uid))
+            && existsAfter(/databases/$(database)/documents/conversationMembers/$(conversationId + '__' + request.auth.uid))
+            && getAfter(/databases/$(database)/documents/conversationMembers/$(conversationId + '__' + request.auth.uid)).data.role == 'owner'
+            && getAfter(/databases/$(database)/documents/messageRateLimits/$(request.auth.uid)).data.lastGroupCreatedAt == request.time
+            && (
+              !exists(/databases/$(database)/documents/messageRateLimits/$(request.auth.uid))
+              || get(/databases/$(database)/documents/messageRateLimits/$(request.auth.uid)).data.lastGroupCreatedAt == null
+              || request.time >= get(/databases/$(database)/documents/messageRateLimits/$(request.auth.uid)).data.lastGroupCreatedAt + duration.value(20, 's')
+            )
+          )
+        );
+
+      allow update: if isValidConversationId(conversationId)
+        && isEmailVerified()
+        && request.auth.uid in existing().participantIds
+        && isValidConversation(incoming(), conversationId)
+        && incoming().id == existing().id
+        && incoming().type == existing().type
+        && incoming().directKey == existing().directKey
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action 1: Active participant updates last-message summary on send/edit/delete
+          (
+            existing().status == 'active'
+            && incoming().status == existing().status
+            && incoming().participantIds == existing().participantIds
+            && incoming().adminIds == existing().adminIds
+            && (existing().type == 'group' || !isBlockedBetween(existing().participantIds[0], existing().participantIds[1]))
+            && (incoming().lastMessageAt == request.time || incoming().lastMessageAt == existing().lastMessageAt)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['lastMessageText', 'lastMessageSenderId', 'lastMessageType', 'lastMessageAt', 'updatedAt'])
+          )
+          ||
+          // Action 2: Group owner/admin updates group name, description, or avatar
+          (
+            existing().type == 'group'
+            && existing().status == 'active'
+            && request.auth.uid in existing().adminIds
+            && incoming().participantIds == existing().participantIds
+            && incoming().adminIds == existing().adminIds
+            && incoming().status == existing().status
+            && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'description', 'avatarUrl', 'avatarPath', 'updatedAt'])
+          )
+          ||
+          // Action 3: Group owner archives or restores group
+          (
+            existing().type == 'group'
+            && existing().ownerId == request.auth.uid
+            && incoming().participantIds == existing().participantIds
+            && incoming().adminIds == existing().adminIds
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+          ||
+          // Action 4: Group owner promotes/demotes admins (only from existing participants)
+          (
+            existing().type == 'group'
+            && existing().status == 'active'
+            && existing().ownerId == request.auth.uid
+            && incoming().participantIds == existing().participantIds
+            && incoming().ownerId in incoming().adminIds
+            && incoming().participantIds.hasAll(incoming().adminIds)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['adminIds', 'updatedAt'])
+          )
+          ||
+          // Action 5: Group admin adds or removes members (owner cannot be removed)
+          (
+            existing().type == 'group'
+            && existing().status == 'active'
+            && request.auth.uid in existing().adminIds
+            && existing().ownerId in incoming().participantIds
+            && existing().ownerId in incoming().adminIds
+            && incoming().participantIds.hasAll(incoming().adminIds)
+            && (incoming().lastMessageAt == request.time || incoming().lastMessageAt == existing().lastMessageAt)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['participantIds', 'adminIds', 'lastMessageText', 'lastMessageSenderId', 'lastMessageType', 'lastMessageAt', 'updatedAt'])
+          )
+          ||
+          // Action 6: Non-owner participant leaves group cleanly
+          (
+            existing().type == 'group'
+            && existing().status == 'active'
+            && existing().ownerId != request.auth.uid
+            && !(request.auth.uid in incoming().participantIds)
+            && !(request.auth.uid in incoming().adminIds)
+            && existing().participantIds.hasAll(incoming().participantIds)
+            && incoming().participantIds.size() == existing().participantIds.size() - 1
+            && incoming().participantIds.hasAll(incoming().adminIds)
+            && (incoming().lastMessageAt == request.time || incoming().lastMessageAt == existing().lastMessageAt)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['participantIds', 'adminIds', 'lastMessageText', 'lastMessageSenderId', 'lastMessageType', 'lastMessageAt', 'updatedAt'])
+          )
+        );
+
+      allow delete: if isValidConversationId(conversationId)
+        && isEmailVerified()
+        && existing().type == 'group'
+        && existing().ownerId == request.auth.uid;
+
+      // Real-time messages inside a private conversation
+      match /messages/{messageId} {
+        allow get: if isValidConversationId(conversationId)
+          && isValidId(messageId)
+          && isSignedIn()
+          && isConversationParticipant(conversationId, request.auth.uid);
+
+        allow list: if isValidConversationId(conversationId)
+          && isSignedIn()
+          && isConversationParticipant(conversationId, request.auth.uid);
+
+        allow create: if isValidConversationId(conversationId)
+          && isValidId(messageId)
+          && isEmailVerified()
+          && isValidMessage(incoming(), conversationId, messageId)
+          && incoming().editedAt == null
+          && incoming().deletedAt == null
+          && incoming().createdAt == request.time
+          && (
+            // Standard message inside an existing active conversation
+            (
+              isConversationParticipant(conversationId, request.auth.uid)
+              && isConversationActive(conversationId)
+              && incoming().senderId == request.auth.uid
+              && (
+                get(/databases/$(database)/documents/conversations/$(conversationId)).data.type == 'group'
+                || !isBlockedBetween(
+                  get(/databases/$(database)/documents/conversations/$(conversationId)).data.participantIds[0],
+                  get(/databases/$(database)/documents/conversations/$(conversationId)).data.participantIds[1]
+                )
+              )
+              && (
+                incoming().messageType == 'system'
+                || (
+                  getAfter(/databases/$(database)/documents/messageRateLimits/$(request.auth.uid)).data.lastMessageAt == request.time
+                  && (
+                    !exists(/databases/$(database)/documents/messageRateLimits/$(request.auth.uid))
+                    || get(/databases/$(database)/documents/messageRateLimits/$(request.auth.uid)).data.lastMessageAt == null
+                    || request.time >= get(/databases/$(database)/documents/messageRateLimits/$(request.auth.uid)).data.lastMessageAt + duration.value(1, 's')
+                  )
+                )
+              )
+            )
+            ||
+            // Initial system message written atomically during group conversation creation
+            (
+              !exists(/databases/$(database)/documents/conversations/$(conversationId))
+              && existsAfter(/databases/$(database)/documents/conversations/$(conversationId))
+              && getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data.type == 'group'
+              && getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data.ownerId == request.auth.uid
+              && incoming().senderId == request.auth.uid
+              && incoming().messageType == 'system'
+            )
+            ||
+            // Initial text message preserved atomically when recipient accepts a pending message request
+            (
+              !exists(/databases/$(database)/documents/conversations/$(conversationId))
+              && existsAfter(/databases/$(database)/documents/conversations/$(conversationId))
+              && getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data.type == 'direct'
+              && incoming().messageType == 'text'
+              && incoming().senderId != request.auth.uid
+              && incoming().senderId in getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data.participantIds
+              && request.auth.uid in getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data.participantIds
+              && exists(/databases/$(database)/documents/messageRequests/$(incoming().senderId + '__' + request.auth.uid))
+              && get(/databases/$(database)/documents/messageRequests/$(incoming().senderId + '__' + request.auth.uid)).data.status == 'pending'
+              && getAfter(/databases/$(database)/documents/messageRequests/$(incoming().senderId + '__' + request.auth.uid)).data.status == 'accepted'
+              && incoming().text == get(/databases/$(database)/documents/messageRequests/$(incoming().senderId + '__' + request.auth.uid)).data.initialMessage
+            )
+          );
+
+        allow update: if isValidConversationId(conversationId)
+          && isValidId(messageId)
+          && isEmailVerified()
+          && isConversationParticipant(conversationId, request.auth.uid)
+          && isConversationActive(conversationId)
+          && isValidMessage(incoming(), conversationId, messageId)
+          && existing().senderId == request.auth.uid
+          && existing().deletedAt == null
+          && existing().messageType == 'text'
+          && incoming().id == existing().id
+          && incoming().conversationId == existing().conversationId
+          && incoming().senderId == existing().senderId
+          && incoming().senderUsername == existing().senderUsername
+          && incoming().messageType == existing().messageType
+          && incoming().replyToMessageId == existing().replyToMessageId
+          && incoming().replyToPreview == existing().replyToPreview
+          && incoming().replyToSenderName == existing().replyToSenderName
+          && incoming().createdAt == existing().createdAt
+          && (
+            // Edit own text message within 15 minutes
+            (
+              incoming().deletedAt == null
+              && incoming().editedAt == request.time
+              && incoming().text.size() >= 1
+              && request.time <= existing().createdAt + duration.value(15, 'm')
+              && incoming().diff(existing()).affectedKeys().hasOnly(['text', 'editedAt'])
+            )
+            ||
+            // Soft-delete / tombstone own message
+            (
+              incoming().deletedAt == request.time
+              && incoming().text == ''
+              && incoming().editedAt == existing().editedAt
+              && incoming().diff(existing()).affectedKeys().hasOnly(['text', 'deletedAt'])
+            )
+          );
+
+        allow delete: if false;
+      }
+
+      // Ephemeral per-user typing indicator state
+      match /typing/{userId} {
+        allow get: if isValidConversationId(conversationId)
+          && isValidId(userId)
+          && isSignedIn()
+          && isConversationParticipant(conversationId, request.auth.uid);
+
+        allow list: if isValidConversationId(conversationId)
+          && isSignedIn()
+          && isConversationParticipant(conversationId, request.auth.uid);
+
+        allow create, update: if isValidConversationId(conversationId)
+          && isValidId(userId)
+          && isOwner(userId)
+          && isEmailVerified()
+          && isConversationParticipant(conversationId, request.auth.uid)
+          && isConversationActive(conversationId)
+          && isValidTypingDoc(incoming(), userId)
+          && incoming().updatedAt == request.time;
+
+        allow delete: if isValidConversationId(conversationId)
+          && isValidId(userId)
+          && isOwner(userId)
+          && isEmailVerified();
+      }
+    }
+
+    // Build 04B: Deterministic Per-Member Conversation State ({conversationId}__{userId})
+    match /conversationMembers/{memberDocId} {
+      allow get: if isValidMemberDocId(memberDocId)
+        && isSignedIn()
+        && (
+          (resource == null && memberDocId.matches('^[a-zA-Z0-9_\\-]+__' + request.auth.uid + '$'))
+          || (
+            resource != null
+            && (
+              existing().userId == request.auth.uid
+              || isConversationParticipant(existing().conversationId, request.auth.uid)
+            )
+          )
+        );
+
+      allow list: if isSignedIn()
+        && (
+          existing().userId == request.auth.uid
+          || isConversationParticipant(existing().conversationId, request.auth.uid)
+        );
+
+      allow create: if isValidMemberDocId(memberDocId)
+        && isEmailVerified()
+        && isValidConversationMember(incoming(), memberDocId)
+        && incoming().unreadCount >= 0
+        && incoming().muted == false
+        && incoming().archived == false
+        && incoming().joinedAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/publicProfiles/$(incoming().userId))
+        && (incoming().userId == request.auth.uid || !isBlockedBetween(request.auth.uid, incoming().userId))
+        && (
+          // Atomic direct conversation accept or group creation
+          (
+            !exists(/databases/$(database)/documents/conversations/$(incoming().conversationId))
+            && existsAfter(/databases/$(database)/documents/conversations/$(incoming().conversationId))
+            && incoming().userId in getAfter(/databases/$(database)/documents/conversations/$(incoming().conversationId)).data.participantIds
+            && (
+              (
+                getAfter(/databases/$(database)/documents/conversations/$(incoming().conversationId)).data.type == 'direct'
+                && incoming().role == 'member'
+              )
+              ||
+              (
+                getAfter(/databases/$(database)/documents/conversations/$(incoming().conversationId)).data.type == 'group'
+                && getAfter(/databases/$(database)/documents/conversations/$(incoming().conversationId)).data.ownerId == request.auth.uid
+                && (
+                  (incoming().userId == request.auth.uid && incoming().role == 'owner')
+                  || (incoming().userId != request.auth.uid && incoming().role == 'member')
+                )
+              )
+            )
+          )
+          ||
+          // Existing group admin adds a new member atomically
+          (
+            isConversationAdmin(incoming().conversationId, request.auth.uid)
+            && isConversationActive(incoming().conversationId)
+            && incoming().role == 'member'
+            && incoming().userId in getAfter(/databases/$(database)/documents/conversations/$(incoming().conversationId)).data.participantIds
+          )
+        );
+
+      allow update: if isValidMemberDocId(memberDocId)
+        && isEmailVerified()
+        && isValidConversationMember(incoming(), memberDocId)
+        && incoming().id == existing().id
+        && incoming().conversationId == existing().conversationId
+        && incoming().userId == existing().userId
+        && incoming().username == existing().username
+        && incoming().joinedAt == existing().joinedAt
+        && incoming().updatedAt == request.time
+        && (
+          // Member updates own read cursor, unread clear, mute, archive, or profile snapshot
+          (
+            existing().userId == request.auth.uid
+            && isConversationParticipant(existing().conversationId, request.auth.uid)
+            && incoming().role == existing().role
+            && (incoming().unreadCount == 0 || incoming().unreadCount == existing().unreadCount)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['unreadCount', 'lastReadAt', 'muted', 'archived', 'displayName', 'avatarUrl', 'updatedAt'])
+          )
+          ||
+          // Another active participant increments unreadCount by +1 on message send
+          (
+            existing().userId != request.auth.uid
+            && isConversationParticipant(existing().conversationId, request.auth.uid)
+            && existing().userId in get(/databases/$(database)/documents/conversations/$(existing().conversationId)).data.participantIds
+            && incoming().unreadCount == existing().unreadCount + 1
+            && incoming().diff(existing()).affectedKeys().hasOnly(['unreadCount', 'updatedAt'])
+          )
+          ||
+          // Group owner promotes/demotes member <-> admin (synced with conversation.adminIds)
+          (
+            isConversationOwner(existing().conversationId, request.auth.uid)
+            && existing().userId != request.auth.uid
+            && existing().role != 'owner'
+            && incoming().role in ['member', 'admin']
+            && incoming().diff(existing()).affectedKeys().hasOnly(['role', 'updatedAt'])
+            && (
+              (incoming().role == 'admin' && existing().userId in getAfter(/databases/$(database)/documents/conversations/$(existing().conversationId)).data.adminIds)
+              || (incoming().role == 'member' && !(existing().userId in getAfter(/databases/$(database)/documents/conversations/$(existing().conversationId)).data.adminIds))
+            )
+          )
+        );
+
+      allow delete: if isValidMemberDocId(memberDocId)
+        && isEmailVerified()
+        && (
+          // Member leaves group atomically
+          (
+            existing().userId == request.auth.uid
+            && existing().role != 'owner'
+            && existsAfter(/databases/$(database)/documents/conversations/$(existing().conversationId))
+            && !(request.auth.uid in getAfter(/databases/$(database)/documents/conversations/$(existing().conversationId)).data.participantIds)
+          )
+          ||
+          // Group admin removes non-owner member (or owner removes admin) atomically
+          (
+            isConversationAdmin(existing().conversationId, request.auth.uid)
+            && existing().role != 'owner'
+            && (existing().role == 'member' || isConversationOwner(existing().conversationId, request.auth.uid))
+            && existsAfter(/databases/$(database)/documents/conversations/$(existing().conversationId))
+            && !(existing().userId in getAfter(/databases/$(database)/documents/conversations/$(existing().conversationId)).data.participantIds)
+          )
+          ||
+          // Group owner deleting entire group cleans up memberships atomically
+          (
+            isConversationOwner(existing().conversationId, request.auth.uid)
+            && !existsAfter(/databases/$(database)/documents/conversations/$(existing().conversationId))
+          )
+        );
+    }
+
+    // Build 04B: First-Contact Message Requests ({senderId}__{recipientId})
+    match /messageRequests/{requestId} {
+      allow get: if isValidPairId(requestId)
+        && isSignedIn()
+        && (
+          (
+            resource == null
+            && (
+              requestId.matches('^' + request.auth.uid + '__[a-zA-Z0-9_\\-]+$')
+              || requestId.matches('^[a-zA-Z0-9_\\-]+__' + request.auth.uid + '$')
+            )
+          )
+          || (
+            resource != null
+            && (existing().senderId == request.auth.uid || existing().recipientId == request.auth.uid)
+          )
+        );
+
+      allow list: if isSignedIn()
+        && (existing().senderId == request.auth.uid || existing().recipientId == request.auth.uid);
+
+      allow create: if isValidPairId(requestId)
+        && isEmailVerified()
+        && isValidMessageRequest(incoming(), requestId)
+        && incoming().senderId == request.auth.uid
+        && incoming().status == 'pending'
+        && incoming().conversationId == ''
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && recipientAllowsMessageRequest(request.auth.uid, incoming().recipientId)
+        && !exists(/databases/$(database)/documents/conversations/$(directConvId(request.auth.uid, incoming().recipientId)))
+        && getAfter(/databases/$(database)/documents/messageRateLimits/$(request.auth.uid)).data.lastRequestAt == request.time
+        && (
+          !exists(/databases/$(database)/documents/messageRateLimits/$(request.auth.uid))
+          || get(/databases/$(database)/documents/messageRateLimits/$(request.auth.uid)).data.lastRequestAt == null
+          || request.time >= get(/databases/$(database)/documents/messageRateLimits/$(request.auth.uid)).data.lastRequestAt + duration.value(10, 's')
+        );
+
+      allow update: if isValidPairId(requestId)
+        && isEmailVerified()
+        && isValidMessageRequest(incoming(), requestId)
+        && incoming().id == existing().id
+        && incoming().senderId == existing().senderId
+        && incoming().recipientId == existing().recipientId
+        && incoming().senderUsername == existing().senderUsername
+        && incoming().recipientUsername == existing().recipientUsername
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Recipient accepts pending request atomically with direct conversation creation
+          (
+            existing().recipientId == request.auth.uid
+            && existing().status == 'pending'
+            && incoming().status == 'accepted'
+            && !isBlockedBetween(existing().senderId, existing().recipientId)
+            && isValidConversationId(incoming().conversationId)
+            && existsAfter(/databases/$(database)/documents/conversations/$(incoming().conversationId))
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'conversationId', 'updatedAt'])
+          )
+          ||
+          // Recipient declines pending request (permanent decline prevents repeat spam)
+          (
+            existing().recipientId == request.auth.uid
+            && existing().status == 'pending'
+            && incoming().status == 'declined'
+            && incoming().conversationId == ''
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+          ||
+          // Sender cancels own pending request
+          (
+            existing().senderId == request.auth.uid
+            && existing().status == 'pending'
+            && incoming().status == 'cancelled'
+            && incoming().conversationId == ''
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+          ||
+          // Sender may re-send ONLY if previously cancelled (never after declined)
+          (
+            existing().senderId == request.auth.uid
+            && existing().status == 'cancelled'
+            && incoming().status == 'pending'
+            && incoming().conversationId == ''
+            && recipientAllowsMessageRequest(request.auth.uid, existing().recipientId)
+            && !exists(/databases/$(database)/documents/conversations/$(directConvId(request.auth.uid, existing().recipientId)))
+            && incoming().diff(existing()).affectedKeys().hasOnly(['initialMessage', 'status', 'senderDisplayName', 'senderAvatarUrl', 'updatedAt'])
+          )
+        );
+
+      allow delete: if isValidPairId(requestId)
+        && isEmailVerified()
+        && existing().senderId == request.auth.uid
+        && existing().status == 'cancelled';
+    }
+
+    // Build 04B: Per-user server-timestamp messaging rate limits
+    match /messageRateLimits/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isEmailVerified()
+        && isValidMessageRateLimit(incoming(), userId)
+        && (incoming().lastMessageAt == null || incoming().lastMessageAt == request.time)
+        && (incoming().lastRequestAt == null || incoming().lastRequestAt == request.time)
+        && (incoming().lastGroupCreatedAt == null || incoming().lastGroupCreatedAt == request.time);
+
+      allow update: if isValidId(userId)
+        && isOwner(userId)
+        && isEmailVerified()
+        && isValidMessageRateLimit(incoming(), userId)
+        && (incoming().lastMessageAt == existing().lastMessageAt || incoming().lastMessageAt == request.time)
+        && (incoming().lastRequestAt == existing().lastRequestAt || incoming().lastRequestAt == request.time)
+        && (incoming().lastGroupCreatedAt == existing().lastGroupCreatedAt || incoming().lastGroupCreatedAt == request.time);
 
       allow delete: if false;
     }

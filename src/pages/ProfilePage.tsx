@@ -48,10 +48,12 @@ import { AuthPage } from './AuthPage';
 
 interface ProfilePageProps {
   initialAuthMode?: AuthViewMode;
+  onStartDirectMessage?: (targetUserId: string) => void;
 }
 
 export const ProfilePage: React.FC<ProfilePageProps> = ({
   initialAuthMode = 'login',
+  onStartDirectMessage,
 }) => {
   const {
     firebaseUser,
@@ -831,6 +833,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         onBlockStateChanged={() => {
           void loadSocialProfileData(firebaseUser.uid);
         }}
+        onStartDirectMessage={onStartDirectMessage}
       />
 
       {reportCommentTarget && (

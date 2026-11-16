@@ -4,6 +4,7 @@ import {
   Ban,
   Check,
   Film,
+  Mail,
   ShieldAlert,
   UserCheck,
   UserPlus,
@@ -33,6 +34,7 @@ interface PublicProfileModalProps {
   onBlockStateChanged?: (targetUserId: string, isBlocked: boolean) => void;
   onOpenAuth?: (mode: AuthViewMode) => void;
   onOpenPostDetail?: (post: AtaPost) => void;
+  onStartDirectMessage?: (targetUserId: string) => void;
 }
 
 export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
@@ -42,6 +44,7 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
   onBlockStateChanged,
   onOpenAuth,
   onOpenPostDetail,
+  onStartDirectMessage,
 }) => {
   const { firebaseUser } = useAuth();
 
@@ -355,6 +358,31 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
                         </>
                       )}
                     </button>
+
+                    {onStartDirectMessage && !blockedByMe && !blockedByThem && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!firebaseUser) {
+                            onClose();
+                            onOpenAuth?.('login');
+                            return;
+                          }
+                          if (!isVerified) {
+                            setError(
+                              'Please verify your email address before sending direct messages.'
+                            );
+                            return;
+                          }
+                          onClose();
+                          onStartDirectMessage(publicProfile.uid);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[40px] text-xs font-semibold text-[#090B14] dark:text-white bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] rounded-xl hover:border-[#EF3038] transition-colors whitespace-nowrap"
+                      >
+                        <Mail className="h-3.5 w-3.5 text-[#EF3038]" aria-hidden="true" />
+                        <span>Message</span>
+                      </button>
+                    )}
 
                     {isVerified &&
                       (blockedByMe ? (

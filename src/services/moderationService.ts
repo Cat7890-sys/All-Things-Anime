@@ -38,6 +38,9 @@ export async function submitModerationReport(
   if (input.communityId) {
     payload.communityId = input.communityId;
   }
+  if (input.conversationId) {
+    payload.conversationId = input.conversationId;
+  }
 
   try {
     await setDoc(reportRef, payload);

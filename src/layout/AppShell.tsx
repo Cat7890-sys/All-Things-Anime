@@ -28,6 +28,7 @@ interface AppShellProps {
   activeDestination: NavDestinationId;
   onSelectDestination: (id: NavDestinationId) => void;
   onOpenAuth: (mode: AuthViewMode) => void;
+  unreadMessagesCount?: number;
   rightSidebar: React.ReactNode;
   children: React.ReactNode;
 }
@@ -55,6 +56,7 @@ export const AppShell: React.FC<AppShellProps> = ({
   activeDestination,
   onSelectDestination,
   onOpenAuth,
+  unreadMessagesCount = 0,
   rightSidebar,
   children,
 }) => {
@@ -196,16 +198,29 @@ export const AppShell: React.FC<AppShellProps> = ({
                         </span>
                       </span>
 
-                      {!item.isImplemented && (
+                      {item.id === 'messages' && unreadMessagesCount > 0 ? (
                         <span
-                          className={`text-[10px] font-medium shrink-0 ${
+                          aria-label={`${unreadMessagesCount} unread messages`}
+                          className={`inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold tabular-nums shrink-0 ${
                             isActive
-                              ? 'text-white/85'
-                              : 'text-[#52576B] dark:text-[#A7A9B8]/75'
+                              ? 'bg-white text-[#B92335]'
+                              : 'bg-[#EF3038] text-white'
                           }`}
                         >
-                          Soon
+                          {unreadMessagesCount > 99 ? '99+' : unreadMessagesCount}
                         </span>
+                      ) : (
+                        !item.isImplemented && (
+                          <span
+                            className={`text-[10px] font-medium shrink-0 ${
+                              isActive
+                                ? 'text-white/85'
+                                : 'text-[#52576B] dark:text-[#A7A9B8]/75'
+                            }`}
+                          >
+                            Soon
+                          </span>
+                        )
                       )}
                     </button>
                   );
@@ -350,13 +365,23 @@ export const AppShell: React.FC<AppShellProps> = ({
                 type="button"
                 onClick={() => onSelectDestination(id)}
                 aria-current={isActive ? 'page' : undefined}
-                className={`flex flex-col items-center justify-center gap-0.5 min-h-[44px] transition-colors duration-150 ${
+                className={`relative flex flex-col items-center justify-center gap-0.5 min-h-[44px] transition-colors duration-150 ${
                   isActive
                     ? 'text-[#B92335] dark:text-[#EF3038] font-semibold'
                     : 'text-[#52576B] dark:text-[#A7A9B8] font-medium hover:text-[#090B14] dark:hover:text-white'
                 }`}
               >
-                <Icon className="h-5 w-5" aria-hidden="true" />
+                <span className="relative inline-flex items-center justify-center">
+                  <Icon className="h-5 w-5" aria-hidden="true" />
+                  {id === 'messages' && unreadMessagesCount > 0 && (
+                    <span
+                      aria-label={`${unreadMessagesCount} unread messages`}
+                      className="absolute -top-1.5 -right-2.5 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-[#EF3038] text-white text-[9px] font-bold tabular-nums leading-none"
+                    >
+                      {unreadMessagesCount > 99 ? '99+' : unreadMessagesCount}
+                    </span>
+                  )}
+                </span>
                 <span className="text-[11px] leading-none whitespace-nowrap">
                   {dest.shortLabel}
                 </span>

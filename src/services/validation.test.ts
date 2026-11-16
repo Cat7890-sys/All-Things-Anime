@@ -1,5 +1,13 @@
 import assert from 'node:assert/strict';
 import {
+  buildDirectConversationId,
+  buildDirectKey,
+  canEditMessageWithinWindow,
+  GROUP_MAX_PARTICIPANTS,
+  isValidDirectRecipient,
+  MESSAGE_EDIT_WINDOW_MS,
+  MESSAGE_MAX_LENGTH,
+  MESSAGE_REQUEST_MAX_LENGTH,
   normalizeEmail,
   normalizeUsername,
   slugifyCommunityName,
@@ -14,10 +22,16 @@ import {
   validateCommunitySlug,
   validateCommunityTags,
   validateCreateCommunityForm,
+  validateCreateGroupForm,
   validateDisplayName,
   validateEmail,
+  validateGroupDescription,
+  validateGroupName,
+  validateGroupParticipants,
   validateJoinRequestMessage,
   validateLoginForm,
+  validateMessageRequestText,
+  validateMessageText,
   validatePassword,
   validatePostContent,
   validatePostForm,
@@ -27,8 +41,10 @@ import {
   validateReportDetails,
   validateSpoilerLabel,
   validateUpdateCommunityForm,
+  validateUpdateGroupForm,
   validateUsername,
 } from './validation.ts';
+import { getNeutralPreviewText } from './messaging/notificationBoundaryService.ts';
 
 // 1. Email validation
 assert.equal(validateEmail('fan@ata.example'), null);
@@ -233,4 +249,89 @@ assert.equal(
   null
 );
 
-console.log('All ATA Build 02, Build 03 & Build 04A validation assertions passed.');
+// 11. Build 04B: Private messaging IDs, text length, edit window, groups, and notification neutrality
+assert.equal(buildDirectConversationId('uid_b', 'uid_a'), 'dm__uid_a__uid_b');
+assert.equal(buildDirectConversationId('uid_a', 'uid_b'), 'dm__uid_a__uid_b');
+assert.equal(buildDirectKey('uid_b', 'uid_a'), 'uid_a__uid_b');
+assert.ok(isValidDirectRecipient('uid_a', 'uid_a')); // rejects self-DM
+assert.equal(isValidDirectRecipient('uid_a', 'uid_b'), null);
+
+assert.equal(validateMessageText('Watch party starts at 8 PM JST!'), null);
+assert.ok(validateMessageText('   '));
+assert.ok(validateMessageText('m'.repeat(MESSAGE_MAX_LENGTH + 1)));
+
+assert.equal(
+  validateMessageRequestText('Hey! Loved your Frieren pacing breakdown.'),
+  null
+);
+assert.ok(validateMessageRequestText('   '));
+assert.ok(validateMessageRequestText('r'.repeat(MESSAGE_REQUEST_MAX_LENGTH + 1)));
+
+const baseMs = 1_700_000_000_000;
+assert.equal(
+  canEditMessageWithinWindow(new Date(baseMs), baseMs + MESSAGE_EDIT_WINDOW_MS - 1000),
+  true
+);
+assert.equal(
+  canEditMessageWithinWindow(new Date(baseMs), baseMs + MESSAGE_EDIT_WINDOW_MS + 1),
+  false
+);
+assert.equal(canEditMessageWithinWindow(null, baseMs), false);
+
+assert.equal(validateGroupName('Mecha Rewatch Squad'), null);
+assert.ok(validateGroupName('A')); // too short
+assert.ok(validateGroupName('g'.repeat(61))); // too long
+assert.equal(validateGroupDescription('Weekly OVA watch-along coordination.'), null);
+assert.ok(validateGroupDescription('d'.repeat(301))); // exceeds 300 chars
+
+assert.ok(validateGroupParticipants('uid_owner', [])); // requires >= 1 other member
+assert.ok(validateGroupParticipants('uid_owner', ['uid_owner'])); // cannot include only self
+assert.equal(validateGroupParticipants('uid_owner', ['uid_1', 'uid_2']), null);
+assert.ok(
+  validateGroupParticipants(
+    'uid_owner',
+    Array.from({ length: GROUP_MAX_PARTICIPANTS }, (_, idx) => `member_${idx}`)
+  )
+); // exceeds 25 total participants (creator + 25 = 26)
+
+assert.equal(
+  validateCreateGroupForm('uid_owner', {
+    name: 'Sakuga Watch Room',
+    description: 'Episode discussion & frame-by-frame study.',
+    participantIds: ['uid_friend_1'],
+    avatarUrl: 'https://cdn.example.com/group.png',
+  }),
+  null
+);
+assert.ok(
+  validateCreateGroupForm('uid_owner', {
+    name: 'Sakuga Watch Room',
+    description: '',
+    participantIds: ['uid_friend_1'],
+    avatarUrl: 'http://insecure.example.com/group.png',
+  })
+); // rejects non-HTTPS URL
+
+assert.equal(
+  validateUpdateGroupForm({
+    name: 'Sakuga Watch Room',
+    description: 'Updated description',
+    removeAvatar: true,
+    avatarUrl: 'ignored',
+  }),
+  null
+);
+
+assert.equal(
+  getNeutralPreviewText('new_direct_message'),
+  'You have a new direct message.'
+);
+assert.equal(
+  getNeutralPreviewText('new_message_request'),
+  'You received a new message request.'
+);
+
+console.log(
+  'All ATA Build 02, Build 03, Build 04A & Build 04B validation assertions passed.'
+);
+

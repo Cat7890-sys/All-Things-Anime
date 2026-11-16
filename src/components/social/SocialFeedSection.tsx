@@ -40,6 +40,7 @@ import { ReportModal } from './ReportModal';
 interface SocialFeedSectionProps {
   onOpenAuth?: (mode: AuthViewMode) => void;
   onNavigateProfile?: () => void;
+  onStartDirectMessage?: (targetUserId: string) => void;
 }
 
 interface ReportModalState {
@@ -55,6 +56,7 @@ const PAGE_SIZE = 10;
 export const SocialFeedSection: React.FC<SocialFeedSectionProps> = ({
   onOpenAuth,
   onNavigateProfile,
+  onStartDirectMessage,
 }) => {
   const { firebaseUser } = useAuth();
   const { isOnline } = useOnlineStatus();
@@ -598,6 +600,7 @@ export const SocialFeedSection: React.FC<SocialFeedSectionProps> = ({
       <PublicProfileModal
         targetUserId={profileUserId}
         onClose={() => setProfileUserId(null)}
+        onStartDirectMessage={onStartDirectMessage}
         onFollowStateChanged={(uid, nowFollowing) => {
           setFollowingIds((prev) =>
             nowFollowing

@@ -39,6 +39,7 @@ import type {
 interface CommunitiesPageProps {
   onOpenAuth?: (mode: AuthViewMode) => void;
   onNavigateProfile?: () => void;
+  onStartDirectMessage?: (targetUserId: string) => void;
 }
 
 type DiscoveryTab = 'featured' | 'popular' | 'recent' | 'joined';
@@ -46,6 +47,7 @@ type DiscoveryTab = 'featured' | 'popular' | 'recent' | 'joined';
 export const CommunitiesPage: React.FC<CommunitiesPageProps> = ({
   onOpenAuth,
   onNavigateProfile,
+  onStartDirectMessage,
 }) => {
   const { firebaseUser, profile } = useAuth();
   const { isOnline } = useOnlineStatus();
@@ -293,6 +295,7 @@ export const CommunitiesPage: React.FC<CommunitiesPageProps> = ({
         onMembershipChanged={() => void loadDiscovery()}
         onOpenAuth={onOpenAuth}
         onNavigateProfile={onNavigateProfile}
+        onStartDirectMessage={onStartDirectMessage}
       />
     );
   }
