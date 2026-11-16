@@ -11,7 +11,10 @@ import { ComingSoonPage } from './pages/ComingSoonPage';
 import { CommunitiesPage } from './pages/CommunitiesPage';
 import { HomePage } from './pages/HomePage';
 import { MessagesPage } from './pages/MessagesPage';
+import { NotificationsPage } from './pages/NotificationsPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { NotificationToastContainer } from './components/notifications/NotificationToastContainer';
+import { initializeMessagingNotificationBridge } from './services/notifications/notificationEventService';
 import { subscribeToUserMemberStates } from './services/messaging/conversationService';
 import { subscribeToMessageSettings } from './services/messaging/messagingSettingsService';
 import { publishOwnPresence } from './services/messaging/presenceService';
@@ -123,6 +126,14 @@ export default function App() {
     };
   }, [firebaseUser]);
 
+  // Initialize messaging notification bridge
+  useEffect(() => {
+    const unsubBridge = initializeMessagingNotificationBridge();
+    return () => {
+      unsubBridge();
+    };
+  }, []);
+
   const handleSelectDestination = useCallback((destination: NavDestinationId) => {
     setActiveDestination(destination);
     const prefersReducedMotion = window.matchMedia(
@@ -190,6 +201,11 @@ export default function App() {
           onOpenAuth={handleOpenAuth}
           onNavigateProfile={() => handleSelectDestination('profile')}
         />
+      ) : activeDestination === 'notifications' ? (
+        <NotificationsPage
+          currentUserId={firebaseUser?.uid}
+          onNavigateDestination={handleSelectDestination}
+        />
       ) : activeDestination === 'profile' ? (
         <ProfilePage
           initialAuthMode={authMode}
@@ -201,6 +217,10 @@ export default function App() {
           onReturnHome={() => handleSelectDestination('home')}
         />
       )}
+      <NotificationToastContainer
+        currentUserId={firebaseUser?.uid}
+        onNavigateDestination={handleSelectDestination}
+      />
     </AppShell>
   );
 }

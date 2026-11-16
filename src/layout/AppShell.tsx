@@ -22,6 +22,7 @@ import {
   PWAInstallButton,
 } from '../components/pwa/PWAInstallExperience';
 import { PWASystemBanners } from '../components/pwa/PWASystemBanners';
+import { NotificationBell } from '../components/notifications/NotificationBell';
 import type { AuthViewMode, NavDestinationId } from '../types';
 
 interface AppShellProps {
@@ -105,19 +106,10 @@ export const AppShell: React.FC<AppShellProps> = ({
             )}
           </button>
 
-          <button
-            type="button"
-            onClick={() => onSelectDestination('notifications')}
-            aria-label="Notifications"
-            aria-current={activeDestination === 'notifications' ? 'page' : undefined}
-            className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg border transition-colors duration-150 ${
-              activeDestination === 'notifications'
-                ? 'bg-[#EF3038] text-white border-[#B92335]'
-                : 'bg-transparent text-[#090B14] dark:text-[#A7A9B8] border-transparent hover:border-[#D4D7E2] dark:hover:border-[#303342] hover:text-[#090B14] dark:hover:text-white'
-            }`}
-          >
-            <Bell className="h-5 w-5" aria-hidden="true" />
-          </button>
+          <NotificationBell
+            currentUserId={firebaseUser?.uid}
+            onNavigateDestination={onSelectDestination}
+          />
 
           <button
             type="button"

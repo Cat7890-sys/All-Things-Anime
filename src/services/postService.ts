@@ -1,3 +1,4 @@
+import { createNotification } from './notifications/notificationEventService';
 import {
   collection,
   deleteDoc,
@@ -513,6 +514,21 @@ export async function togglePostLike(
         createdAt: serverTimestamp(),
       });
       transaction.update(postRef, { likeCount: nextCount });
+      const authorId = String(postSnap.data().authorId || '');
+      if (authorId && authorId !== uid) {
+        void createNotification({
+          recipientId: authorId,
+          actorId: uid,
+          type: 'like_post',
+          category: 'social',
+          title: 'New Like',
+          body: 'Someone liked your post.',
+          targetType: 'post',
+          targetId: postId,
+          route: `/?postId=${postId}`,
+          dedupeKey: `like_${postId}_${uid}`,
+        });
+      }
       return { liked: true, likeCount: nextCount };
     });
   } catch (error) {

@@ -2445,5 +2445,28 @@ service cloud.firestore {
 
       allow delete: if false;
     }
+
+    // Build 05: Notifications
+    match /notifications/{notificationId} {
+      allow get, list: if isSignedIn()
+        && resource.data.recipientId == request.auth.uid;
+
+      allow create: if isEmailVerified()
+        && resource == null;
+
+      allow update: if isSignedIn()
+        && resource.data.recipientId == request.auth.uid;
+
+      allow delete: if isSignedIn()
+        && resource.data.recipientId == request.auth.uid;
+    }
+
+    // Build 05: Notification Settings
+    match /notificationSettings/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+      allow create, update: if isValidId(userId) && isOwner(userId) && isEmailVerified();
+      allow delete: if false;
+    }
   }
 }

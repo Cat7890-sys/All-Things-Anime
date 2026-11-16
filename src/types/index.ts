@@ -489,3 +489,91 @@ export interface MessagingNotificationEvent {
   neutralPreviewText: string;
   createdAtMs: number;
 }
+
+// ==========================================
+// Build 05: Notification Centre & Real-Time Alerts
+// ==========================================
+
+export type NotificationCategory =
+  | 'social'
+  | 'followers'
+  | 'communities'
+  | 'messaging'
+  | 'groups'
+  | 'system';
+
+export type NotificationType =
+  | 'like_post'
+  | 'comment_post'
+  | 'reply_comment'
+  | 'mention'
+  | 'new_follower'
+  | 'join_request'
+  | 'approve_request'
+  | 'decline_request'
+  | 'remove_member'
+  | 'change_role'
+  | 'transfer_owner'
+  | 'community_announcement'
+  | 'new_message_request'
+  | 'accepted_message_request'
+  | 'new_direct_message'
+  | 'new_group_message'
+  | 'group_added'
+  | 'group_removed'
+  | 'group_admin_promote'
+  | 'group_update'
+  | 'system_notice';
+
+export interface AtaNotification {
+  id: string;
+  recipientId: string;
+  actorId?: string;
+  actorUsername?: string;
+  actorDisplayName?: string;
+  actorAvatarUrl?: string;
+  type: NotificationType;
+  category: NotificationCategory;
+  title: string;
+  body: string;
+  targetType?:
+    | 'post'
+    | 'comment'
+    | 'profile'
+    | 'community'
+    | 'conversation'
+    | 'message_request'
+    | 'group'
+    | 'system';
+  targetId?: string;
+  route?: string;
+  isRead: boolean;
+  isDismissed: boolean;
+  createdAt: Date | null;
+  readAt: Date | null;
+  dedupeKey: string;
+  metadata?: Record<string, string>;
+}
+
+export interface AtaNotificationSettings {
+  userId: string;
+  enabled: boolean;
+  socialEnabled: boolean;
+  followersEnabled: boolean;
+  communitiesEnabled: boolean;
+  messagingEnabled: boolean;
+  groupsEnabled: boolean;
+  systemEnabled: boolean;
+  popupEnabled: boolean;
+  soundEnabled: boolean;
+  quietHoursEnabled: boolean;
+  quietHoursStart: string; // e.g. "22:00"
+  quietHoursEnd: string;   // e.g. "08:00"
+  timezone: string;
+  updatedAt: Date | null;
+}
+
+export type UpdateNotificationSettingsInput = Partial<
+  Omit<AtaNotificationSettings, 'userId' | 'updatedAt'>
+>;
+
