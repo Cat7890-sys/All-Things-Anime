@@ -62,6 +62,24 @@ export interface AniListRawStudioNode {
   isAnimationStudio?: boolean | null;
 }
 
+export interface AniListRawTag {
+  name?: string | null;
+  rank?: number | null;
+  isGeneralSpoiler?: boolean | null;
+  isMediaSpoiler?: boolean | null;
+  isAdult?: boolean | null;
+}
+
+export interface AniListRawRelationEdge {
+  relationType?: string | null;
+  node?: AniListRawMedia | null;
+}
+
+export interface AniListRawRecommendationNode {
+  rating?: number | null;
+  mediaRecommendation?: AniListRawMedia | null;
+}
+
 export interface AniListRawMedia {
   id?: number | null;
   isAdult?: boolean | null;
@@ -78,6 +96,7 @@ export interface AniListRawMedia {
   startDate?: AniListRawFuzzyDate | null;
   format?: string | null;
   genres?: Array<string | null> | null;
+  tags?: Array<AniListRawTag | null> | null;
   description?: string | null;
   siteUrl?: string | null;
   nextAiringEpisode?: AniListRawNextAiringEpisode | null;
@@ -85,6 +104,12 @@ export interface AniListRawMedia {
     nodes?: Array<AniListRawStudioNode | null> | null;
   } | null;
   rankings?: Array<AniListRawRanking | null> | null;
+  relations?: {
+    edges?: Array<AniListRawRelationEdge | null> | null;
+  } | null;
+  recommendations?: {
+    nodes?: Array<AniListRawRecommendationNode | null> | null;
+  } | null;
 }
 
 export interface AniListGraphQLError {
@@ -105,6 +130,16 @@ export interface AniListPageMediaData {
 
 export interface AniListSingleMediaData {
   Media?: AniListRawMedia | null;
+}
+
+export interface RelatedAnimeSummary {
+  relationType: string;
+  anime: NormalizedAnime;
+}
+
+export interface RecommendedAnimeSummary {
+  rating: number;
+  anime: NormalizedAnime;
 }
 
 export interface NormalizedAnime {
@@ -141,6 +176,7 @@ export interface NormalizedAnime {
   format: AniListMediaFormat | 'UNKNOWN';
   formatLabel: string;
   genres: string[];
+  tags?: string[];
   description: string | null;
   nextAiringEpisode: {
     episode: number;
@@ -149,6 +185,8 @@ export interface NormalizedAnime {
   } | null;
   studios: string[];
   siteUrl: string;
+  relations?: RelatedAnimeSummary[];
+  recommendations?: RecommendedAnimeSummary[];
   isAdult: false;
 }
 
@@ -172,6 +210,16 @@ export interface DiscoveryCategoryResult {
   warningMessage?: string;
 }
 
+export interface SearchAnimeResult {
+  query: string;
+  items: NormalizedAnime[];
+  source: AniListDataSource;
+  isStale: boolean;
+  fetchedAt: number;
+  expiresAt: number;
+  warningMessage?: string;
+}
+
 export interface AnimeDetailResult {
   anime: NormalizedAnime | null;
   source: AniListDataSource;
@@ -187,3 +235,4 @@ export interface DiscoveryCategoryMeta {
   eyebrow: string;
   description: string;
 }
+

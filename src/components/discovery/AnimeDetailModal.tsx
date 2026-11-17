@@ -4,9 +4,12 @@ import {
   Clock,
   ExternalLink,
   Film,
+  Plus,
   Star,
   TrendingUp,
   X,
+  Check,
+  Bookmark,
 } from 'lucide-react';
 import {
   anilistService,
@@ -15,22 +18,41 @@ import {
 } from '../../services/catalogue/anilistService';
 import type { NormalizedAnime } from '../../services/catalogue/anilistTypes';
 import { MangaImage } from '../MangaImage';
+import { useAuth } from '../../hooks/useAuth';
+import {
+  getUserAnimeList,
+  incrementWatchedEpisode,
+  upsertAnimeListItem,
+} from '../../services/personalisation/animeTrackerService';
+import { getSimilarAnimeForDetail } from '../../services/personalisation/recommendationService';
+import type { AnimeRecommendation, WatchlistStatus } from '../../types';
 
 interface AnimeDetailModalProps {
   anime: NormalizedAnime | null;
   onClose: () => void;
+  onSelectAnime?: (anime: NormalizedAnime) => void;
 }
 
 export const AnimeDetailModal: React.FC<AnimeDetailModalProps> = ({
   anime,
   onClose,
+  onSelectAnime,
 }) => {
+  const { firebaseUser } = useAuth();
   const [resolvedAnime, setResolvedAnime] = useState<NormalizedAnime | null>(
     anime
   );
+  const [userTrackStatus, setUserTrackStatus] = useState<WatchlistStatus | null>(null);
+  const [userEpisodesWatched, setUserEpisodesWatched] = useState<number>(0);
+  const [similarAnimeList, setSimilarAnimeList] = useState<AnimeRecommendation[]>([]);
+  const [isUpdatingTracker, setIsUpdatingTracker] = useState(false);
+  const [trackerMessage, setTrackerMessage] = useState<string | null>(null);
 
   useEffect(() => {
     setResolvedAnime(anime);
+    setUserTrackStatus(null);
+    setUserEpisodesWatched(0);
+    setTrackerMessage(null);
     if (!anime) return;
 
     const controller = new AbortController();
@@ -48,14 +70,26 @@ export const AnimeDetailModal: React.FC<AnimeDetailModalProps> = ({
           );
         }
       })
-      .catch(() => {
-        // Keep initial normalized anime data when detail enrichment fails or is offline
+      .catch(() => {});
+
+    if (firebaseUser) {
+      void getUserAnimeList(firebaseUser.uid).then((list) => {
+        const found = list.find(
+          (it) => String(it.animeId) === String(anime.id)
+        );
+        if (found) {
+          setUserTrackStatus(found.status);
+          setUserEpisodesWatched(found.episodesWatched);
+        }
       });
+    }
+
+    void getSimilarAnimeForDetail(anime, [], {}).then(setSimilarAnimeList);
 
     return () => {
       controller.abort();
     };
-  }, [anime]);
+  }, [anime, firebaseUser]);
 
   useEffect(() => {
     if (!anime) return;
@@ -71,6 +105,56 @@ export const AnimeDetailModal: React.FC<AnimeDetailModalProps> = ({
   }, [anime, onClose]);
 
   if (!anime || !resolvedAnime) return null;
+
+  const handleQuickTrack = async (status: WatchlistStatus) => {
+    if (!firebaseUser || !firebaseUser.emailVerified) return;
+    setIsUpdatingTracker(true);
+    try {
+      const isCompleted = status === 'completed';
+      const episodesWatched = isCompleted
+        ? resolvedAnime.episodes || userEpisodesWatched
+        : userEpisodesWatched;
+
+      await upsertAnimeListItem(firebaseUser.uid, {
+        animeId: String(resolvedAnime.id),
+        animeTitle: resolvedAnime.title.display,
+        animeCoverUrl: resolvedAnime.coverImage.best || '',
+        genres: resolvedAnime.genres,
+        studios: resolvedAnime.studios,
+        format: resolvedAnime.formatLabel,
+        seasonYear: resolvedAnime.seasonYear,
+        totalEpisodes: resolvedAnime.episodes,
+        episodesWatched,
+        status,
+        userRating: null,
+      });
+
+      setUserTrackStatus(status);
+      setUserEpisodesWatched(episodesWatched);
+      setTrackerMessage(`Updated watchlist status to ${status.replace('_', ' ')}.`);
+      setTimeout(() => setTrackerMessage(null), 3000);
+    } catch (err) {
+      setTrackerMessage(err instanceof Error ? err.message : 'Failed to update tracker.');
+    } finally {
+      setIsUpdatingTracker(false);
+    }
+  };
+
+  const handleQuickIncrement = async () => {
+    if (!firebaseUser || !firebaseUser.emailVerified) return;
+    setIsUpdatingTracker(true);
+    try {
+      const next = await incrementWatchedEpisode(firebaseUser.uid, String(resolvedAnime.id));
+      setUserEpisodesWatched(next);
+      setUserTrackStatus('watching');
+      setTrackerMessage(`Incremented watched episode to ${next}.`);
+      setTimeout(() => setTrackerMessage(null), 3000);
+    } catch (err) {
+      setTrackerMessage(err instanceof Error ? err.message : 'Failed to increment episode.');
+    } finally {
+      setIsUpdatingTracker(false);
+    }
+  };
 
   const altTitles: string[] = [];
   if (
@@ -154,6 +238,82 @@ export const AnimeDetailModal: React.FC<AnimeDetailModalProps> = ({
                     <X className="h-4 w-4" aria-hidden="true" />
                   </button>
                 </div>
+
+                {/* Quick Watchlist Bar */}
+                {firebaseUser && firebaseUser.emailVerified && (
+                  <div className="p-3 rounded-xl bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] space-y-2">
+                    <div className="flex items-center justify-between text-xs font-bold text-[#090B14] dark:text-white">
+                      <span className="flex items-center gap-1.5">
+                        <Bookmark className="h-3.5 w-3.5 text-[#EF3038]" />
+                        <span>Watchlist: {userTrackStatus ? userTrackStatus.replace('_', ' ') : 'Not Tracked'}</span>
+                      </span>
+                      {userTrackStatus && (
+                        <span className="text-[11px] text-[#52576B] dark:text-[#A7A9B8] tabular-nums">
+                          Ep {userEpisodesWatched}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={isUpdatingTracker}
+                        onClick={() => void handleQuickTrack('watching')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                          userTrackStatus === 'watching'
+                            ? 'bg-[#EF3038] text-white border-[#B92335]'
+                            : 'bg-white dark:bg-[#171923] text-[#090B14] dark:text-white border-[#D4D7E2] dark:border-[#303342]'
+                        }`}
+                      >
+                        Watching
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isUpdatingTracker}
+                        onClick={() => void handleQuickTrack('planning')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                          userTrackStatus === 'planning'
+                            ? 'bg-[#EF3038] text-white border-[#B92335]'
+                            : 'bg-white dark:bg-[#171923] text-[#090B14] dark:text-white border-[#D4D7E2] dark:border-[#303342]'
+                        }`}
+                      >
+                        Plan to Watch
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isUpdatingTracker}
+                        onClick={() => void handleQuickTrack('completed')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                          userTrackStatus === 'completed'
+                            ? 'bg-emerald-500 text-white border-emerald-600'
+                            : 'bg-white dark:bg-[#171923] text-[#090B14] dark:text-white border-[#D4D7E2] dark:border-[#303342]'
+                        }`}
+                      >
+                        Completed
+                      </button>
+
+                      {userTrackStatus && (
+                        <button
+                          type="button"
+                          disabled={isUpdatingTracker}
+                          onClick={() => void handleQuickIncrement()}
+                          className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-[#EF3038] hover:bg-[#B92335] flex items-center gap-1 shadow-sm"
+                        >
+                          <Plus className="h-3 w-3" />
+                          <span>+1 Ep</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {trackerMessage && (
+                      <p className="text-[11px] font-semibold text-emerald-500">
+                        {trackerMessage}
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {/* Key Score / Rank Highlight Strip */}
                 {(resolvedAnime.averageScore !== null ||
@@ -269,6 +429,42 @@ export const AnimeDetailModal: React.FC<AnimeDetailModalProps> = ({
                     </p>
                   )}
                 </div>
+
+                {/* Similar Anime Suggestions Section */}
+                {similarAnimeList.length > 0 && (
+                  <div className="space-y-3 pt-3 border-t border-[#D4D7E2] dark:border-[#303342]">
+                    <h3 className="font-accent-orbitron text-[10px] font-semibold tracking-wider text-[#52576B] dark:text-[#A7A9B8] uppercase">
+                      Similar & Related Anime
+                    </h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      {similarAnimeList.slice(0, 4).map((rec) => (
+                        <button
+                          key={rec.anime.id}
+                          type="button"
+                          onClick={() => {
+                            setResolvedAnime(rec.anime);
+                            onSelectAnime?.(rec.anime);
+                          }}
+                          className="p-2 rounded-xl bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] text-left hover:border-[#EF3038] transition-all group"
+                        >
+                          <div className="aspect-[3/4] w-full rounded-lg overflow-hidden mb-1.5 bg-black/20">
+                            <img
+                              src={rec.anime.coverImage.best || ''}
+                              alt={rec.anime.title.display}
+                              className="h-full w-full object-cover group-hover:scale-105 transition-transform"
+                            />
+                          </div>
+                          <p className="text-[11px] font-bold text-[#090B14] dark:text-white truncate">
+                            {rec.anime.title.display}
+                          </p>
+                          <p className="text-[9px] text-[#52576B] dark:text-[#A7A9B8] truncate">
+                            {rec.reasonCategory}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Footer Attribution & External Link */}
@@ -294,3 +490,4 @@ export const AnimeDetailModal: React.FC<AnimeDetailModalProps> = ({
     </div>
   );
 };
+

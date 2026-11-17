@@ -12,6 +12,9 @@ import type {
   DiscoveryCategoryMeta,
   DiscoveryCategoryResult,
   NormalizedAnime,
+  RecommendedAnimeSummary,
+  RelatedAnimeSummary,
+  SearchAnimeResult,
   SeasonInfo,
 } from './anilistTypes';
 
@@ -19,7 +22,7 @@ export const ANILIST_GRAPHQL_ENDPOINT = 'https://graphql.anilist.co';
 export const DEFAULT_DISCOVERY_PER_PAGE = 15;
 
 export const DEFAULT_ANILIST_CACHE_TTLS_MS: Record<
-  DiscoveryCategoryKey | 'detail',
+  DiscoveryCategoryKey | 'detail' | 'search',
   number
 > = {
   trending: 15 * 60 * 1000, // 15 minutes
@@ -29,6 +32,7 @@ export const DEFAULT_ANILIST_CACHE_TTLS_MS: Record<
   popular: 6 * 60 * 60 * 1000, // 6 hours
   top_rated: 12 * 60 * 60 * 1000, // 12 hours
   detail: 6 * 60 * 60 * 1000, // 6 hours
+  search: 10 * 60 * 1000, // 10 minutes
 };
 
 export const DISCOVERY_CATEGORIES_META: DiscoveryCategoryMeta[] = [
@@ -126,6 +130,13 @@ const ANILIST_MEDIA_FIELDS_FRAGMENT = `
     }
     format
     genres
+    tags {
+      name
+      rank
+      isGeneralSpoiler
+      isMediaSpoiler
+      isAdult
+    }
     description(asHtml: false)
     siteUrl
     nextAiringEpisode {
@@ -146,6 +157,39 @@ const ANILIST_MEDIA_FIELDS_FRAGMENT = `
       year
       season
       context
+    }
+  }
+`;
+
+const ANILIST_SUMMARY_FIELDS_FRAGMENT = `
+  fragment MediaSummaryFields on Media {
+    id
+    type
+    isAdult
+    title {
+      romaji
+      english
+      native
+    }
+    coverImage {
+      extraLarge
+      large
+      color
+    }
+    averageScore
+    popularity
+    episodes
+    status
+    season
+    seasonYear
+    format
+    genres
+    siteUrl
+    studios(isMain: true) {
+      nodes {
+        name
+        isAnimationStudio
+      }
     }
   }
 `;
@@ -178,13 +222,56 @@ export const DISCOVER_CATEGORY_QUERY = `
   ${ANILIST_MEDIA_FIELDS_FRAGMENT}
 `;
 
+export const SEARCH_ANIME_QUERY = `
+  query SearchAnimeCatalogue(
+    $search: String,
+    $page: Int = 1,
+    $perPage: Int = 15,
+    $genreIn: [String],
+    $formatIn: [MediaFormat],
+    $sort: [MediaSort] = [SEARCH_MATCH, POPULARITY_DESC],
+    $isAdult: Boolean = false
+  ) {
+    Page(page: $page, perPage: $perPage) {
+      media(
+        type: ANIME,
+        isAdult: $isAdult,
+        search: $search,
+        genre_in: $genreIn,
+        format_in: $formatIn,
+        sort: $sort
+      ) {
+        ...MediaDiscoveryFields
+      }
+    }
+  }
+  ${ANILIST_MEDIA_FIELDS_FRAGMENT}
+`;
+
 export const DISCOVER_ANIME_BY_ID_QUERY = `
   query DiscoverAnimeById($id: Int!, $isAdult: Boolean = false) {
     Media(id: $id, type: ANIME, isAdult: $isAdult) {
       ...MediaDiscoveryFields
+      relations {
+        edges {
+          relationType(version: 2)
+          node {
+            ...MediaSummaryFields
+          }
+        }
+      }
+      recommendations(sort: [RATING_DESC, ID], perPage: 8) {
+        nodes {
+          rating
+          mediaRecommendation {
+            ...MediaSummaryFields
+          }
+        }
+      }
     }
   }
   ${ANILIST_MEDIA_FIELDS_FRAGMENT}
+  ${ANILIST_SUMMARY_FIELDS_FRAGMENT}
 `;
 
 const SEASON_DISPLAY_NAMES: Record<AniListSeason, string> = {
@@ -592,6 +679,76 @@ export function normalizeAniListMedia(
   const safeSiteUrl =
     sanitizeHttpsUrl(raw.siteUrl) || `https://anilist.co/anime/${raw.id}`;
 
+  const tags = Array.isArray(raw.tags)
+    ? Array.from(
+        new Set(
+          raw.tags
+            .filter(
+              (t): t is { name: string; isAdult?: boolean | null; isGeneralSpoiler?: boolean | null; isMediaSpoiler?: boolean | null; rank?: number | null } =>
+                Boolean(
+                  t &&
+                    typeof t.name === 'string' &&
+                    t.name.trim().length > 0 &&
+                    t.isAdult !== true &&
+                    t.isGeneralSpoiler !== true &&
+                    t.isMediaSpoiler !== true &&
+                    (typeof t.rank !== 'number' || t.rank >= 45)
+                )
+            )
+            .map((t) => t.name.trim())
+        )
+      ).slice(0, 10)
+    : undefined;
+
+  const seenRelatedIds = new Set<number>([raw.id]);
+  const relations: RelatedAnimeSummary[] | undefined = Array.isArray(
+    raw.relations?.edges
+  )
+    ? raw.relations.edges
+        .map((edge): RelatedAnimeSummary | null => {
+          if (!edge?.node) return null;
+          const nodeType = (edge.node as AniListRawMedia & { type?: string | null }).type;
+          if (nodeType && nodeType !== 'ANIME') return null;
+          const normalizedChild = normalizeAniListMedia(edge.node);
+          if (!normalizedChild || seenRelatedIds.has(normalizedChild.id)) {
+            return null;
+          }
+          seenRelatedIds.add(normalizedChild.id);
+          return {
+            relationType:
+              typeof edge.relationType === 'string' && edge.relationType.trim()
+                ? edge.relationType.replace(/_/g, ' ')
+                : 'RELATED',
+            anime: normalizedChild,
+          };
+        })
+        .filter((item): item is RelatedAnimeSummary => item !== null)
+    : undefined;
+
+  const seenRecIds = new Set<number>([raw.id]);
+  const recommendations: RecommendedAnimeSummary[] | undefined = Array.isArray(
+    raw.recommendations?.nodes
+  )
+    ? raw.recommendations.nodes
+        .map((node): RecommendedAnimeSummary | null => {
+          if (!node?.mediaRecommendation) return null;
+          const nodeType = (
+            node.mediaRecommendation as AniListRawMedia & { type?: string | null }
+          ).type;
+          if (nodeType && nodeType !== 'ANIME') return null;
+          const normalizedRec = normalizeAniListMedia(node.mediaRecommendation);
+          if (!normalizedRec || seenRecIds.has(normalizedRec.id)) {
+            return null;
+          }
+          seenRecIds.add(normalizedRec.id);
+          return {
+            rating: typeof node.rating === 'number' ? node.rating : 0,
+            anime: normalizedRec,
+          };
+        })
+        .filter((item): item is RecommendedAnimeSummary => item !== null)
+    : undefined;
+
   return {
     id: raw.id,
     title: {
@@ -621,12 +778,33 @@ export function normalizeAniListMedia(
     format,
     formatLabel: FORMAT_LABELS[format],
     genres,
+    ...(tags && tags.length > 0 ? { tags } : {}),
     description: sanitizeAniListDescription(raw.description),
     nextAiringEpisode,
     studios: uniqueStudios,
     siteUrl: safeSiteUrl,
+    ...(relations && relations.length > 0 ? { relations } : {}),
+    ...(recommendations && recommendations.length > 0
+      ? { recommendations }
+      : {}),
     isAdult: false,
   };
+}
+
+export function parseAniListNumericId(animeId: string | number): number | null {
+  if (typeof animeId === 'number') {
+    return Number.isInteger(animeId) && animeId > 0 ? animeId : null;
+  }
+  const trimmed = String(animeId || '').trim();
+  if (!trimmed) return null;
+  const direct = /^\d+$/.test(trimmed) ? Number(trimmed) : null;
+  if (direct && Number.isInteger(direct) && direct > 0) return direct;
+  const prefixed = /^anilist-(\d+)$/i.exec(trimmed);
+  if (prefixed) {
+    const n = Number(prefixed[1]);
+    return Number.isInteger(n) && n > 0 ? n : null;
+  }
+  return null;
 }
 
 export interface StorageLike {
@@ -650,7 +828,7 @@ export interface AniListClientConfig {
   now?: () => number;
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   isOnline?: () => boolean;
-  ttls?: Partial<Record<DiscoveryCategoryKey | 'detail', number>>;
+  ttls?: Partial<Record<DiscoveryCategoryKey | 'detail' | 'search', number>>;
   minRequestIntervalMs?: number;
   maxRetries?: number;
   retryBaseDelayMs?: number;
@@ -661,6 +839,14 @@ export interface GetCategoryOptions {
   forceRefresh?: boolean;
   signal?: AbortSignal;
   date?: Date;
+}
+
+export interface SearchAnimeOptions {
+  perPage?: number;
+  genres?: string[];
+  formats?: AniListMediaFormat[];
+  forceRefresh?: boolean;
+  signal?: AbortSignal;
 }
 
 export interface GetAnimeDetailOptions {
@@ -806,7 +992,7 @@ export function createAniListClient(config: AniListClientConfig = {}) {
       typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean'
         ? navigator.onLine
         : true);
-  const ttls: Record<DiscoveryCategoryKey | 'detail', number> = {
+  const ttls: Record<DiscoveryCategoryKey | 'detail' | 'search', number> = {
     ...DEFAULT_ANILIST_CACHE_TTLS_MS,
     ...(config.ttls ?? {}),
   };
@@ -1304,6 +1490,137 @@ export function createAniListClient(config: AniListClientConfig = {}) {
     }
   }
 
+  async function searchAnime(
+    queryText: string,
+    options: SearchAnimeOptions = {}
+  ): Promise<SearchAnimeResult> {
+    if (options.signal?.aborted) {
+      throw new AniListApiError('ABORTED', 'Request cancelled.');
+    }
+
+    const trimmedQuery = queryText.trim();
+    const genres = (options.genres || []).map((g) => g.trim()).filter(Boolean);
+    const formats = (options.formats || []).filter(Boolean);
+    const perPage = Math.max(1, Math.min(25, options.perPage ?? 12));
+
+    if (!trimmedQuery && genres.length === 0 && formats.length === 0) {
+      const fallbackPopular = await getCategory('popular', {
+        perPage,
+        signal: options.signal,
+      });
+      return {
+        query: '',
+        items: fallbackPopular.items,
+        source: fallbackPopular.source,
+        isStale: fallbackPopular.isStale,
+        fetchedAt: fallbackPopular.fetchedAt,
+        expiresAt: fallbackPopular.expiresAt,
+        warningMessage: fallbackPopular.warningMessage,
+      };
+    }
+
+    const cacheKey = `${CACHE_KEY_PREFIX}search:q=${trimmedQuery.toLowerCase()}:g=${genres
+      .slice()
+      .sort()
+      .join(',')}:f=${formats.slice().sort().join(',')}:perPage=${perPage}`;
+
+    const cached = readCache<NormalizedAnime[]>(cacheKey, validateCachedAnimeList);
+
+    if (!options.forceRefresh && cached && !cached.isExpired) {
+      return {
+        query: trimmedQuery,
+        items: cached.envelope.data,
+        source: 'cache',
+        isStale: false,
+        fetchedAt: cached.envelope.fetchedAt,
+        expiresAt: cached.envelope.expiresAt,
+      };
+    }
+
+    if (!isOnline()) {
+      if (cached) {
+        return {
+          query: trimmedQuery,
+          items: cached.envelope.data,
+          source: 'stale-cache',
+          isStale: true,
+          fetchedAt: cached.envelope.fetchedAt,
+          expiresAt: cached.envelope.expiresAt,
+          warningMessage:
+            'You are currently offline. Showing cached AniList search results.',
+        };
+      }
+      throw new AniListApiError(
+        'OFFLINE',
+        'You are offline and this anime search is not cached.'
+      );
+    }
+
+    const flightKey = options.forceRefresh ? `${cacheKey}:refresh` : cacheKey;
+
+    try {
+      const envelope = await deduplicate(
+        flightKey,
+        async () => {
+          const variables: Record<string, unknown> = {
+            page: 1,
+            perPage,
+            isAdult: false,
+            sort: trimmedQuery
+              ? ['SEARCH_MATCH', 'POPULARITY_DESC']
+              : ['POPULARITY_DESC'],
+          };
+          if (trimmedQuery) variables.search = trimmedQuery;
+          if (genres.length > 0) variables.genreIn = genres;
+          if (formats.length > 0) variables.formatIn = formats;
+
+          const data = await executeGraphQL<AniListPageMediaData>(
+            SEARCH_ANIME_QUERY,
+            variables
+          );
+
+          const normalized = (data.Page?.media ?? [])
+            .map((rawItem) => normalizeAniListMedia(rawItem))
+            .filter((item): item is NormalizedAnime => item !== null);
+
+          return writeCache(cacheKey, normalized, ttls.search);
+        },
+        options.signal
+      );
+
+      return {
+        query: trimmedQuery,
+        items: envelope.data,
+        source: 'network',
+        isStale: false,
+        fetchedAt: envelope.fetchedAt,
+        expiresAt: envelope.expiresAt,
+      };
+    } catch (error) {
+      if (error instanceof AniListApiError && error.code === 'ABORTED') {
+        throw error;
+      }
+      if (cached) {
+        return {
+          query: trimmedQuery,
+          items: cached.envelope.data,
+          source: 'stale-cache',
+          isStale: true,
+          fetchedAt: cached.envelope.fetchedAt,
+          expiresAt: cached.envelope.expiresAt,
+          warningMessage:
+            'Unable to reach AniList right now. Showing previously cached search results.',
+        };
+      }
+      throw error instanceof AniListApiError
+        ? error
+        : new AniListApiError(
+            'NETWORK_ERROR',
+            'Unable to search anime on AniList right now.'
+          );
+    }
+  }
+
   function clearCache(): void {
     memoryCache.clear();
     if (!storage) return;
@@ -1330,6 +1647,7 @@ export function createAniListClient(config: AniListClientConfig = {}) {
   return {
     getCategory,
     getAnimeById,
+    searchAnime,
     clearCache,
   };
 }

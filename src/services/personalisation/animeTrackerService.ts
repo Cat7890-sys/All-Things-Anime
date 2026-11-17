@@ -12,10 +12,11 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
-  where,
   type Unsubscribe,
 } from 'firebase/firestore';
 import type {
+  AnimeActivitySummary,
+  MonthlyActivityPoint,
   PersonalAnimeInsights,
   UpsertAnimeListItemInput,
   UserAnimeListItem,
@@ -24,6 +25,8 @@ import type {
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import {
   validateAnimeRating,
+  validateIsoDateString,
+  validateOptionalHttpsUrl,
   validatePersonalNotes,
   validateWatchedEpisodes,
   validateWatchlistStatus,
@@ -55,7 +58,12 @@ export function mapDocToAnimeListItem(
     animeTitle: String(data.animeTitle || 'Untitled Anime'),
     animeCoverUrl: String(data.animeCoverUrl || ''),
     genres: Array.isArray(data.genres) ? (data.genres as string[]) : [],
+    studios: Array.isArray(data.studios) ? (data.studios as string[]) : [],
     format: String(data.format || 'TV Series'),
+    seasonYear:
+      typeof data.seasonYear === 'number' && !isNaN(data.seasonYear)
+        ? data.seasonYear
+        : null,
     totalEpisodes:
       typeof data.totalEpisodes === 'number' && !isNaN(data.totalEpisodes)
         ? data.totalEpisodes
@@ -70,7 +78,8 @@ export function mapDocToAnimeListItem(
     startDate: typeof data.startDate === 'string' ? data.startDate : null,
     completionDate:
       typeof data.completionDate === 'string' ? data.completionDate : null,
-    personalNotes: typeof data.personalNotes === 'string' ? data.personalNotes : '',
+    personalNotes:
+      typeof data.personalNotes === 'string' ? data.personalNotes : '',
     createdAt: toDateOrNull(data.createdAt),
     updatedAt: toDateOrNull(data.updatedAt),
   };
@@ -133,50 +142,78 @@ export async function upsertAnimeListItem(
     throw new Error('You must be signed in to update your anime tracker.');
   }
 
-  // Validations
   const statusErr = validateWatchlistStatus(input.status);
   if (statusErr) throw new Error(statusErr);
 
-  const epErr = validateWatchedEpisodes(input.episodesWatched, input.totalEpisodes);
+  const epErr = validateWatchedEpisodes(
+    input.episodesWatched,
+    input.totalEpisodes
+  );
   if (epErr) throw new Error(epErr);
 
   const rateErr = validateAnimeRating(input.userRating);
   if (rateErr) throw new Error(rateErr);
+
+  const startErr = validateIsoDateString(input.startDate, 'Start date');
+  if (startErr) throw new Error(startErr);
+
+  const compErr = validateIsoDateString(input.completionDate, 'Completion date');
+  if (compErr) throw new Error(compErr);
+
+  const coverErr = validateOptionalHttpsUrl(
+    input.animeCoverUrl,
+    1000,
+    'Anime cover URL'
+  );
+  if (coverErr) throw new Error(coverErr);
 
   if (input.personalNotes) {
     const noteErr = validatePersonalNotes(input.personalNotes);
     if (noteErr) throw new Error(noteErr);
   }
 
-  const docId = input.animeId;
+  const docId = input.animeId.trim();
+  if (!docId) {
+    throw new Error('Anime identifier is required.');
+  }
   const path = `userAnimeLists/${userId}/items/${docId}`;
   const docRef = doc(db, 'userAnimeLists', userId, 'items', docId);
 
   try {
     const now = new Date();
+    const todayIso = now.toISOString().split('T')[0];
     const existingSnap = await getDoc(docRef);
     const existingData = existingSnap.exists() ? existingSnap.data() : null;
 
+    let startDate = input.startDate || (existingData?.startDate as string | null) || null;
+    if (input.status === 'watching' && !startDate) {
+      startDate = todayIso;
+    }
+
     let completionDate = input.completionDate || null;
     if (input.status === 'completed' && !completionDate) {
-      completionDate = now.toISOString().split('T')[0];
+      completionDate =
+        (existingData?.completionDate as string | null) || todayIso;
     }
 
     const payload = {
       id: docId,
       userId,
-      animeId: input.animeId,
-      animeTitle: input.animeTitle,
-      animeCoverUrl: input.animeCoverUrl,
-      genres: input.genres || [],
+      animeId: docId,
+      animeTitle: input.animeTitle.trim(),
+      animeCoverUrl: input.animeCoverUrl.trim(),
+      genres: (input.genres || []).slice(0, 15),
+      studios: (input.studios || []).slice(0, 10),
       format: input.format || 'TV Series',
+      seasonYear:
+        typeof input.seasonYear === 'number' ? input.seasonYear : null,
       totalEpisodes: input.totalEpisodes,
       episodesWatched: input.episodesWatched,
       status: input.status,
       userRating: input.userRating || null,
-      startDate: input.startDate || null,
+      startDate,
       completionDate,
-      personalNotes: input.personalNotes || '',
+      personalNotes: (input.personalNotes || '').trim(),
       createdAt: existingData?.createdAt || serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
@@ -213,17 +250,23 @@ export async function incrementWatchedEpisode(
         typeof data.totalEpisodes === 'number' ? data.totalEpisodes : null;
 
       if (total !== null && currentWatched >= total) {
-        return currentWatched; // already at max
+        return currentWatched;
       }
 
       const nextWatched = currentWatched + 1;
-      const willBeCompleted = total !== null && nextWatched >= total;
+      const willBeCompleted = total !== null && total > 0 && nextWatched >= total;
+      const todayIso = new Date().toISOString().split('T')[0];
 
       transaction.update(docRef, {
         episodesWatched: nextWatched,
-        status: willBeCompleted ? 'completed' : data.status,
+        status: willBeCompleted
+          ? 'completed'
+          : data.status === 'planning'
+            ? 'watching'
+            : data.status,
+        startDate: data.startDate || todayIso,
         completionDate: willBeCompleted
-          ? new Date().toISOString().split('T')[0]
+          ? todayIso
           : data.completionDate || null,
         updatedAt: serverTimestamp(),
       });
@@ -251,21 +294,28 @@ export async function updateAnimeStatus(
     if (!snap.exists()) return;
     const data = snap.data();
 
+    const todayIso = new Date().toISOString().split('T')[0];
     let episodesWatched = Number(data.episodesWatched || 0);
-    let completionDate = data.completionDate || null;
+    let startDate = (data.startDate as string | null) || null;
+    let completionDate = (data.completionDate as string | null) || null;
+
+    if (status === 'watching' && !startDate) {
+      startDate = todayIso;
+    }
 
     if (status === 'completed') {
       if (typeof data.totalEpisodes === 'number' && data.totalEpisodes > 0) {
         episodesWatched = data.totalEpisodes;
       }
       if (!completionDate) {
-        completionDate = new Date().toISOString().split('T')[0];
+        completionDate = todayIso;
       }
     }
 
     await updateDoc(docRef, {
       status,
       episodesWatched,
+      startDate,
       completionDate,
       updatedAt: serverTimestamp(),
     });
@@ -287,13 +337,82 @@ export async function removeAnimeFromList(
   }
 }
 
+function buildMonthlyActivitySeries(
+  items: UserAnimeListItem[],
+  now: Date = new Date()
+): MonthlyActivityPoint[] {
+  const points: MonthlyActivityPoint[] = [];
+  const monthBuckets = new Map<
+    string,
+    { updatedCount: number; completedCount: number }
+  >();
+
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(
+      2,
+      '0'
+    )}`;
+    const label = d.toLocaleDateString('en-US', {
+      month: 'short',
+      timeZone: 'UTC',
+    });
+    monthBuckets.set(key, { updatedCount: 0, completedCount: 0 });
+    points.push({
+      monthKey: key,
+      label,
+      updatedCount: 0,
+      completedCount: 0,
+    });
+  }
+
+  for (const item of items) {
+    const activityDate = item.updatedAt || item.createdAt;
+    if (activityDate instanceof Date && !isNaN(activityDate.getTime())) {
+      const actKey = `${activityDate.getUTCFullYear()}-${String(
+        activityDate.getUTCMonth() + 1
+      ).padStart(2, '0')}`;
+      const bucket = monthBuckets.get(actKey);
+      if (bucket) {
+        bucket.updatedCount += 1;
+      }
+    }
+
+    if (item.status === 'completed') {
+      const compMonthKey = item.completionDate
+        ? item.completionDate.slice(0, 7)
+        : activityDate instanceof Date && !isNaN(activityDate.getTime())
+          ? `${activityDate.getUTCFullYear()}-${String(
+              activityDate.getUTCMonth() + 1
+            ).padStart(2, '0')}`
+          : '';
+      if (compMonthKey) {
+        const compBucket = monthBuckets.get(compMonthKey);
+        if (compBucket) {
+          compBucket.completedCount += 1;
+        }
+      }
+    }
+  }
+
+  return points.map((pt) => {
+    const b = monthBuckets.get(pt.monthKey);
+    return {
+      ...pt,
+      updatedCount: b?.updatedCount ?? 0,
+      completedCount: b?.completedCount ?? 0,
+    };
+  });
+}
+
 /**
  * Computes transparent, explainable insights strictly from user's stored records.
- * Never fabricates numbers or toxic streak comparisons.
+ * Never fabricates numbers or streak comparisons.
  */
 export function calculatePersonalInsights(
   items: UserAnimeListItem[],
-  totalCollections: number = 0
+  totalCollections: number = 0,
+  now: Date = new Date()
 ): PersonalAnimeInsights {
   let totalCompleted = 0;
   let totalWatching = 0;
@@ -305,6 +424,7 @@ export function calculatePersonalInsights(
   const genreDistribution: Record<string, number> = {};
   const ratingDistribution: Record<number, number> = {};
   const formatDistribution: Record<string, number> = {};
+  const studioDistribution: Record<string, number> = {};
 
   let sumRatings = 0;
   let ratedCount = 0;
@@ -321,7 +441,7 @@ export function calculatePersonalInsights(
     if (item.userRating && item.userRating > 0) {
       sumRatings += item.userRating;
       ratedCount++;
-      const rounded = Math.round(item.userRating);
+      const rounded = Math.min(10, Math.max(1, Math.round(item.userRating)));
       ratingDistribution[rounded] = (ratingDistribution[rounded] || 0) + 1;
     }
 
@@ -330,13 +450,20 @@ export function calculatePersonalInsights(
         (formatDistribution[item.format] || 0) + 1;
     }
 
-    for (const genre of item.genres) {
+    for (const genre of item.genres || []) {
       genreDistribution[genre] = (genreDistribution[genre] || 0) + 1;
+    }
+
+    for (const studio of item.studios || []) {
+      studioDistribution[studio] = (studioDistribution[studio] || 0) + 1;
     }
   }
 
   const averageRating =
     ratedCount > 0 ? Number((sumRatings / ratedCount).toFixed(1)) : null;
+
+  const completionRate =
+    items.length > 0 ? Math.round((totalCompleted / items.length) * 100) : 0;
 
   return {
     totalTracked: items.length,
@@ -347,10 +474,40 @@ export function calculatePersonalInsights(
     totalDropped,
     totalEpisodesWatched,
     averageRating,
+    completionRate,
     genreDistribution,
     ratingDistribution,
     formatDistribution,
+    studioDistribution,
+    statusDistribution: {
+      watching: totalWatching,
+      completed: totalCompleted,
+      planning: totalPlanning,
+      on_hold: totalOnHold,
+      dropped: totalDropped,
+    },
+    monthlyActivity: buildMonthlyActivitySeries(items, now),
     recentWatchlistChanges: items.slice(0, 5),
     totalCollections,
+  };
+}
+
+export function buildPublicActivitySummary(
+  items: UserAnimeListItem[],
+  fallbackGenres: string[] = []
+): AnimeActivitySummary {
+  const insights = calculatePersonalInsights(items, 0);
+  const topGenres = Object.entries(insights.genreDistribution)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4)
+    .map(([genre]) => genre);
+
+  return {
+    totalTracked: insights.totalTracked,
+    totalCompleted: insights.totalCompleted,
+    totalWatching: insights.totalWatching,
+    totalEpisodesWatched: insights.totalEpisodesWatched,
+    favouriteGenres:
+      topGenres.length > 0 ? topGenres : fallbackGenres.slice(0, 4),
   };
 }

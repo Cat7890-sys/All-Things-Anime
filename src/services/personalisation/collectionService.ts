@@ -22,13 +22,15 @@ import type {
   UpdateCollectionInput,
   UserCollection,
 } from '../../types';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { getPublicProfile } from '../userProfileService';
 import {
+  COLLECTION_MAX_ITEMS,
   validateCollectionDescription,
   validateCollectionItemsCount,
   validateCollectionTitle,
   validateCollectionVisibility,
+  validateOptionalHttpsUrl,
 } from '../validation';
 
 function toDateOrNull(value: unknown): Date | null {
@@ -44,6 +46,80 @@ function toDateOrNull(value: unknown): Date | null {
     return (value as { toDate: () => Date }).toDate();
   }
   return null;
+}
+
+export function normalizeCollectionItems(
+  items: Omit<CollectionItem, 'addedAt'>[],
+  now: Date = new Date()
+): CollectionItem[] {
+  const seen = new Set<string>();
+  const normalized: CollectionItem[] = [];
+
+  for (const it of items) {
+    const animeId = String(it.animeId || '').trim();
+    if (!animeId || seen.has(animeId)) continue;
+    seen.add(animeId);
+
+    const coverErr = validateOptionalHttpsUrl(
+      it.coverImage,
+      1000,
+      'Item cover image URL'
+    );
+    if (coverErr) {
+      throw new Error(coverErr);
+    }
+
+    const item: CollectionItem = {
+      id: animeId,
+      animeId,
+      title: String(it.title || 'Untitled Anime').trim(),
+      coverImage: String(it.coverImage || '').trim(),
+      position: normalized.length,
+      addedAt: now,
+    };
+
+    if (typeof it.format === 'string' && it.format.trim()) {
+      item.format = it.format.trim();
+    }
+    if (typeof it.note === 'string' && it.note.trim()) {
+      item.note = it.note.trim().slice(0, 280);
+    }
+
+    normalized.push(item);
+  }
+
+  return normalized;
+}
+
+export function addItemToCollectionList(
+  existing: CollectionItem[],
+  candidate: Omit<CollectionItem, 'addedAt' | 'position'>,
+  now: Date = new Date()
+): CollectionItem[] {
+  const candidateId = String(candidate.animeId || '').trim();
+  if (!candidateId) {
+    throw new Error('Anime identifier is required.');
+  }
+  if (existing.some((it) => it.animeId === candidateId)) {
+    throw new Error(`"${candidate.title}" is already in this collection.`);
+  }
+  if (existing.length >= COLLECTION_MAX_ITEMS) {
+    throw new Error(
+      `Collections can hold up to ${COLLECTION_MAX_ITEMS} anime titles.`
+    );
+  }
+  return normalizeCollectionItems(
+    [
+      ...existing,
+      {
+        ...candidate,
+        id: candidateId,
+        animeId: candidateId,
+        position: existing.length,
+      },
+    ],
+    now
+  );
 }
 
 export function mapDocToCollection(
@@ -152,6 +228,26 @@ export async function getPublicCollections(
   }
 }
 
+export async function getPublicCollectionsByOwner(
+  ownerId: string,
+  maxItems: number = 10
+): Promise<UserCollection[]> {
+  if (!ownerId) return [];
+  const q = query(
+    collection(db, 'userCollections'),
+    where('ownerId', '==', ownerId),
+    where('visibility', '==', 'public'),
+    orderBy('updatedAt', 'desc'),
+    limit(maxItems)
+  );
+  try {
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => mapDocToCollection(d.id, d.data()));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'userCollections');
+  }
+}
+
 export async function getCollectionById(
   collectionId: string
 ): Promise<UserCollection | null> {
@@ -173,6 +269,11 @@ export async function createCollection(
   if (!ownerId) {
     throw new Error('You must be signed in to create a collection.');
   }
+  if (auth.currentUser && !auth.currentUser.emailVerified) {
+    throw new Error(
+      'Please verify your email address before creating a collection.'
+    );
+  }
 
   const titleErr = validateCollectionTitle(input.title);
   if (titleErr) throw new Error(titleErr);
@@ -182,6 +283,13 @@ export async function createCollection(
 
   const visErr = validateCollectionVisibility(input.visibility);
   if (visErr) throw new Error(visErr);
+
+  const coverErr = validateOptionalHttpsUrl(
+    input.coverImageUrl,
+    1000,
+    'Cover image URL'
+  );
+  if (coverErr) throw new Error(coverErr);
 
   if (input.items) {
     const countErr = validateCollectionItemsCount(input.items.length);
@@ -193,23 +301,7 @@ export async function createCollection(
   const collectionId = colRef.id;
 
   const now = new Date();
-  const items: CollectionItem[] = (input.items || []).map((it, idx) => {
-    const item: CollectionItem = {
-      id: it.animeId,
-      animeId: it.animeId,
-      title: it.title,
-      coverImage: it.coverImage,
-      position: typeof it.position === 'number' ? it.position : idx,
-      addedAt: now,
-    };
-    if (typeof it.format === 'string' && it.format.trim()) {
-      item.format = it.format.trim();
-    }
-    if (typeof it.note === 'string' && it.note.trim()) {
-      item.note = it.note.trim();
-    }
-    return item;
-  });
+  const items = normalizeCollectionItems(input.items || [], now);
 
   const payload = {
     id: collectionId,
@@ -219,7 +311,7 @@ export async function createCollection(
     ownerAvatarUrl: profile?.avatarUrl || '',
     title: input.title.trim(),
     description: (input.description || '').trim(),
-    coverImageUrl: input.coverImageUrl || items[0]?.coverImage || '',
+    coverImageUrl: (input.coverImageUrl || '').trim() || items[0]?.coverImage || '',
     visibility: input.visibility,
     items,
     itemCount: items.length,
@@ -237,7 +329,11 @@ export async function createCollection(
       updatedAt: now,
     };
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, `userCollections/${collectionId}`);
+    handleFirestoreError(
+      error,
+      OperationType.WRITE,
+      `userCollections/${collectionId}`
+    );
   }
 }
 
@@ -284,39 +380,81 @@ export async function updateCollection(
     }
 
     if (typeof input.coverImageUrl === 'string') {
-      updates.coverImageUrl = input.coverImageUrl;
+      const err = validateOptionalHttpsUrl(
+        input.coverImageUrl,
+        1000,
+        'Cover image URL'
+      );
+      if (err) throw new Error(err);
+      updates.coverImageUrl = input.coverImageUrl.trim();
     }
 
     if (input.items) {
       const err = validateCollectionItemsCount(input.items.length);
       if (err) throw new Error(err);
-      const now = new Date();
-      updates.items = input.items.map((it, idx) => {
-        const item: CollectionItem = {
-          id: it.animeId,
-          animeId: it.animeId,
-          title: it.title,
-          coverImage: it.coverImage,
-          position: typeof it.position === 'number' ? it.position : idx,
-          addedAt: now,
-        };
-        if (typeof it.format === 'string' && it.format.trim()) {
-          item.format = it.format.trim();
-        }
-        if (typeof it.note === 'string' && it.note.trim()) {
-          item.note = it.note.trim();
-        }
-        return item;
-      });
-      updates.itemCount = input.items.length;
-      if (!updates.coverImageUrl && input.items[0]?.coverImage) {
-        updates.coverImageUrl = input.items[0].coverImage;
+      const normalized = normalizeCollectionItems(input.items, new Date());
+      updates.items = normalized;
+      updates.itemCount = normalized.length;
+      if (
+        updates.coverImageUrl === undefined &&
+        !current.coverImageUrl &&
+        normalized[0]?.coverImage
+      ) {
+        updates.coverImageUrl = normalized[0].coverImage;
       }
     }
 
     await updateDoc(colRef, updates);
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function addAnimeToExistingCollection(
+  ownerId: string,
+  collectionId: string,
+  item: Omit<CollectionItem, 'addedAt' | 'position'>
+): Promise<UserCollection> {
+  if (!ownerId || !collectionId) {
+    throw new Error('Collection and account IDs are required.');
+  }
+
+  const colRef = doc(db, 'userCollections', collectionId);
+  const path = `userCollections/${collectionId}`;
+
+  try {
+    const snap = await getDoc(colRef);
+    if (!snap.exists()) {
+      throw new Error('Collection not found.');
+    }
+    const existingCol = mapDocToCollection(snap.id, snap.data());
+    if (existingCol.ownerId !== ownerId) {
+      throw new Error('You do not have permission to edit this collection.');
+    }
+
+    const updatedItems = addItemToCollectionList(existingCol.items, item);
+    await updateDoc(colRef, {
+      items: updatedItems,
+      itemCount: updatedItems.length,
+      coverImageUrl: existingCol.coverImageUrl || updatedItems[0]?.coverImage || '',
+      updatedAt: serverTimestamp(),
+    });
+
+    return {
+      ...existingCol,
+      items: updatedItems,
+      itemCount: updatedItems.length,
+      coverImageUrl: existingCol.coverImageUrl || updatedItems[0]?.coverImage || '',
+      updatedAt: new Date(),
+    };
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.toLowerCase().includes('permission')
+    ) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+    throw error;
   }
 }
 
@@ -340,26 +478,124 @@ export async function deleteCollection(
   }
 }
 
+export async function getUserCollectionReactionState(
+  userId: string,
+  collectionId: string
+): Promise<{ liked: boolean; saved: boolean }> {
+  if (!userId || !collectionId) {
+    return { liked: false, saved: false };
+  }
+  try {
+    const [likeSnap, saveSnap] = await Promise.all([
+      getDoc(doc(db, 'userCollections', collectionId, 'likes', userId)),
+      getDoc(doc(db, 'userCollections', collectionId, 'saves', userId)),
+    ]);
+    return {
+      liked: likeSnap.exists(),
+      saved: saveSnap.exists(),
+    };
+  } catch {
+    return { liked: false, saved: false };
+  }
+}
+
+export async function toggleCollectionLike(
+  userId: string,
+  collectionId: string
+): Promise<{ liked: boolean; likeCount: number }> {
+  if (!userId || !collectionId) {
+    throw new Error('Sign in to like collections.');
+  }
+
+  const colRef = doc(db, 'userCollections', collectionId);
+  const likeRef = doc(db, 'userCollections', collectionId, 'likes', userId);
+  const path = `userCollections/${collectionId}/likes/${userId}`;
+
+  try {
+    return await runTransaction(db, async (transaction) => {
+      const colSnap = await transaction.get(colRef);
+      if (!colSnap.exists()) {
+        throw new Error('Collection not found.');
+      }
+      const data = colSnap.data();
+      if (data.visibility !== 'public' && data.ownerId !== userId) {
+        throw new Error('This collection is private.');
+      }
+
+      const likeSnap = await transaction.get(likeRef);
+      const currentLikes = Number(data.likeCount || 0);
+
+      if (likeSnap.exists()) {
+        const nextLikes = Math.max(0, currentLikes - 1);
+        transaction.delete(likeRef);
+        transaction.update(colRef, { likeCount: nextLikes });
+        return { liked: false, likeCount: nextLikes };
+      } else {
+        const nextLikes = currentLikes + 1;
+        transaction.set(likeRef, {
+          userId,
+          collectionId,
+          createdAt: serverTimestamp(),
+        });
+        transaction.update(colRef, { likeCount: nextLikes });
+        return { liked: true, likeCount: nextLikes };
+      }
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function toggleCollectionSave(
+  userId: string,
+  collectionId: string
+): Promise<{ saved: boolean; saveCount: number }> {
+  if (!userId || !collectionId) {
+    throw new Error('Sign in to bookmark collections.');
+  }
+
+  const colRef = doc(db, 'userCollections', collectionId);
+  const saveRef = doc(db, 'userCollections', collectionId, 'saves', userId);
+  const path = `userCollections/${collectionId}/saves/${userId}`;
+
+  try {
+    return await runTransaction(db, async (transaction) => {
+      const colSnap = await transaction.get(colRef);
+      if (!colSnap.exists()) {
+        throw new Error('Collection not found.');
+      }
+      const data = colSnap.data();
+      if (data.visibility !== 'public' && data.ownerId !== userId) {
+        throw new Error('This collection is private.');
+      }
+
+      const saveSnap = await transaction.get(saveRef);
+      const currentSaves = Number(data.saveCount || 0);
+
+      if (saveSnap.exists()) {
+        const nextSaves = Math.max(0, currentSaves - 1);
+        transaction.delete(saveRef);
+        transaction.update(colRef, { saveCount: nextSaves });
+        return { saved: false, saveCount: nextSaves };
+      } else {
+        const nextSaves = currentSaves + 1;
+        transaction.set(saveRef, {
+          userId,
+          collectionId,
+          createdAt: serverTimestamp(),
+        });
+        transaction.update(colRef, { saveCount: nextSaves });
+        return { saved: true, saveCount: nextSaves };
+      }
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
 export async function likeCollection(
   userId: string,
   collectionId: string
 ): Promise<void> {
-  if (!userId || !collectionId) return;
-
-  const colRef = doc(db, 'userCollections', collectionId);
-  const path = `userCollections/${collectionId}`;
-
-  try {
-    await runTransaction(db, async (transaction) => {
-      const snap = await transaction.get(colRef);
-      if (!snap.exists()) return;
-      const data = snap.data();
-      const currentLikes = Number(data.likeCount || 0);
-      transaction.update(colRef, {
-        likeCount: currentLikes + 1,
-      });
-    });
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
+  await toggleCollectionLike(userId, collectionId);
 }

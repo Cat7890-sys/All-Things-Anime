@@ -6,7 +6,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { TrendingSidebarSection } from './components/TrendingSidebarSection';
 import { PublicProfileModal } from './components/social/PublicProfileModal';
+import { PersonalisationOnboardingModal } from './components/personalisation/PersonalisationOnboardingModal';
 import { useAuth } from './hooks/useAuth';
+import { usePreferences } from './context/PreferencesContext';
 import { AppShell } from './layout/AppShell';
 import { ComingSoonPage } from './pages/ComingSoonPage';
 import { CommunitiesPage } from './pages/CommunitiesPage';
@@ -15,6 +17,10 @@ import { HomePage } from './pages/HomePage';
 import { MessagesPage } from './pages/MessagesPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { MyAnimeDashboardPage } from './pages/MyAnimeDashboardPage';
+import { AnimeTrackerPage } from './pages/AnimeTrackerPage';
+import { CollectionsPage } from './pages/CollectionsPage';
+import { PersonalisationPage } from './pages/PersonalisationPage';
 import { NotificationToastContainer } from './components/notifications/NotificationToastContainer';
 import { subscribeToUserNotifications } from './services/notifications/notificationService';
 import type { NotificationRouteTarget } from './services/notifications/notificationRoutingService';
@@ -33,6 +39,7 @@ import type {
 
 export default function App() {
   const { firebaseUser } = useAuth();
+  const { preferences } = usePreferences();
   const [activeDestination, setActiveDestination] =
     useState<NavDestinationId>('home');
   const [authMode, setAuthMode] = useState<AuthViewMode>('login');
@@ -61,6 +68,15 @@ export default function App() {
   );
   const [trendingAnime, setTrendingAnime] = useState<TrendingAnimeItem[]>([]);
   const [communities, setCommunities] = useState<CommunityHighlight[]>([]);
+
+  // Onboarding modal visibility state
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+
+  useEffect(() => {
+    if (firebaseUser && firebaseUser.emailVerified && preferences && preferences.onboardingCompleted === false) {
+      setIsOnboardingOpen(true);
+    }
+  }, [firebaseUser, preferences]);
 
   useEffect(() => {
     let isMounted = true;
@@ -313,6 +329,29 @@ export default function App() {
         <ProfilePage
           initialAuthMode={authMode}
           onStartDirectMessage={handleStartDirectMessage}
+          onNavigatePersonalisation={() => handleSelectDestination('personalisation')}
+        />
+      ) : activeDestination === 'my-anime' ? (
+        <MyAnimeDashboardPage
+          currentUserId={firebaseUser?.uid}
+          onOpenAuth={() => handleOpenAuth('login')}
+          onNavigateDestination={handleSelectDestination}
+        />
+      ) : activeDestination === 'anime-tracker' ? (
+        <AnimeTrackerPage
+          currentUserId={firebaseUser?.uid}
+          onOpenAuth={() => handleOpenAuth('login')}
+        />
+      ) : activeDestination === 'collections' ? (
+        <CollectionsPage
+          currentUserId={firebaseUser?.uid}
+          onOpenAuth={() => handleOpenAuth('login')}
+          onNavigateDestination={handleSelectDestination}
+        />
+      ) : activeDestination === 'personalisation' ? (
+        <PersonalisationPage
+          currentUserId={firebaseUser?.uid}
+          onNavigateDestination={handleSelectDestination}
         />
       ) : (
         <ComingSoonPage
@@ -338,6 +377,10 @@ export default function App() {
           setPendingPostId(clickedPost.id);
           handleSelectDestination('home');
         }}
+      />
+      <PersonalisationOnboardingModal
+        isOpen={isOnboardingOpen}
+        onClose={() => setIsOnboardingOpen(false)}
       />
     </AppShell>
   );

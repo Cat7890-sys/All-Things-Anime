@@ -2,19 +2,18 @@ import React, {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import {
   DEFAULT_USER_PREFERENCES,
-  getUserPreferences,
+  restoreDefaultDashboardWidgets,
   subscribeToUserPreferences,
   updateUserPreferences,
 } from '../services/personalisation/userPreferencesService';
 import type {
   AtaAccentColor,
-  AtaFeedDensity,
-  AtaThemePreference,
   AtaUserPreferences,
   UpdateUserPreferencesInput,
 } from '../types';
@@ -68,6 +67,8 @@ interface PreferencesContextValue {
   isOnboardingOpen: boolean;
   setIsOnboardingOpen: (open: boolean) => void;
   accentInfo: { name: string; hex: string; darkHex: string; glow: string };
+  lastSaveError: string | null;
+  clearSaveError: () => void;
 }
 
 const PreferencesContext = createContext<PreferencesContextValue | undefined>(
@@ -81,19 +82,25 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
   const [preferences, setPreferences] = useState<AtaUserPreferences>({
     userId: '',
     ...DEFAULT_USER_PREFERENCES,
+    dashboardWidgets: restoreDefaultDashboardWidgets(),
     updatedAt: null,
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+  const [lastSaveError, setLastSaveError] = useState<string | null>(null);
+  const hasAutoPromptedRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!firebaseUser) {
+      hasAutoPromptedRef.current = null;
       setPreferences({
         userId: '',
         ...DEFAULT_USER_PREFERENCES,
+        dashboardWidgets: restoreDefaultDashboardWidgets(),
         updatedAt: null,
       });
       setIsLoading(false);
+      setIsOnboardingOpen(false);
       return;
     }
 
@@ -103,16 +110,18 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
         setPreferences(prefs);
         setIsLoading(false);
 
-        // If verified user has not completed onboarding and has no favourite genres configured, offer onboarding
         if (
           firebaseUser.emailVerified &&
           !prefs.onboardingCompleted &&
-          prefs.favouriteAnimeTitles.length === 0
+          prefs.favouriteAnimeTitles.length === 0 &&
+          hasAutoPromptedRef.current !== firebaseUser.uid
         ) {
+          hasAutoPromptedRef.current = firebaseUser.uid;
           setIsOnboardingOpen(true);
         }
       },
-      () => {
+      (errMsg) => {
+        setLastSaveError(errMsg);
         setIsLoading(false);
       }
     );
@@ -127,13 +136,14 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
     if (typeof document === 'undefined') return;
 
     const root = document.documentElement;
-    const accent = ACCENT_COLOR_MAP[preferences.accentColor] || ACCENT_COLOR_MAP.red;
+    const accent =
+      ACCENT_COLOR_MAP[preferences.accentColor] || ACCENT_COLOR_MAP.red;
 
     root.style.setProperty('--ata-accent-main', accent.hex);
     root.style.setProperty('--ata-accent-dark', accent.darkHex);
     root.style.setProperty('--ata-accent-glow', accent.glow);
+    root.setAttribute('data-ata-theme-preference', preferences.themePreference);
 
-    // Feed density class
     if (preferences.feedDensity === 'compact') {
       root.classList.add('ata-density-compact');
       root.classList.remove('ata-density-comfortable');
@@ -142,19 +152,43 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
       root.classList.remove('ata-density-compact');
     }
 
-    // Reduced motion preference
     if (preferences.reducedMotion) {
       root.classList.add('ata-reduced-motion');
     } else {
       root.classList.remove('ata-reduced-motion');
     }
-  }, [preferences.accentColor, preferences.feedDensity, preferences.reducedMotion]);
+  }, [
+    preferences.accentColor,
+    preferences.feedDensity,
+    preferences.reducedMotion,
+    preferences.themePreference,
+  ]);
 
   const handleUpdate = async (input: UpdateUserPreferencesInput) => {
-    if (!firebaseUser) return;
+    setLastSaveError(null);
+    if (!firebaseUser) {
+      throw new Error('Please sign in to save personalisation settings.');
+    }
+    if (!firebaseUser.emailVerified) {
+      throw new Error(
+        'Please verify your email address before saving personalisation preferences.'
+      );
+    }
+
+    const previous = preferences;
     setPreferences((prev) => ({ ...prev, ...input }));
-    if (!firebaseUser.emailVerified) return;
-    await updateUserPreferences(firebaseUser.uid, input);
+    try {
+      const saved = await updateUserPreferences(firebaseUser.uid, input);
+      setPreferences(saved);
+    } catch (err) {
+      setPreferences(previous);
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to save your preferences. Please try again.';
+      setLastSaveError(message);
+      throw err;
+    }
   };
 
   const accentInfo =
@@ -169,6 +203,8 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
         isOnboardingOpen,
         setIsOnboardingOpen,
         accentInfo,
+        lastSaveError,
+        clearSaveError: () => setLastSaveError(null),
       }}
     >
       {children}

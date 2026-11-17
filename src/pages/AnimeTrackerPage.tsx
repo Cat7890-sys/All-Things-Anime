@@ -19,7 +19,8 @@ import {
   Play,
   RotateCcw,
 } from 'lucide-react';
-import { animeCatalogueService } from '../services/catalogue/animeCatalogueService';
+import { anilistService } from '../services/catalogue/anilistService';
+import type { NormalizedAnime } from '../services/catalogue/anilistTypes';
 import {
   getUserAnimeList,
   incrementWatchedEpisode,
@@ -29,10 +30,10 @@ import {
   upsertAnimeListItem,
 } from '../services/personalisation/animeTrackerService';
 import type {
-  AnimeCatalogueItem,
   UserAnimeListItem,
   WatchlistStatus,
 } from '../types';
+import { AnimeDetailModal } from '../components/discovery/AnimeDetailModal';
 
 interface AnimeTrackerPageProps {
   currentUserId?: string;
@@ -56,9 +57,12 @@ export const AnimeTrackerPage: React.FC<AnimeTrackerPageProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<UserAnimeListItem | null>(null);
   const [catalogueQuery, setCatalogueQuery] = useState('');
-  const [catalogueResults, setCatalogueResults] = useState<AnimeCatalogueItem[]>([]);
+  const [catalogueResults, setCatalogueResults] = useState<NormalizedAnime[]>([]);
   const [selectedCatalogueAnime, setSelectedCatalogueAnime] =
-    useState<AnimeCatalogueItem | null>(null);
+    useState<NormalizedAnime | null>(null);
+
+  // Detail Modal inspection
+  const [selectedDetailAnime, setSelectedDetailAnime] = useState<NormalizedAnime | null>(null);
 
   // Form fields
   const [formTitle, setFormTitle] = useState('');
@@ -67,6 +71,8 @@ export const AnimeTrackerPage: React.FC<AnimeTrackerPageProps> = ({
   const [formTotalEpisodes, setFormTotalEpisodes] = useState<number | null>(null);
   const [formStatus, setFormStatus] = useState<WatchlistStatus>('watching');
   const [formRating, setFormRating] = useState<number | null>(null);
+  const [formStartDate, setFormStartDate] = useState<string>('');
+  const [formCompletionDate, setFormCompletionDate] = useState<string>('');
   const [formNotes, setFormNotes] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -97,22 +103,32 @@ export const AnimeTrackerPage: React.FC<AnimeTrackerPageProps> = ({
     };
   }, [currentUserId]);
 
-  // Search catalogue when modal is open
+  // Search live AniList when modal is open
   useEffect(() => {
     if (!isModalOpen) return;
-    animeCatalogueService.searchAnime(catalogueQuery).then(setCatalogueResults);
+    const controller = new AbortController();
+    void anilistService
+      .searchAnime(catalogueQuery, { perPage: 8, signal: controller.signal })
+      .then((res) => setCatalogueResults(res.items))
+      .catch(() => {});
+
+    return () => {
+      controller.abort();
+    };
   }, [catalogueQuery, isModalOpen]);
 
-  const handleOpenAddModal = (anime?: AnimeCatalogueItem) => {
+  const handleOpenAddModal = (anime?: NormalizedAnime) => {
     setEditingItem(null);
     setFormError(null);
     if (anime) {
       setSelectedCatalogueAnime(anime);
-      setFormTitle(anime.title);
-      setFormCover(anime.coverImage);
+      setFormTitle(anime.title.display);
+      setFormCover(anime.coverImage.best || '');
       setFormTotalEpisodes(anime.episodes);
       setFormEpisodesWatched(0);
       setFormStatus('planning');
+      setFormStartDate('');
+      setFormCompletionDate('');
     } else {
       setSelectedCatalogueAnime(null);
       setFormTitle('');
@@ -120,6 +136,8 @@ export const AnimeTrackerPage: React.FC<AnimeTrackerPageProps> = ({
       setFormTotalEpisodes(null);
       setFormEpisodesWatched(0);
       setFormStatus('watching');
+      setFormStartDate(new Date().toISOString().split('T')[0]);
+      setFormCompletionDate('');
     }
     setFormRating(null);
     setFormNotes('');
@@ -136,6 +154,8 @@ export const AnimeTrackerPage: React.FC<AnimeTrackerPageProps> = ({
     setFormEpisodesWatched(item.episodesWatched);
     setFormStatus(item.status);
     setFormRating(item.userRating);
+    setFormStartDate(item.startDate || '');
+    setFormCompletionDate(item.completionDate || '');
     setFormNotes(item.personalNotes);
     setIsModalOpen(true);
   };
@@ -167,20 +187,24 @@ export const AnimeTrackerPage: React.FC<AnimeTrackerPageProps> = ({
         .slice(0, 80);
       const animeId =
         editingItem?.animeId ||
-        selectedCatalogueAnime?.id ||
+        (selectedCatalogueAnime ? String(selectedCatalogueAnime.id) : '') ||
         generatedSlug ||
         `custom-${Date.now()}`;
 
       await upsertAnimeListItem(currentUserId, {
         animeId,
         animeTitle: formTitle.trim(),
-        animeCoverUrl: formCover || selectedCatalogueAnime?.coverImage || '',
+        animeCoverUrl: formCover || selectedCatalogueAnime?.coverImage.best || '',
         genres: selectedCatalogueAnime?.genres || editingItem?.genres || [],
-        format: selectedCatalogueAnime?.format || editingItem?.format || 'TV Series',
+        studios: selectedCatalogueAnime?.studios || editingItem?.studios || [],
+        format: selectedCatalogueAnime?.formatLabel || editingItem?.format || 'TV Series',
+        seasonYear: selectedCatalogueAnime?.seasonYear || editingItem?.seasonYear || null,
         totalEpisodes: formTotalEpisodes,
         episodesWatched: formEpisodesWatched,
         status: formStatus,
         userRating: formRating,
+        startDate: formStartDate || null,
+        completionDate: formCompletionDate || null,
         personalNotes: formNotes.trim(),
       });
 
@@ -248,7 +272,6 @@ export const AnimeTrackerPage: React.FC<AnimeTrackerPageProps> = ({
         const progB = b.totalEpisodes ? b.episodesWatched / b.totalEpisodes : 0;
         return progB - progA;
       }
-      // 'updated' default
       const timeA = a.updatedAt ? a.updatedAt.getTime() : 0;
       const timeB = b.updatedAt ? b.updatedAt.getTime() : 0;
       return timeB - timeA;
@@ -477,7 +500,6 @@ export const AnimeTrackerPage: React.FC<AnimeTrackerPageProps> = ({
 
                 {/* Right Actions */}
                 <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#D4D7E2] dark:border-[#303342]">
-                  {/* Rating display */}
                   {item.userRating ? (
                     <div className="flex items-center gap-1 text-amber-400 text-xs font-bold">
                       <Star className="h-3.5 w-3.5 fill-current" />
@@ -489,7 +511,6 @@ export const AnimeTrackerPage: React.FC<AnimeTrackerPageProps> = ({
                     </span>
                   )}
 
-                  {/* Quick increment +1 button */}
                   {item.status !== 'completed' && (
                     <button
                       type="button"
@@ -502,17 +523,66 @@ export const AnimeTrackerPage: React.FC<AnimeTrackerPageProps> = ({
                     </button>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeletingAnimeId(item.animeId);
-                    }}
-                    title="Remove from tracker"
-                    className="p-1 rounded-lg text-[#52576B] dark:text-[#A7A9B8] hover:text-[#EF3038] transition-colors"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // Resolve normalized anime for detail inspection
+                        setSelectedDetailAnime({
+                          id: Number(item.animeId) || 1,
+                          title: {
+                            english: item.animeTitle,
+                            romaji: item.animeTitle,
+                            native: null,
+                            display: item.animeTitle,
+                          },
+                          coverImage: {
+                            extraLarge: item.animeCoverUrl,
+                            large: item.animeCoverUrl,
+                            best: item.animeCoverUrl,
+                            color: null,
+                          },
+                          bannerImage: null,
+                          averageScore: item.userRating ? item.userRating * 10 : null,
+                          popularity: null,
+                          trending: null,
+                          trendingRank: null,
+                          episodes: item.totalEpisodes,
+                          status: item.status === 'completed' ? 'FINISHED' : 'RELEASING',
+                          statusLabel: item.status,
+                          season: null,
+                          seasonYear: item.seasonYear,
+                          seasonLabel: item.seasonYear ? String(item.seasonYear) : null,
+                          startDate: { year: null, month: null, day: null, formatted: item.startDate },
+                          format: 'TV',
+                          formatLabel: item.format,
+                          genres: item.genres,
+                          description: item.personalNotes || null,
+                          nextAiringEpisode: null,
+                          studios: item.studios,
+                          siteUrl: `https://anilist.co/search/anime?search=${encodeURIComponent(item.animeTitle)}`,
+                          isAdult: false,
+                        });
+                      }}
+                      title="View anime details"
+                      className="p-1 rounded-lg text-[#52576B] dark:text-[#A7A9B8] hover:text-[#EF3038] transition-colors"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeletingAnimeId(item.animeId);
+                      }}
+                      title="Remove from tracker"
+                      className="p-1 rounded-lg text-[#52576B] dark:text-[#A7A9B8] hover:text-[#EF3038] transition-colors"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             );
@@ -545,42 +615,42 @@ export const AnimeTrackerPage: React.FC<AnimeTrackerPageProps> = ({
                 </div>
               )}
 
-              {/* Catalogue Autocomplete (if adding new) */}
+              {/* AniList Catalogue Search (if adding new) */}
               {!editingItem && (
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-[#090B14] dark:text-white block">
-                    Search ATA Anime Catalogue
+                    Search AniList Catalogue
                   </label>
                   <input
                     type="text"
-                    placeholder="Search verified series e.g. Frieren, Monolith of Kiri..."
+                    placeholder="Search verified series e.g. Frieren, Cowboy Bebop..."
                     value={catalogueQuery}
                     onChange={(e) => setCatalogueQuery(e.target.value)}
                     className="w-full px-3 py-2 text-xs rounded-xl bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] text-[#090B14] dark:text-white"
                   />
                   {catalogueResults.length > 0 && !selectedCatalogueAnime && (
-                    <div className="max-h-36 overflow-y-auto divide-y divide-[#D4D7E2] dark:divide-[#303342] border border-[#D4D7E2] dark:border-[#303342] rounded-xl bg-white dark:bg-[#090B14]">
+                    <div className="max-h-40 overflow-y-auto divide-y divide-[#D4D7E2] dark:divide-[#303342] border border-[#D4D7E2] dark:border-[#303342] rounded-xl bg-white dark:bg-[#090B14]">
                       {catalogueResults.map((cat) => (
                         <button
                           key={cat.id}
                           type="button"
                           onClick={() => {
                             setSelectedCatalogueAnime(cat);
-                            setFormTitle(cat.title);
-                            setFormCover(cat.coverImage);
+                            setFormTitle(cat.title.display);
+                            setFormCover(cat.coverImage.best || '');
                             setFormTotalEpisodes(cat.episodes);
                           }}
-                          className="w-full text-left p-2.5 hover:bg-[#EF3038]/10 flex items-center gap-2 text-xs font-bold text-[#090B14] dark:text-white"
+                          className="w-full text-left p-2.5 hover:bg-[#EF3038]/10 flex items-center gap-2.5 text-xs font-bold text-[#090B14] dark:text-white"
                         >
                           <img
-                            src={cat.coverImage}
-                            alt={cat.title}
-                            className="h-8 w-6 object-cover rounded"
+                            src={cat.coverImage.best || ''}
+                            alt={cat.title.display}
+                            className="h-10 w-8 object-cover rounded"
                           />
                           <div>
-                            <p>{cat.title}</p>
+                            <p>{cat.title.display}</p>
                             <span className="text-[10px] text-[#52576B] dark:text-[#A7A9B8]">
-                              {cat.format} · {cat.episodes ? `${cat.episodes} eps` : 'Ongoing'}
+                              {cat.formatLabel} · {cat.episodes ? `${cat.episodes} eps` : 'Ongoing'}
                             </span>
                           </div>
                         </button>
@@ -650,6 +720,32 @@ export const AnimeTrackerPage: React.FC<AnimeTrackerPageProps> = ({
                       )
                     }
                     className="w-full px-3 py-2 text-xs rounded-xl bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] text-[#090B14] dark:text-white font-bold"
+                  />
+                </div>
+              </div>
+
+              {/* Dates Row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-[#090B14] dark:text-white block mb-1">
+                    Start Date (YYYY-MM-DD)
+                  </label>
+                  <input
+                    type="date"
+                    value={formStartDate}
+                    onChange={(e) => setFormStartDate(e.target.value)}
+                    className="w-full px-3 py-2 text-xs rounded-xl bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] text-[#090B14] dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-[#090B14] dark:text-white block mb-1">
+                    Completion Date
+                  </label>
+                  <input
+                    type="date"
+                    value={formCompletionDate}
+                    onChange={(e) => setFormCompletionDate(e.target.value)}
+                    className="w-full px-3 py-2 text-xs rounded-xl bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] text-[#090B14] dark:text-white"
                   />
                 </div>
               </div>
@@ -742,6 +838,15 @@ export const AnimeTrackerPage: React.FC<AnimeTrackerPageProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Detail Inspection Modal */}
+      {selectedDetailAnime && (
+        <AnimeDetailModal
+          anime={selectedDetailAnime}
+          onClose={() => setSelectedDetailAnime(null)}
+          onSelectAnime={(anim) => setSelectedDetailAnime(anim)}
+        />
       )}
     </div>
   );

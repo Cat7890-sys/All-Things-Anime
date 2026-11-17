@@ -111,6 +111,14 @@ export interface AtaUserAccount {
   updatedAt: Date | null;
 }
 
+export interface AnimeActivitySummary {
+  totalTracked: number;
+  totalCompleted: number;
+  totalWatching: number;
+  totalEpisodesWatched: number;
+  favouriteGenres: string[];
+}
+
 export interface AtaPublicProfile {
   uid: string;
   username: string;
@@ -124,6 +132,8 @@ export interface AtaPublicProfile {
   favouriteAnimeTitles?: string[];
   favouriteCharacters?: string[];
   favouriteGenres?: string[];
+  showAnimeActivity?: boolean;
+  animeActivitySummary?: AnimeActivitySummary;
   followersCount: number;
   followingCount: number;
   createdAt: Date | null;
@@ -154,6 +164,8 @@ export interface UpdateProfileInput {
   favouriteAnimeTitles?: string[];
   favouriteCharacters?: string[];
   favouriteGenres?: string[];
+  showAnimeActivity?: boolean;
+  animeActivitySummary?: AnimeActivitySummary;
 }
 
 export type AuthViewMode = 'login' | 'register' | 'reset';
@@ -603,10 +615,22 @@ export type UpdateNotificationSettingsInput = Partial<
 // Build 06: Complete Personalisation
 // ==========================================
 
+import type { NormalizedAnime } from '../services/catalogue/anilistTypes';
+
 export type AtaThemePreference = 'dark' | 'light' | 'system';
 export type AtaAccentColor = 'red' | 'crimson' | 'amber' | 'violet' | 'azure' | 'emerald';
 export type AtaFeedDensity = 'comfortable' | 'compact';
 export type DefaultFeedTab = 'for_you' | 'following' | 'communities' | 'trending' | 'latest';
+
+export type RecommendationCategoryId =
+  | 'recommended_for_you'
+  | 'because_you_watched'
+  | 'similar_anime'
+  | 'hidden_gems'
+  | 'trending_in_interests'
+  | 'continue_exploring';
+
+export type RecommendationDiversity = 'focused' | 'balanced' | 'diverse';
 
 export interface DashboardWidgetConfig {
   id: string;
@@ -632,9 +656,24 @@ export interface AtaUserPreferences {
   favouriteAnimeTitles: string[];
   favouriteCharacters: string[];
   favouriteGenres: string[];
+  favouriteThemes: string[];
   preferredFormats: string[];
   preferredPeriods: string[];
+  favouriteStudios: string[];
+  preferredTypes: string[];
+  avoidAnimeIds: string[];
+  avoidAnimeTitles: string[];
   topicsToAvoid: string[];
+  preferredRecommendationCategories: RecommendationCategoryId[];
+  prioritiseAiring: boolean;
+  prioritiseCompleted: boolean;
+  includeOlderAnime: boolean;
+  prioritiseHighlyRated: boolean;
+  showLesserKnown: boolean;
+  recommendationDiversity: RecommendationDiversity;
+  showAnimeStatsOnProfile: boolean;
+  showFavouriteAnimeOnProfile: boolean;
+  showCollectionsOnProfile: boolean;
   dashboardWidgets: DashboardWidgetConfig[];
   updatedAt: Date | null;
 }
@@ -643,7 +682,7 @@ export type UpdateUserPreferencesInput = Partial<
   Omit<AtaUserPreferences, 'userId' | 'updatedAt'>
 >;
 
-// Curated Anime Catalogue
+// Legacy Curated Anime Catalogue Type (preserved for backwards compatibility)
 export interface AnimeCatalogueItem {
   id: string;
   title: string;
@@ -676,7 +715,9 @@ export interface UserAnimeListItem {
   animeTitle: string;
   animeCoverUrl: string;
   genres: string[];
+  studios: string[];
   format: string;
+  seasonYear: number | null;
   totalEpisodes: number | null; // verified when known, otherwise null
   episodesWatched: number;
   status: WatchlistStatus;
@@ -693,7 +734,9 @@ export interface UpsertAnimeListItemInput {
   animeTitle: string;
   animeCoverUrl: string;
   genres: string[];
+  studios?: string[];
   format: string;
+  seasonYear?: number | null;
   totalEpisodes: number | null;
   episodesWatched: number;
   status: WatchlistStatus;
@@ -767,16 +810,26 @@ export interface RecommendationFeedback {
 }
 
 export interface AnimeRecommendation {
-  anime: AnimeCatalogueItem;
+  anime: NormalizedAnime;
+  category: RecommendationCategoryId;
   score: number;
   reasonCategory:
-    | 'Recommended for You'
-    | 'Because You Like...'
-    | 'Similar Genres'
-    | 'Popular in Your Communities'
-    | 'Hidden Gems';
+    | 'Recommended For You'
+    | 'Because You Watched'
+    | 'Similar Anime'
+    | 'Hidden Gems'
+    | 'Trending In Your Interests'
+    | 'Continue Exploring';
   reasonDetail: string;
   matchedSignals: string[];
+  seedAnimeTitle?: string;
+}
+
+export interface MonthlyActivityPoint {
+  monthKey: string;
+  label: string;
+  updatedCount: number;
+  completedCount: number;
 }
 
 // Personal Statistics & Insights
@@ -789,9 +842,13 @@ export interface PersonalAnimeInsights {
   totalDropped: number;
   totalEpisodesWatched: number;
   averageRating: number | null;
+  completionRate: number;
   genreDistribution: Record<string, number>;
   ratingDistribution: Record<number, number>;
   formatDistribution: Record<string, number>;
+  studioDistribution: Record<string, number>;
+  statusDistribution: Record<WatchlistStatus, number>;
+  monthlyActivity: MonthlyActivityPoint[];
   recentWatchlistChanges: UserAnimeListItem[];
   totalCollections: number;
 }

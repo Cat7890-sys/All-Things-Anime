@@ -339,62 +339,65 @@ export const MyAnimeDashboardPage: React.FC<MyAnimeDashboardPageProps> = ({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {recommendations.slice(0, 3).map((rec) => (
-              <div
-                key={rec.anime.id}
-                className="p-4 rounded-2xl bg-white dark:bg-[#171923] border border-[#D4D7E2] dark:border-[#303342] flex flex-col justify-between space-y-3"
-              >
-                <div className="space-y-2.5">
-                  <div className="aspect-[16/9] w-full rounded-xl overflow-hidden bg-black/20 relative">
-                    <img
-                      src={rec.anime.coverImage}
-                      alt={rec.anime.title}
-                      className="h-full w-full object-cover"
-                    />
-                    <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md text-[9px] font-bold backdrop-blur-md bg-black/70 text-white">
-                      {rec.reasonCategory}
+            {recommendations.slice(0, 3).map((rec) => {
+              const animeIdStr = String(rec.anime.id);
+              return (
+                <div
+                  key={rec.anime.id}
+                  className="p-4 rounded-2xl bg-white dark:bg-[#171923] border border-[#D4D7E2] dark:border-[#303342] flex flex-col justify-between space-y-3"
+                >
+                  <div className="space-y-2.5">
+                    <div className="aspect-[16/9] w-full rounded-xl overflow-hidden bg-black/20 relative">
+                      <img
+                        src={rec.anime.coverImage.large || rec.anime.coverImage.extraLarge || ''}
+                        alt={rec.anime.title.display}
+                        className="h-full w-full object-cover"
+                      />
+                      <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md text-[9px] font-bold backdrop-blur-md bg-black/70 text-white">
+                        {rec.reasonCategory}
+                      </span>
+                    </div>
+
+                    <div>
+                      <h3 className="text-xs font-bold text-[#090B14] dark:text-white truncate">
+                        {rec.anime.title.display}
+                      </h3>
+                      <p className="text-[11px] text-[#52576B] dark:text-[#A7A9B8] line-clamp-2 mt-0.5">
+                        {rec.reasonDetail}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-[#D4D7E2] dark:border-[#303342] flex items-center justify-between text-xs">
+                    <span className="text-[10px] font-semibold text-[#52576B] dark:text-[#A7A9B8]">
+                      Score: {rec.anime.averageScore ? `${rec.anime.averageScore}%` : '—'}
                     </span>
-                  </div>
-
-                  <div>
-                    <h3 className="text-xs font-bold text-[#090B14] dark:text-white truncate">
-                      {rec.anime.title}
-                    </h3>
-                    <p className="text-[11px] text-[#52576B] dark:text-[#A7A9B8] line-clamp-2 mt-0.5">
-                      {rec.reasonDetail}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-[#D4D7E2] dark:border-[#303342] flex items-center justify-between text-xs">
-                  <span className="text-[10px] font-semibold text-[#52576B] dark:text-[#A7A9B8]">
-                    Score: {rec.anime.score}/10
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      title="Like recommendation"
-                      onClick={() => void handleFeedback(rec.anime.id, 'like')}
-                      className={`p-1.5 rounded-lg border transition-colors ${
-                        feedbackMap[rec.anime.id] === 'like'
-                          ? 'border-[#EF3038] text-[#EF3038] bg-[#EF3038]/10'
-                          : 'border-[#D4D7E2] dark:border-[#303342] text-[#52576B] dark:text-[#A7A9B8]'
-                      }`}
-                    >
-                      <ThumbsUp className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      title="Not interested"
-                      onClick={() => void handleFeedback(rec.anime.id, 'not_interested')}
-                      className="p-1.5 rounded-lg border border-[#D4D7E2] dark:border-[#303342] text-[#52576B] dark:text-[#A7A9B8] hover:text-[#EF3038]"
-                    >
-                      <ThumbsDown className="h-3.5 w-3.5" />
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        title="Like recommendation"
+                        onClick={() => void handleFeedback(animeIdStr, 'like')}
+                        className={`p-1.5 rounded-lg border transition-colors ${
+                          feedbackMap[animeIdStr] === 'like'
+                            ? 'border-[#EF3038] text-[#EF3038] bg-[#EF3038]/10'
+                            : 'border-[#D4D7E2] dark:border-[#303342] text-[#52576B] dark:text-[#A7A9B8]'
+                        }`}
+                      >
+                        <ThumbsUp className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Not interested"
+                        onClick={() => void handleFeedback(animeIdStr, 'not_interested')}
+                        className="p-1.5 rounded-lg border border-[#D4D7E2] dark:border-[#303342] text-[#52576B] dark:text-[#A7A9B8] hover:text-[#EF3038]"
+                      >
+                        <ThumbsDown className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}

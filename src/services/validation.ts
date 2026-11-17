@@ -171,6 +171,37 @@ export function validateLoginForm(
   return errors;
 }
 
+export function validateOptionalHttpsUrl(
+  url: string | undefined,
+  maxLength: number = 1000,
+  fieldLabel: string = 'URL'
+): string | null {
+  const trimmed = (url || '').trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.length > maxLength) {
+    return `${fieldLabel} must be ${maxLength} characters or fewer.`;
+  }
+  if (!trimmed.startsWith('https://')) {
+    return `${fieldLabel} must begin with https://.`;
+  }
+  try {
+    new URL(trimmed);
+  } catch {
+    return `Please enter a valid ${fieldLabel.toLowerCase()}.`;
+  }
+  return null;
+}
+
+export function validateFavouriteQuote(quote: string | undefined): string | null {
+  if (!quote) return null;
+  if (quote.trim().length > 140) {
+    return 'Favourite anime quote must be 140 characters or fewer.';
+  }
+  return null;
+}
+
 export function validateProfileEditForm(
   input: UpdateProfileInput
 ): ValidationErrors<UpdateProfileInput> {
@@ -184,6 +215,21 @@ export function validateProfileEditForm(
 
   const avatarErr = validateAvatarUrl(input.avatarUrl);
   if (avatarErr) errors.avatarUrl = avatarErr;
+
+  const bannerErr = validateOptionalHttpsUrl(
+    input.bannerUrl,
+    1000,
+    'Banner URL'
+  );
+  if (bannerErr) errors.bannerUrl = bannerErr;
+
+  const quoteErr = validateFavouriteQuote(input.favouriteQuote);
+  if (quoteErr) errors.favouriteQuote = quoteErr;
+
+  if (input.accentColor) {
+    const accentErr = validateAccentColor(input.accentColor);
+    if (accentErr) errors.accentColor = accentErr;
+  }
 
   return errors;
 }
@@ -787,6 +833,74 @@ export function validateAccentColor(color: string): string | null {
 export function validateFeedDensity(density: string): string | null {
   if (!APPROVED_FEED_DENSITIES.includes(density as (typeof APPROVED_FEED_DENSITIES)[number])) {
     return 'Feed density must be comfortable or compact.';
+  }
+  return null;
+}
+
+export const APPROVED_RECOMMENDATION_CATEGORIES = [
+  'recommended_for_you',
+  'because_you_watched',
+  'similar_anime',
+  'hidden_gems',
+  'trending_in_interests',
+  'continue_exploring',
+] as const;
+
+export const APPROVED_RECOMMENDATION_DIVERSITIES = [
+  'focused',
+  'balanced',
+  'diverse',
+] as const;
+
+export const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+export function validateIsoDateString(
+  value: string | null | undefined,
+  label: string = 'Date'
+): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (!ISO_DATE_REGEX.test(trimmed)) {
+    return `${label} must use YYYY-MM-DD format.`;
+  }
+  const parsed = Date.parse(`${trimmed}T00:00:00Z`);
+  if (Number.isNaN(parsed)) {
+    return `${label} is not a valid calendar date.`;
+  }
+  return null;
+}
+
+export function validateRecommendationDiversity(diversity: string): string | null {
+  if (
+    !APPROVED_RECOMMENDATION_DIVERSITIES.includes(
+      diversity as (typeof APPROVED_RECOMMENDATION_DIVERSITIES)[number]
+    )
+  ) {
+    return 'Recommendation diversity must be focused, balanced, or diverse.';
+  }
+  return null;
+}
+
+export function validatePreferenceStringList(
+  items: string[],
+  maxItems: number = 30,
+  maxLength: number = 80,
+  label: string = 'Items'
+): string | null {
+  if (!Array.isArray(items)) {
+    return `${label} must be a list.`;
+  }
+  if (items.length > maxItems) {
+    return `${label} can include at most ${maxItems} entries.`;
+  }
+  for (const item of items) {
+    if (typeof item !== 'string' || item.trim().length === 0) {
+      return `${label} entries cannot be empty.`;
+    }
+    if (item.trim().length > maxLength) {
+      return `Each entry in ${label.toLowerCase()} must be ${maxLength} characters or fewer.`;
+    }
   }
   return null;
 }
