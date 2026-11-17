@@ -1,0 +1,759 @@
+ATA BUILD 06 — COMPLETE PERSONALISATION
+One Universe. Infinite Opinions.
+Project: ATA — All Things Anime
+Build: 06 — Complete Personalisation
+Environment: Google AI Studio Build Mode
+Repository: https://github.com/cat7890-sys/All-Things-Anime
+Deployment: GitHub Pages
+Firebase Project: causal-truth-2dx1j
+Existing Base Path: /All-Things-Anime/
+1. YOUR ROLE
+Act as a senior full-stack engineer, product designer, Firebase architect, and UX specialist.
+You are continuing development of an existing application: ATA (All Things Anime), an independent anime-focused social networking platform.
+Your task is to implement Build 06 — Complete Personalisation.
+This is an extension of the existing application, NOT a new project.
+You must inspect the existing codebase, understand its architecture, and integrate the new functionality into the current application.
+CRITICAL PRESERVATION RULES
+Do not recreate the application from scratch.
+Do not replace the existing React, TypeScript, Vite, Tailwind, or Firebase architecture.
+Do not change the Firebase project.
+Do not remove or break existing functionality from Builds 01–05.
+Preserve existing authentication, user profiles, social feeds, communities, messaging, notifications, and PWA functionality.
+Preserve all existing Firestore collections and security rules.
+Extend existing services and components wherever practical.
+Do not introduce mock functionality that appears to be connected to a real backend.
+Do not overwrite existing user data during migrations.
+Do not begin Build 07.
+Before making changes, inspect:
+src/ directory structure.
+Existing Firebase configuration and services.
+Authentication and user profile architecture.
+Existing Firestore collections and security rules.
+Existing navigation and application shell.
+Existing theme and design system.
+Existing notification architecture.
+Existing PWA configuration.
+Existing anime-related data and components.
+Create a short implementation plan before modifying files.
+2. DESIGN SYSTEM — MUST BE PRESERVED
+Use ATA Design System v1.1.
+Brand identity
+ATA — ALL THINGS ANIME
+Tagline: One Universe. Infinite Opinions.
+Brand personality:
+Futuristic
+Expressive
+Energetic
+Welcoming
+Community-driven
+Modern
+Colour palette
+Token	Colour
+Space Black	#090B14
+Dark Surface	#171923
+Pure White	#FFFFFF
+ATA Red	#EF3038
+Deep Red	#B92335
+Soft Grey	#A7A9B8
+Border Grey	#303342
+Typography
+Space Grotesk — headings and numbers.
+Inter — body text and navigation.
+Orbitron — limited display accents.
+Design direction
+Dark-first interface.
+Fully supported light theme.
+Controlled red accents.
+Subtle cosmic/orbital details.
+Smooth but restrained animations.
+Accessible focus states.
+Reduced-motion support.
+Responsive desktop, tablet, and mobile layouts.
+All new pages and components must look like part of ATA.
+Do not introduce an unrelated visual theme.
+Use only original, licensed, or otherwise authorised artwork and images.
+3. BUILD 06 OBJECTIVES
+Implement six interconnected personalisation systems:
+Personalised user experience and appearance.
+Anime interests and content preferences.
+Personalised feeds and recommendations.
+Anime watchlist and tracking system.
+Custom anime collections.
+Personal dashboard and activity insights.
+All functionality must be connected to the authenticated user's account and persist across sessions.
+4. PERSONALISATION CENTRE
+Create a dedicated Personalisation section accessible through the user's profile menu and settings.
+Suggested route:
+/settings/personalisation
+The page should have organised sections or tabs:
+Appearance
+Anime Interests
+Content Preferences
+Feed Preferences
+Recommendations
+Dashboard
+Privacy and Data
+The experience should be clean, intuitive, and responsive.
+Users must be able to change settings without navigating through multiple unrelated pages.
+4.1 Appearance customisation
+Implement:
+Dark theme.
+Light theme.
+Follow system preference.
+Accent colour selection using approved ATA-compatible options.
+Compact or comfortable feed density.
+Reduced-motion preference.
+Customisable profile accent/background where supported.
+Requirements:
+Persist settings in Firestore.
+Apply settings immediately.
+Restore settings after login.
+Avoid theme flashes during page loading where possible.
+Preserve the ATA brand identity.
+Do not allow custom colours that make text or controls inaccessible.
+The existing theme system must be extended, not replaced.
+4.2 Profile customisation
+Allow users to personalise their public-facing profiles with:
+Profile avatar.
+Profile banner.
+Short biography.
+Favourite anime.
+Favourite characters.
+Favourite genres.
+Favourite anime quotes (user-provided text).
+Profile accent colour.
+Optional profile sections.
+Add profile visibility preferences where appropriate.
+Users must be able to preview their profile before saving changes.
+Use existing profile services and validation.
+Do not expose private account details publicly.
+5. ANIME INTERESTS AND CONTENT PREFERENCES
+Create an anime-interest selection experience.
+Users should be able to select multiple genres, themes, and anime preferences.
+Suggested genres
+Action
+Adventure
+Comedy
+Drama
+Fantasy
+Sci-Fi
+Romance
+Mystery
+Thriller
+Horror
+Sports
+Slice of Life
+Supernatural
+Psychological
+Mecha
+Isekai
+Historical
+Music
+School
+Seinen
+Shounen
+Shoujo
+Josei
+Additional preferences
+Favourite anime titles.
+Favourite characters.
+Preferred anime formats:
+TV series
+Movies
+OVAs
+ONAs
+Specials
+Preferred release periods.
+Preferred viewing status.
+Topics or genres to avoid.
+Users should be able to edit their preferences at any time.
+Onboarding
+Introduce an optional personalisation onboarding experience for new or existing users who have not configured their preferences.
+The onboarding should:
+Explain why preferences improve the experience.
+Allow users to select favourite genres.
+Allow users to choose favourite anime.
+Allow users to select favourite characters.
+Allow users to configure content preferences.
+Allow users to skip any step.
+Save preferences when completed.
+Do not force users to complete onboarding before accessing ATA.
+6. PERSONALISED FEED SYSTEM
+Extend the existing social feed to support personalisation.
+Create the following feed views:
+6.1 For You
+A personalised feed based on:
+Selected anime interests.
+Favourite genres.
+Followed users.
+Joined communities.
+User-selected topics.
+Recent interactions within ATA.
+6.2 Following
+Show posts from accounts the user follows.
+Preserve the existing Following feed functionality.
+6.3 Communities
+Show posts from communities the user has joined.
+Respect existing public/private community permissions.
+6.4 Trending
+Display popular discussions and posts using transparent engagement signals and recent activity.
+6.5 Latest
+Display recent posts in chronological order.
+Feed requirements
+Preserve existing pagination.
+Preserve real-time updates where currently supported.
+Respect blocked users and existing visibility rules.
+Respect private community membership.
+Respect spoiler settings and spoiler gates.
+Do not expose posts the user is not authorised to see.
+Do not allow personalisation to bypass Firestore security rules.
+Provide empty states for users with limited activity.
+Allow users to switch feed views easily.
+Feed controls
+Add settings for:
+Preferred default feed.
+Hide selected topics.
+Hide selected genres.
+Reduce repetitive recommendations.
+Reset feed preferences.
+Personalisation should improve relevance without hiding the user's ability to explore different content.
+Do not introduce manipulative infinite-scroll mechanics or engagement-maximising dark patterns.
+7. ANIME RECOMMENDATION ENGINE
+Create an ATA recommendation system.
+The purpose is to help users discover anime based on their interests.
+Recommendation categories
+Recommended for You.
+Because You Like...
+Similar Genres.
+Popular in Your Communities.
+Based on Your Favourite Anime.
+Hidden Gems.
+Recently Added to Your Interests.
+Recommendation signals
+Use only appropriate, transparent signals:
+Explicitly selected genres.
+Favourite anime.
+Favourite characters.
+User-selected formats.
+Watchlist activity.
+Completed anime.
+Ratings or reactions the user chooses to provide.
+Community interests.
+Do not infer sensitive personal characteristics.
+Do not use private messages as recommendation data.
+Do not expose another user's private activity.
+Recommendation controls
+Allow users to:
+Like a recommendation.
+Dislike a recommendation.
+Save an anime.
+Mark an anime as not interested.
+Hide recommendations from a particular genre.
+Reset recommendation preferences.
+Disable personalised recommendations entirely.
+Recommendation architecture
+Create a recommendation service boundary, for example:
+src/services/recommendationService.ts
+Use a modular scoring system that can be improved later.
+Possible initial scoring signals:
+Genre match.
+Favourite anime similarity.
+Selected format match.
+Explicit user feedback.
+Watchlist status.
+Avoid pretending to have AI-powered recommendations if no actual AI service is configured.
+Start with explainable rule-based recommendations.
+If the project does not already have a reliable anime catalogue source, inspect the existing data and document the available source before integrating an external provider.
+Do not invent API endpoints or fabricate anime catalogue data.
+Use an adapter architecture so a legitimate anime catalogue provider can be connected later without rewriting the recommendation engine.
+8. ANIME WATCHLIST AND TRACKING
+Create a complete personal anime tracking system.
+Suggested route:
+/anime-tracker
+Users should be able to organise anime into:
+Watching
+Planning to Watch
+Completed
+On Hold
+Dropped
+Each anime entry should support:
+Anime title.
+Anime identifier from the selected catalogue source, when available.
+Cover image.
+Total episode count, when verified.
+Episodes watched.
+Viewing status.
+User rating (optional).
+Start date.
+Completion date.
+Personal notes.
+Date added.
+Tracking functionality
+Users must be able to:
+Add anime to their list.
+Change viewing status.
+Update episodes watched.
+Mark anime as completed.
+Move anime between categories.
+Edit personal notes.
+Rate anime.
+Remove anime.
+Search their own tracking list.
+Filter and sort their anime.
+Progress tracking
+Show progress indicators such as:
+Episode progress.
+Completed anime count.
+Currently watching count.
+Planned anime count.
+On-hold count.
+Dropped count.
+Progress must be calculated using verified episode totals where available.
+If episode totals are unknown, do not fabricate a completion percentage.
+Important safeguards
+Do not automatically mark anime as completed.
+Ask for confirmation before removing an entry.
+Prevent invalid episode values.
+Do not allow episodes watched to exceed a known episode total.
+Allow users to correct their progress.
+Do not create duplicate entries for the same catalogue anime within the same user's tracker.
+9. CUSTOM ANIME COLLECTIONS
+Create a collection system that allows users to organise anime however they want.
+Suggested route:
+/collections
+Examples:
+My Top 10 Anime.
+Best Villains.
+Anime to Watch During Holidays.
+Favourite Romance Anime.
+Best Anime Soundtracks.
+Underrated Anime.
+Childhood Classics.
+Collection features
+Users should be able to:
+Create collections.
+Add a title.
+Add a description.
+Select a cover image.
+Add anime entries.
+Remove anime entries.
+Reorder entries.
+Edit collections.
+Delete collections.
+Choose collection visibility.
+Visibility options
+Private — only the owner.
+Public — visible to other ATA users.
+Do not implement public collections until access-control rules have been tested.
+Public collection interactions
+Where supported:
+View public collections.
+Like a collection.
+Save/bookmark a collection.
+Visit the creator's profile.
+Never allow users to edit another person's collection.
+Use deterministic document IDs or transactions where needed to prevent duplicate collection entries and interactions.
+10. PERSONAL DASHBOARD
+Create a personalised dashboard that users can customise.
+Suggested route:
+/my-anime
+The dashboard should show:
+Overview cards
+Currently Watching.
+Completed Anime.
+Plan to Watch.
+Favourite Anime.
+Total Collections.
+Recent Activity.
+Dashboard widgets
+Allow users to enable, disable, and reorder widgets:
+Continue Watching.
+Recently Added Anime.
+Anime Watchlist.
+Favourite Genres.
+Recommended Anime.
+Recent Collections.
+Personal Anime Statistics.
+Recent Community Activity.
+Dashboard requirements
+Responsive layout.
+Save widget preferences.
+Restore widget configuration after login.
+Provide sensible defaults.
+Avoid loading every widget unnecessarily.
+Provide useful empty states.
+Do not display private information to public visitors.
+11. PERSONAL ANIME INSIGHTS
+Create a personal insights section.
+The purpose is to help users understand their own anime activity, not to pressure them to watch more.
+Possible insights:
+Number of anime tracked.
+Number completed.
+Current watching list.
+Favourite genres.
+Most frequently selected genres.
+Anime ratings distribution.
+Recent watchlist changes.
+Personal collection statistics.
+Use clear charts or visual indicators where useful.
+Important rules
+Insights must be based on the user's own stored data.
+Do not fabricate viewing time or episode counts.
+Do not assume an anime was watched simply because it was added.
+Do not compare users competitively.
+Do not introduce streak pressure, guilt-based messages, or addictive engagement mechanics.
+Allow users to hide the insights section.
+12. FIRESTORE ARCHITECTURE
+Inspect the current database before making schema changes.
+Extend existing collections where appropriate.
+Potential collections:
+/userPreferences/{userId}
+Stores:
+Theme.
+Accent colour.
+Feed density.
+Reduced-motion preference.
+Default feed.
+Anime interests.
+Genre preferences.
+Recommendation preferences.
+Content preferences.
+Dashboard layout.
+/userAnimeLists/{userId}/items/{animeId}
+Stores:
+Anime catalogue ID.
+Title snapshot.
+Cover image reference.
+Status.
+Episodes watched.
+Total episodes when verified.
+Rating.
+Start date.
+Completion date.
+Personal notes.
+Created timestamp.
+Updated timestamp.
+/userCollections/{collectionId}
+Stores:
+Owner ID.
+Title.
+Description.
+Cover image reference.
+Visibility.
+Created timestamp.
+Updated timestamp.
+/userCollections/{collectionId}/items/{itemId}
+Stores:
+Anime catalogue ID.
+Title snapshot.
+Cover image reference.
+Position/order.
+Created timestamp.
+Recommendation feedback
+Use a suitable structure such as:
+/recommendationFeedback/{userId}/items/{animeId}
+Store:
+Feedback type.
+Optional reason.
+Created timestamp.
+Updated timestamp.
+Dashboard configuration
+This may be stored inside /userPreferences/{userId} or another suitable user-owned document.
+Architecture requirements
+Follow existing naming conventions where possible.
+Avoid duplicating existing user profile data.
+Use server timestamps.
+Use transactions or batched writes for related operations.
+Avoid unbounded arrays in Firestore documents.
+Use pagination for large collections.
+Create composite indexes where required.
+Document all new collections and fields.
+Do not deploy destructive schema migrations.
+13. FIRESTORE SECURITY AND DATA PRIVACY
+Security is mandatory.
+Extend existing Firestore security rules rather than replacing them.
+User-owned information
+Only the authenticated owner should be able to:
+Read private preferences.
+Change private preferences.
+Read private watchlist data.
+Edit personal anime progress.
+Manage private collections.
+Manage personal recommendation feedback.
+Edit dashboard configuration.
+Public collections
+Public collections may be readable by authenticated users or the appropriate audience, subject to the selected visibility.
+Only the owner can modify them.
+Private collections must never be readable by other users.
+Validation
+Validate:
+Authenticated ownership.
+Document ownership.
+Allowed field names.
+Data types.
+String lengths.
+Numeric ranges.
+Status values.
+Visibility values.
+Valid timestamps.
+Collection entry ownership.
+Prevent users from changing owner IDs.
+Prevent users from writing another user's preferences or watchlist.
+Do not trust the client to enforce security.
+Privacy controls
+Provide:
+Disable personalised recommendations.
+Clear recommendation feedback.
+Reset personalisation settings.
+Delete individual anime tracker entries.
+Delete personal collections.
+Export personalisation data where feasible.
+A full account deletion workflow is not part of this build unless one already exists. Do not introduce an incomplete deletion mechanism.
+14. STORAGE AND IMAGE HANDLING
+Inspect existing Firebase Storage configuration and rules.
+If Storage is already configured, extend the existing rules safely.
+If it is not configured, create the required rules and clearly document the deployment requirement.
+For collection covers and profile artwork:
+Use approved image formats.
+Validate MIME types.
+Enforce file-size limits.
+Restrict upload paths to the authenticated owner.
+Prevent arbitrary executable file uploads.
+Avoid exposing private uploaded images.
+Provide image fallback states.
+Clean up replaced images where safe.
+Do not assume Firebase Storage is enabled.
+Do not break existing post or messaging uploads.
+15. NOTIFICATION INTEGRATION
+Integrate with Build 05's notification system where appropriate.
+Potential notifications:
+Collection liked.
+Public collection saved.
+New activity relevant to a user's selected interests, only where justified.
+Do not create notifications for every watchlist update.
+Respect:
+Existing notification settings.
+Quiet hours.
+Category preferences.
+Block relationships.
+User privacy preferences.
+Do not create notifications from untrusted client-side events on behalf of another user.
+Use the established trusted event architecture.
+16. NAVIGATION AND USER EXPERIENCE
+Integrate the new features into existing navigation.
+Suggested navigation:
+Main navigation
+Home
+Explore
+Communities
+Messages
+Notifications
+Personal area
+My Anime
+Watchlist
+Collections
+Personal Insights
+Profile
+Personalisation Settings
+Desktop:
+Preserve the existing three-column layout.
+Keep navigation consistent with the current ATA sidebar.
+Avoid overcrowding the central content area.
+Mobile:
+Preserve compact header.
+Preserve existing bottom navigation.
+Use responsive secondary navigation or a personal menu.
+Do not overcrowd bottom navigation with every new feature.
+Every new page must have:
+Loading states.
+Error states.
+Empty states.
+Success feedback.
+Accessible labels.
+Responsive layouts.
+17. PERFORMANCE REQUIREMENTS
+Use Firestore pagination.
+Avoid unnecessary real-time listeners.
+Unsubscribe from listeners when components unmount.
+Avoid repeated catalogue requests.
+Cache only appropriate public catalogue data.
+Do not cache private user information in a shared cache.
+Avoid unnecessary component re-renders.
+Lazy-load large pages and components where appropriate.
+Optimise images.
+Preserve PWA functionality.
+Respect the existing GitHub Pages base path.
+Do not introduce a new state-management library unless the existing architecture genuinely requires it.
+18. TESTING AND VALIDATION
+Testing is part of implementation, not an optional final step.
+Functional tests
+Test:
+Appearance
+Change dark/light theme.
+Refresh the page.
+Sign out and back in.
+Confirm settings persist.
+Interests
+Select genres.
+Edit preferences.
+Reload the page.
+Confirm selected interests persist.
+Feed
+Switch between feed views.
+Confirm Following still works.
+Confirm private community posts remain protected.
+Confirm blocked users remain hidden.
+Recommendations
+Generate recommendations from selected preferences.
+Provide positive and negative feedback.
+Disable recommendations.
+Confirm recommendation controls work.
+Anime tracker
+Add an anime.
+Update episode progress.
+Change status.
+Mark completed.
+Edit notes.
+Remove an entry.
+Confirm no duplicate anime entries.
+Collections
+Create a private collection.
+Create a public collection.
+Add and reorder anime.
+Edit and delete collections.
+Verify public/private permissions.
+Dashboard
+Hide widgets.
+Reorder widgets.
+Refresh.
+Confirm the layout persists.
+Insights
+Confirm calculations use real stored data.
+Verify empty states.
+Verify no fabricated statistics.
+Security tests
+Attempt:
+Reading another user's private watchlist.
+Editing another user's preferences.
+Editing another user's collection.
+Reading a private collection.
+Changing a collection owner ID.
+Writing invalid tracker values.
+Bypassing client-side validation.
+All unauthorised operations must be denied by Firestore security rules.
+Regression tests
+Verify existing functionality remains operational:
+Registration.
+Login.
+Email verification.
+Password reset.
+Profile editing.
+Social feed.
+Post creation.
+Reactions.
+Comments.
+Following.
+Blocking.
+Reporting.
+Communities.
+Private messaging.
+Group messaging.
+Notifications.
+Theme switching.
+PWA installation and offline shell.
+Do not claim a test passed unless it was actually executed.
+19. BUILD QUALITY REQUIREMENTS
+Run the available project checks:
+TypeScript validation.
+Existing validation tests.
+Lint checks.
+Production build.
+Firebase rules validation where supported.
+Existing PWA build checks.
+Fix errors introduced by Build 06.
+Do not hide TypeScript errors with any, broad suppressions, or disabled checks.
+Do not use --force or --legacy-peer-deps to conceal dependency conflicts.
+Do not remove existing tests simply to make the build pass.
+20. IMPLEMENTATION PHASES
+Implement in controlled phases.
+Phase 1 — Inspection and architecture
+Inspect existing code and create a plan.
+Phase 2 — Personalisation foundation
+Implement:
+User preferences.
+Appearance settings.
+Anime interests.
+Content preferences.
+Personalisation onboarding.
+Phase 3 — Personalised discovery
+Implement:
+For You feed.
+Feed preferences.
+Recommendation service.
+Recommendation feedback.
+Phase 4 — Anime tracker
+Implement:
+Anime tracking.
+Status management.
+Episode progress.
+Personal ratings.
+Search and filtering.
+Phase 5 — Collections
+Implement:
+Collection creation.
+Anime management.
+Visibility controls.
+Public collection viewing and interactions where secure.
+Phase 6 — Personal dashboard and insights
+Implement:
+Dashboard widgets.
+Widget configuration.
+Personal statistics.
+Insights visualisations.
+Phase 7 — Security and integration
+Implement:
+Firestore rules.
+Storage rules where required.
+Index definitions.
+Navigation.
+Notification integration.
+Privacy controls.
+Phase 8 — Testing and final verification
+Run checks, fix regressions, and prepare the implementation report.
+Complete each phase before proceeding.
+If the project has a significant architectural limitation, explain it and implement the safest compatible solution rather than rewriting existing systems.
+21. FINAL IMPLEMENTATION REPORT
+At completion, provide a detailed report containing:
+Features implemented.
+New pages and components.
+New or modified services.
+Firestore collections and fields added.
+Security rules changed.
+Storage rules changed.
+Indexes added.
+External integrations introduced, if any.
+Tests actually executed and their results.
+TypeScript and production build results.
+Any deployment steps still required.
+Any known limitations.
+Any incomplete functionality.
+Confirmation that Builds 01–05 were preserved.
+Clearly separate:
+Implemented and tested.
+Implemented but not tested.
+Requires Firebase deployment.
+Requires manual verification.
+Not implemented.
+Do not claim full production readiness if deployment, security, or multi-user testing remains incomplete.
+FINAL INSTRUCTION
+Build ATA Build 06 as a complete, polished, secure, and maintainable personalisation system.
+The experience should make every ATA account feel individually configured without compromising privacy, performance, accessibility, or the existing platform.
+Preserve the existing application. Extend it intelligently. Test it thoroughly.
+Do not begin Build 07.
+ATA — One Universe. Infinite Opinions.
+Gemini 3.5 Flash Lite
+Ran for 0s
+Quota limits exceeded
+[AIS_METADATA_SECTION_START]
+Media attachment: User sent attachment: /assets/aistudio/Paste_November_17__2026_-1_18AM_5863414a (saved in workspace at /public/assets/aistudio/Paste_November_17__2026-1_18AM_5863414a). Read it with view_file at that path; in shell commands, which run from the workspace root, use the relative path public/assets/aistudio/Paste_November_17__2026-_1_18AM_5863414a. When displaying or embedding this asset in code, reference this local file path directly. Only invoke image generation tools if the user explicitly requests creating or modifying an image.
+[AIS_METADATA_SECTION_END]

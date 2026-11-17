@@ -1,12 +1,16 @@
 import React from 'react';
 import {
   Bell,
+  Bookmark,
   Compass,
   Home,
+  Layers,
+  LayoutDashboard,
   LogIn,
   LogOut,
   Mail,
   Moon,
+  Sliders,
   Sun,
   User,
   UserPlus,
@@ -23,13 +27,16 @@ import {
 } from '../components/pwa/PWAInstallExperience';
 import { PWASystemBanners } from '../components/pwa/PWASystemBanners';
 import { NotificationBell } from '../components/notifications/NotificationBell';
+import type { NotificationRouteTarget } from '../services/notifications/notificationRoutingService';
 import type { AuthViewMode, NavDestinationId } from '../types';
 
 interface AppShellProps {
   activeDestination: NavDestinationId;
   onSelectDestination: (id: NavDestinationId) => void;
+  onSelectRouteTarget?: (routeInfo: NotificationRouteTarget) => void;
   onOpenAuth: (mode: AuthViewMode) => void;
   unreadMessagesCount?: number;
+  unreadNotificationsCount?: number;
   rightSidebar: React.ReactNode;
   children: React.ReactNode;
 }
@@ -39,10 +46,14 @@ const NAV_ICONS: Record<
   React.ComponentType<{ className?: string }>
 > = {
   home: Home,
+  'my-anime': LayoutDashboard,
+  'anime-tracker': Bookmark,
+  collections: Layers,
   discover: Compass,
   communities: Users,
   messages: Mail,
   notifications: Bell,
+  personalisation: Sliders,
   profile: User,
 };
 
@@ -56,8 +67,10 @@ const MOBILE_BOTTOM_IDS: NavDestinationId[] = [
 export const AppShell: React.FC<AppShellProps> = ({
   activeDestination,
   onSelectDestination,
+  onSelectRouteTarget,
   onOpenAuth,
   unreadMessagesCount = 0,
+  unreadNotificationsCount = 0,
   rightSidebar,
   children,
 }) => {
@@ -109,6 +122,7 @@ export const AppShell: React.FC<AppShellProps> = ({
           <NotificationBell
             currentUserId={firebaseUser?.uid}
             onNavigateDestination={onSelectDestination}
+            onSelectRouteTarget={onSelectRouteTarget}
           />
 
           <button
@@ -200,6 +214,20 @@ export const AppShell: React.FC<AppShellProps> = ({
                           }`}
                         >
                           {unreadMessagesCount > 99 ? '99+' : unreadMessagesCount}
+                        </span>
+                      ) : item.id === 'notifications' &&
+                        unreadNotificationsCount > 0 ? (
+                        <span
+                          aria-label={`${unreadNotificationsCount} unread notifications`}
+                          className={`inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold tabular-nums shrink-0 ${
+                            isActive
+                              ? 'bg-white text-[#B92335]'
+                              : 'bg-[#EF3038] text-white'
+                          }`}
+                        >
+                          {unreadNotificationsCount > 99
+                            ? '99+'
+                            : unreadNotificationsCount}
                         </span>
                       ) : (
                         !item.isImplemented && (

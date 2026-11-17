@@ -7,12 +7,15 @@ import {
   markNotificationRead,
   subscribeToUserNotifications,
 } from '../../services/notifications/notificationService';
-import { getNotificationRouteInfo } from '../../services/notifications/notificationRoutingService';
+import {
+  getNotificationRouteInfo,
+  type NotificationRouteTarget,
+} from '../../services/notifications/notificationRoutingService';
 
 interface NotificationBellProps {
   currentUserId?: string;
   onNavigateDestination: (destination: NavDestinationId) => void;
-  onSelectRouteTarget?: (routeInfo: { destination: NavDestinationId; params?: Record<string, string> }) => void;
+  onSelectRouteTarget?: (routeInfo: NotificationRouteTarget) => void;
 }
 
 export const NotificationBell: React.FC<NotificationBellProps> = ({

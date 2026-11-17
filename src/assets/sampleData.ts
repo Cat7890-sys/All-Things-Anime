@@ -15,7 +15,7 @@ export const ATA_BRAND = {
   shortName: 'ATA',
   fullName: 'ALL THINGS ANIME',
   tagline: 'One Universe. Infinite Opinions.',
-  foundationLabel: 'Build 05 · Notification Centre & Real-Time Alerts',
+  foundationLabel: 'Build 06 · Complete Personalisation',
   demonstrationNotice: 'Sample Showcase Only — Demonstration entries below are separate from live community posts.',
 } as const;
 
@@ -30,11 +30,25 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     isImplemented: true,
   },
   {
-    id: 'discover',
-    label: 'Discover',
-    shortLabel: 'Discover',
-    description: 'Browse seasonal catalogues, genre indexes, and curated watchlists.',
-    isImplemented: false,
+    id: 'my-anime',
+    label: 'My Anime',
+    shortLabel: 'Dashboard',
+    description: 'Personal anime dashboard, continue watching queue, recommendations, and viewing insights.',
+    isImplemented: true,
+  },
+  {
+    id: 'anime-tracker',
+    label: 'Watchlist',
+    shortLabel: 'Tracker',
+    description: 'Track watching status, episode counts, personal ratings, and notes.',
+    isImplemented: true,
+  },
+  {
+    id: 'collections',
+    label: 'Collections',
+    shortLabel: 'Lists',
+    description: 'Create, explore, and share custom anime collections and thematic stacks.',
+    isImplemented: true,
   },
   {
     id: 'communities',
@@ -58,10 +72,24 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     isImplemented: true,
   },
   {
+    id: 'personalisation',
+    label: 'Personalisation',
+    shortLabel: 'Settings',
+    description: 'Personalise appearance, themes, accent colours, interests, and feed controls.',
+    isImplemented: true,
+  },
+  {
     id: 'profile',
     label: 'Profile',
     shortLabel: 'Profile',
     description: 'Independent ATA account, verification status, and profile editing.',
+    isImplemented: true,
+  },
+  {
+    id: 'discover',
+    label: 'Discover',
+    shortLabel: 'Discover',
+    description: 'Explore trending, seasonal, airing, upcoming, popular, and top-rated anime via AniList.',
     isImplemented: true,
   },
 ];
@@ -261,9 +289,8 @@ export const SAMPLE_COMMUNITY_HIGHLIGHTS: CommunityHighlight[] = [
   },
 ];
 
-export const COMING_SOON_SPECS: Record<
-  Exclude<NavDestination['id'], 'home'>,
-  ComingSoonFeatureSpec
+export const COMING_SOON_SPECS: Partial<
+  Record<Exclude<NavDestination['id'], 'home'>, ComingSoonFeatureSpec>
 > = {
   discover: {
     id: 'discover',

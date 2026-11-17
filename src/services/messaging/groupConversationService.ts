@@ -38,7 +38,6 @@ import {
   sanitizeFilename,
   toDateOrNull,
 } from './messagingUtils';
-import { emitMessagingNotificationEvent } from './notificationBoundaryService';
 
 async function uploadGroupAvatar(
   uid: string,
@@ -229,13 +228,6 @@ export async function createGroupConversation(
         deletedAt: null,
         createdAt: now,
       });
-    });
-
-    emitMessagingNotificationEvent({
-      type: 'group_membership_change',
-      recipientIds: uniqueOtherProfiles.map((p) => p.uid),
-      actorId: creator.uid,
-      conversationId,
     });
 
     const createdSnap = await getDoc(convRef);
@@ -437,13 +429,6 @@ export async function addGroupMember(
         deletedAt: null,
         createdAt: now,
       });
-    });
-
-    emitMessagingNotificationEvent({
-      type: 'group_membership_change',
-      recipientIds: [newMember.uid],
-      actorId: actor.uid,
-      conversationId: conversation.id,
     });
   } catch (error) {
     if (

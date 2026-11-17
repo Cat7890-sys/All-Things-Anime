@@ -1,4 +1,3 @@
-import { createNotification } from './notifications/notificationEventService';
 import {
   collection,
   doc,
@@ -163,55 +162,6 @@ export async function createComment(
         commentCount: currentCount + 1,
       });
     });
-
-    const postSnap = await getDoc(postRef);
-    if (postSnap.exists()) {
-      const postAuthorId = String(postSnap.data().authorId || '');
-      if (postAuthorId && postAuthorId !== currentUser.uid) {
-        void createNotification({
-          recipientId: postAuthorId,
-          actorId: currentUser.uid,
-          type: 'comment_post',
-          category: 'social',
-          title: 'New Comment',
-          body: 'Someone commented on your discussion.',
-          targetType: 'post',
-          targetId: postId,
-          route: `/?postId=${postId}`,
-          dedupeKey: `comment_${commentRef.id}`,
-        });
-      }
-    }
-
-    if (input.parentCommentId) {
-      const parentCommentSnap = await getDoc(
-        doc(getCommentsCollection(postId, communityId), input.parentCommentId)
-      );
-      if (parentCommentSnap.exists()) {
-        const parentAuthorId = String(parentCommentSnap.data().authorId || '');
-        const postSnapCheck = await getDoc(postRef);
-        const postAuthorId = postSnapCheck.exists() ? String(postSnapCheck.data().authorId || '') : '';
-        if (
-          parentAuthorId &&
-          parentAuthorId !== currentUser.uid &&
-          parentAuthorId !== postAuthorId
-        ) {
-          void createNotification({
-            recipientId: parentAuthorId,
-            actorId: currentUser.uid,
-            type: 'reply_comment',
-            category: 'social',
-            title: 'New Reply',
-            body: 'Someone replied to your comment.',
-            targetType: 'comment',
-            targetId: postId,
-            route: `/?postId=${postId}`,
-            dedupeKey: `reply_${commentRef.id}`,
-            metadata: { commentId: commentRef.id },
-          });
-        }
-      }
-    }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     if (msg.toLowerCase().includes('permission') || msg.toLowerCase().includes('insufficient')) {

@@ -653,3 +653,149 @@ export function isValidDirectRecipient(
   return null;
 }
 
+// ==========================================
+// Build 06: Complete Personalisation Validation
+// ==========================================
+
+export const WATCHLIST_STATUSES = [
+  'watching',
+  'planning',
+  'completed',
+  'on_hold',
+  'dropped',
+] as const;
+
+export const APPROVED_ACCENT_COLORS = [
+  'red',
+  'crimson',
+  'amber',
+  'violet',
+  'azure',
+  'emerald',
+] as const;
+
+export const APPROVED_THEMES = ['dark', 'light', 'system'] as const;
+export const APPROVED_FEED_DENSITIES = ['comfortable', 'compact'] as const;
+export const APPROVED_FEED_TABS = [
+  'for_you',
+  'following',
+  'communities',
+  'trending',
+  'latest',
+] as const;
+
+export const COLLECTION_TITLE_MIN = 3;
+export const COLLECTION_TITLE_MAX = 60;
+export const COLLECTION_DESC_MAX = 500;
+export const COLLECTION_MAX_ITEMS = 100;
+export const PERSONAL_NOTES_MAX = 1000;
+
+export function validateWatchlistStatus(status: string): string | null {
+  if (!WATCHLIST_STATUSES.includes(status as (typeof WATCHLIST_STATUSES)[number])) {
+    return 'Please select a valid watchlist status (Watching, Planning, Completed, On Hold, or Dropped).';
+  }
+  return null;
+}
+
+export function validateWatchedEpisodes(
+  episodesWatched: number,
+  totalEpisodes: number | null
+): string | null {
+  if (typeof episodesWatched !== 'number' || isNaN(episodesWatched)) {
+    return 'Episodes watched must be a valid number.';
+  }
+  if (episodesWatched < 0) {
+    return 'Episodes watched cannot be negative.';
+  }
+  if (totalEpisodes !== null && totalEpisodes > 0 && episodesWatched > totalEpisodes) {
+    return `Episodes watched (${episodesWatched}) cannot exceed the confirmed total of ${totalEpisodes} episodes.`;
+  }
+  return null;
+}
+
+export function validateAnimeRating(
+  rating: number | null | undefined
+): string | null {
+  if (rating === null || rating === undefined || rating === 0) {
+    return null; // Unrated is valid
+  }
+  if (typeof rating !== 'number' || isNaN(rating)) {
+    return 'Rating must be a valid number between 1 and 10.';
+  }
+  if (rating < 1 || rating > 10) {
+    return 'Rating must be between 1 and 10.';
+  }
+  return null;
+}
+
+export function validatePersonalNotes(notes: string): string | null {
+  if (notes && notes.length > PERSONAL_NOTES_MAX) {
+    return `Personal notes must be ${PERSONAL_NOTES_MAX} characters or fewer.`;
+  }
+  return null;
+}
+
+export function validateCollectionTitle(title: string): string | null {
+  const trimmed = title.trim();
+  if (!trimmed) {
+    return 'Collection title is required.';
+  }
+  if (trimmed.length < COLLECTION_TITLE_MIN) {
+    return `Title must be at least ${COLLECTION_TITLE_MIN} characters.`;
+  }
+  if (trimmed.length > COLLECTION_TITLE_MAX) {
+    return `Title must be ${COLLECTION_TITLE_MAX} characters or fewer.`;
+  }
+  return null;
+}
+
+export function validateCollectionDescription(description: string): string | null {
+  if (description && description.length > COLLECTION_DESC_MAX) {
+    return `Description must be ${COLLECTION_DESC_MAX} characters or fewer.`;
+  }
+  return null;
+}
+
+export function validateCollectionVisibility(visibility: string): string | null {
+  if (visibility !== 'private' && visibility !== 'public') {
+    return 'Visibility must be either private or public.';
+  }
+  return null;
+}
+
+export function validateCollectionItemsCount(count: number): string | null {
+  if (count > COLLECTION_MAX_ITEMS) {
+    return `A collection can contain up to ${COLLECTION_MAX_ITEMS} anime entries.`;
+  }
+  return null;
+}
+
+export function validateThemePreference(theme: string): string | null {
+  if (!APPROVED_THEMES.includes(theme as (typeof APPROVED_THEMES)[number])) {
+    return 'Theme must be dark, light, or system.';
+  }
+  return null;
+}
+
+export function validateAccentColor(color: string): string | null {
+  if (!APPROVED_ACCENT_COLORS.includes(color as (typeof APPROVED_ACCENT_COLORS)[number])) {
+    return 'Please select an approved ATA accent colour.';
+  }
+  return null;
+}
+
+export function validateFeedDensity(density: string): string | null {
+  if (!APPROVED_FEED_DENSITIES.includes(density as (typeof APPROVED_FEED_DENSITIES)[number])) {
+    return 'Feed density must be comfortable or compact.';
+  }
+  return null;
+}
+
+export function validateDefaultFeedTab(tab: string): string | null {
+  if (!APPROVED_FEED_TABS.includes(tab as (typeof APPROVED_FEED_TABS)[number])) {
+    return 'Please select a valid default feed tab.';
+  }
+  return null;
+}
+
+

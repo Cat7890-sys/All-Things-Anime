@@ -3,13 +3,16 @@ import type { AtaNotification, NavDestinationId } from '../../types';
 import { subscribeToUserNotifications, markNotificationRead } from '../../services/notifications/notificationService';
 import { subscribeToNotificationSettings } from '../../services/notifications/notificationSettingsService';
 import { isQuietHoursActive } from '../../services/notifications/notificationPreferenceService';
-import { getNotificationRouteInfo } from '../../services/notifications/notificationRoutingService';
+import {
+  getNotificationRouteInfo,
+  type NotificationRouteTarget,
+} from '../../services/notifications/notificationRoutingService';
 import { NotificationToast } from './NotificationToast';
 
 interface NotificationToastContainerProps {
   currentUserId?: string;
   onNavigateDestination: (destination: NavDestinationId) => void;
-  onSelectRouteTarget?: (routeInfo: { destination: NavDestinationId; params?: Record<string, string> }) => void;
+  onSelectRouteTarget?: (routeInfo: NotificationRouteTarget) => void;
 }
 
 export const NotificationToastContainer: React.FC<NotificationToastContainerProps> = ({

@@ -1,4 +1,3 @@
-import { createNotification } from './notifications/notificationEventService';
 import {
   collection,
   deleteDoc,
@@ -98,6 +97,23 @@ function getPostDocRef(postId: string, communityId?: string) {
 
 function getPostCollectionPath(communityId?: string): string {
   return communityId ? `communities/${communityId}/posts` : 'posts';
+}
+
+export async function fetchPostById(
+  postId: string,
+  communityId?: string
+): Promise<AtaPost | null> {
+  if (!postId) return null;
+  const path = `${getPostCollectionPath(communityId)}/${postId}`;
+  try {
+    const snap = await getDoc(getPostDocRef(postId, communityId));
+    if (!snap.exists()) {
+      return null;
+    }
+    return mapDocToPost(snap.id, snap.data());
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+  }
 }
 
 export function subscribeToCommunityPosts(
@@ -514,21 +530,6 @@ export async function togglePostLike(
         createdAt: serverTimestamp(),
       });
       transaction.update(postRef, { likeCount: nextCount });
-      const authorId = String(postSnap.data().authorId || '');
-      if (authorId && authorId !== uid) {
-        void createNotification({
-          recipientId: authorId,
-          actorId: uid,
-          type: 'like_post',
-          category: 'social',
-          title: 'New Like',
-          body: 'Someone liked your post.',
-          targetType: 'post',
-          targetId: postId,
-          route: `/?postId=${postId}`,
-          dedupeKey: `like_${postId}_${uid}`,
-        });
-      }
       return { liked: true, likeCount: nextCount };
     });
   } catch (error) {

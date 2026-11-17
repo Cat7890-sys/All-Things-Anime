@@ -5,16 +5,19 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { TrendingSidebarSection } from './components/TrendingSidebarSection';
+import { PublicProfileModal } from './components/social/PublicProfileModal';
 import { useAuth } from './hooks/useAuth';
 import { AppShell } from './layout/AppShell';
 import { ComingSoonPage } from './pages/ComingSoonPage';
 import { CommunitiesPage } from './pages/CommunitiesPage';
+import { DiscoverPage } from './pages/DiscoverPage';
 import { HomePage } from './pages/HomePage';
 import { MessagesPage } from './pages/MessagesPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { NotificationToastContainer } from './components/notifications/NotificationToastContainer';
-import { initializeMessagingNotificationBridge } from './services/notifications/notificationEventService';
+import { subscribeToUserNotifications } from './services/notifications/notificationService';
+import type { NotificationRouteTarget } from './services/notifications/notificationRoutingService';
 import { subscribeToUserMemberStates } from './services/messaging/conversationService';
 import { subscribeToMessageSettings } from './services/messaging/messagingSettingsService';
 import { publishOwnPresence } from './services/messaging/presenceService';
@@ -36,7 +39,21 @@ export default function App() {
   const [pendingDirectMessageUserId, setPendingDirectMessageUserId] = useState<
     string | null
   >(null);
+  const [pendingPostId, setPendingPostId] = useState<string | null>(null);
+  const [pendingCommunityTarget, setPendingCommunityTarget] = useState<{
+    communityId: string;
+    postId?: string;
+    tab?: 'discussions' | 'rules' | 'members' | 'manage';
+  } | null>(null);
+  const [pendingMessagesTarget, setPendingMessagesTarget] = useState<{
+    conversationId?: string;
+    tab?: 'chats' | 'requests' | 'groups';
+  } | null>(null);
+  const [deepLinkedProfileId, setDeepLinkedProfileId] = useState<string | null>(
+    null
+  );
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
 
   const [discussions, setDiscussions] = useState<DiscussionThread[]>([]);
   const [featuredSeries, setFeaturedSeries] = useState<DiscoverySeriesItem[]>(
@@ -126,13 +143,26 @@ export default function App() {
     };
   }, [firebaseUser]);
 
-  // Initialize messaging notification bridge
+  // Global unread notifications badge count
   useEffect(() => {
-    const unsubBridge = initializeMessagingNotificationBridge();
+    if (!firebaseUser) {
+      setUnreadNotificationsCount(0);
+      return;
+    }
+
+    const unsubscribe = subscribeToUserNotifications(
+      firebaseUser.uid,
+      50,
+      (result) => {
+        setUnreadNotificationsCount(result.unreadCount);
+      },
+      () => {}
+    );
+
     return () => {
-      unsubBridge();
+      unsubscribe();
     };
-  }, []);
+  }, [firebaseUser]);
 
   const handleSelectDestination = useCallback((destination: NavDestinationId) => {
     setActiveDestination(destination);
@@ -165,12 +195,76 @@ export default function App() {
     setPendingDirectMessageUserId(null);
   }, []);
 
+  const handleConsumeInitialPost = useCallback(() => {
+    setPendingPostId(null);
+  }, []);
+
+  const handleConsumeCommunityTarget = useCallback(() => {
+    setPendingCommunityTarget(null);
+  }, []);
+
+  const handleConsumeMessagesTarget = useCallback(() => {
+    setPendingMessagesTarget(null);
+  }, []);
+
+  const handleSelectRouteTarget = useCallback(
+    (routeInfo: NotificationRouteTarget) => {
+      const { destination, params } = routeInfo;
+
+      if (destination === 'profile') {
+        if (params?.profileId && params.profileId !== firebaseUser?.uid) {
+          setDeepLinkedProfileId(params.profileId);
+          return;
+        }
+        handleSelectDestination('profile');
+        return;
+      }
+
+      setDeepLinkedProfileId(null);
+
+      if (destination === 'home') {
+        setPendingPostId(params?.postId || null);
+        handleSelectDestination('home');
+        return;
+      }
+
+      if (destination === 'communities') {
+        setPendingCommunityTarget(
+          params?.communityId
+            ? {
+                communityId: params.communityId,
+                postId: params.postId,
+                tab: params.communityTab,
+              }
+            : null
+        );
+        handleSelectDestination('communities');
+        return;
+      }
+
+      if (destination === 'messages') {
+        setPendingMessagesTarget(
+          params?.conversationId || params?.messagesTab
+            ? {
+                conversationId: params.conversationId,
+                tab: params.messagesTab,
+              }
+            : null
+        );
+        handleSelectDestination('messages');
+      }
+    },
+    [firebaseUser?.uid, handleSelectDestination]
+  );
+
   return (
     <AppShell
       activeDestination={activeDestination}
       onSelectDestination={handleSelectDestination}
+      onSelectRouteTarget={handleSelectRouteTarget}
       onOpenAuth={handleOpenAuth}
       unreadMessagesCount={unreadMessagesCount}
+      unreadNotificationsCount={unreadNotificationsCount}
       rightSidebar={
         <TrendingSidebarSection
           trending={trendingAnime}
@@ -184,12 +278,18 @@ export default function App() {
         <HomePage
           discussions={discussions}
           featuredSeries={featuredSeries}
+          initialPostId={pendingPostId}
+          onConsumeInitialPost={handleConsumeInitialPost}
           onNavigate={handleSelectDestination}
           onOpenAuth={handleOpenAuth}
           onStartDirectMessage={handleStartDirectMessage}
         />
+      ) : activeDestination === 'discover' ? (
+        <DiscoverPage />
       ) : activeDestination === 'communities' ? (
         <CommunitiesPage
+          initialCommunityTarget={pendingCommunityTarget}
+          onConsumeCommunityTarget={handleConsumeCommunityTarget}
           onOpenAuth={handleOpenAuth}
           onNavigateProfile={() => handleSelectDestination('profile')}
           onStartDirectMessage={handleStartDirectMessage}
@@ -198,6 +298,8 @@ export default function App() {
         <MessagesPage
           initialDirectTargetUserId={pendingDirectMessageUserId}
           onConsumeDirectTarget={handleConsumeDirectTarget}
+          initialRouteTarget={pendingMessagesTarget}
+          onConsumeRouteTarget={handleConsumeMessagesTarget}
           onOpenAuth={handleOpenAuth}
           onNavigateProfile={() => handleSelectDestination('profile')}
         />
@@ -205,6 +307,7 @@ export default function App() {
         <NotificationsPage
           currentUserId={firebaseUser?.uid}
           onNavigateDestination={handleSelectDestination}
+          onSelectRouteTarget={handleSelectRouteTarget}
         />
       ) : activeDestination === 'profile' ? (
         <ProfilePage
@@ -220,6 +323,21 @@ export default function App() {
       <NotificationToastContainer
         currentUserId={firebaseUser?.uid}
         onNavigateDestination={handleSelectDestination}
+        onSelectRouteTarget={handleSelectRouteTarget}
+      />
+      <PublicProfileModal
+        targetUserId={deepLinkedProfileId}
+        onClose={() => setDeepLinkedProfileId(null)}
+        onOpenAuth={handleOpenAuth}
+        onStartDirectMessage={(uid) => {
+          setDeepLinkedProfileId(null);
+          handleStartDirectMessage(uid);
+        }}
+        onOpenPostDetail={(clickedPost) => {
+          setDeepLinkedProfileId(null);
+          setPendingPostId(clickedPost.id);
+          handleSelectDestination('home');
+        }}
       />
     </AppShell>
   );

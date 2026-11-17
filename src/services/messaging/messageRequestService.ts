@@ -32,7 +32,6 @@ import {
   requireVerifiedMessagingUser,
   toDateOrNull,
 } from './messagingUtils';
-import { emitMessagingNotificationEvent } from './notificationBoundaryService';
 
 export type DirectRelationshipState =
   | { kind: 'existing_conversation'; conversationId: string }
@@ -318,13 +317,6 @@ export async function sendMessageRequest(
       throw new Error('Message request was sent but could not be reloaded.');
     }
 
-    emitMessagingNotificationEvent({
-      type: 'new_message_request',
-      recipientIds: [recipient.uid],
-      actorId: sender.uid,
-      requestId,
-    });
-
     return mapDocToMessageRequest(createdSnap.id, createdSnap.data());
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
@@ -498,14 +490,6 @@ export async function acceptMessageRequest(
           updatedAt: now,
         });
       }
-    });
-
-    emitMessagingNotificationEvent({
-      type: 'accepted_message_request',
-      recipientIds: [request.senderId],
-      actorId: recipient.uid,
-      conversationId,
-      requestId: request.id,
     });
 
     return conversationId;

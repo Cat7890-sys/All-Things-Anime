@@ -331,7 +331,75 @@ assert.equal(
   'You received a new message request.'
 );
 
+// ==========================================
+// Build 06: Personalisation Assertions
+// ==========================================
+
+import {
+  validateWatchlistStatus,
+  validateWatchedEpisodes,
+  validateAnimeRating,
+  validatePersonalNotes,
+  validateCollectionTitle,
+  validateCollectionDescription,
+  validateCollectionVisibility,
+  validateThemePreference,
+  validateAccentColor,
+  validateFeedDensity,
+  validateDefaultFeedTab,
+} from './validation.ts';
+
+// 1. Watchlist status & progress
+assert.equal(validateWatchlistStatus('watching'), null);
+assert.equal(validateWatchlistStatus('completed'), null);
+assert.ok(validateWatchlistStatus('invalid_status'));
+
+assert.equal(validateWatchedEpisodes(5, 12), null);
+assert.equal(validateWatchedEpisodes(12, 12), null);
+assert.equal(validateWatchedEpisodes(50, null), null); // valid when total is unknown
+assert.ok(validateWatchedEpisodes(-1, 12)); // negative
+assert.ok(validateWatchedEpisodes(13, 12)); // exceeds total episodes!
+
+assert.equal(validateAnimeRating(null), null);
+assert.equal(validateAnimeRating(0), null);
+assert.equal(validateAnimeRating(8), null);
+assert.equal(validateAnimeRating(10), null);
+assert.ok(validateAnimeRating(11));
+assert.ok(validateAnimeRating(-1));
+
+assert.equal(validatePersonalNotes('Peak cinema arc.'), null);
+assert.ok(validatePersonalNotes('x'.repeat(1001)));
+
+// 2. Custom collections
+assert.equal(validateCollectionTitle('Top 10 Mecha'), null);
+assert.ok(validateCollectionTitle('ab')); // too short (< 3)
+assert.ok(validateCollectionTitle(''));
+assert.equal(validateCollectionDescription('Curated orbital frames.'), null);
+assert.ok(validateCollectionDescription('x'.repeat(501)));
+assert.equal(validateCollectionVisibility('public'), null);
+assert.equal(validateCollectionVisibility('private'), null);
+assert.ok(validateCollectionVisibility('secret'));
+
+// 3. Preferences & Appearance
+assert.equal(validateThemePreference('dark'), null);
+assert.equal(validateThemePreference('light'), null);
+assert.equal(validateThemePreference('system'), null);
+assert.ok(validateThemePreference('neon'));
+
+assert.equal(validateAccentColor('red'), null);
+assert.equal(validateAccentColor('azure'), null);
+assert.ok(validateAccentColor('pink_unknown'));
+
+assert.equal(validateFeedDensity('comfortable'), null);
+assert.equal(validateFeedDensity('compact'), null);
+assert.ok(validateFeedDensity('spacious'));
+
+assert.equal(validateDefaultFeedTab('for_you'), null);
+assert.equal(validateDefaultFeedTab('following'), null);
+assert.ok(validateDefaultFeedTab('unknown_tab'));
+
 console.log(
-  'All ATA Build 02, Build 03, Build 04A & Build 04B validation assertions passed.'
+  'All ATA Build 02, Build 03, Build 04A, Build 04B & Build 06 validation assertions passed.'
 );
+
 

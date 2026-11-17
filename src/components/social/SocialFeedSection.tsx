@@ -7,12 +7,14 @@ import {
   RefreshCw,
   Users,
   WifiOff,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import {
   fetchFollowingPosts,
   fetchMoreCommunityPosts,
+  fetchPostById,
   getUserLikedPostMap,
   subscribeToCommunityPosts,
   togglePostLike,
@@ -38,6 +40,8 @@ import { PublicProfileModal } from './PublicProfileModal';
 import { ReportModal } from './ReportModal';
 
 interface SocialFeedSectionProps {
+  initialPostId?: string | null;
+  onConsumeInitialPost?: () => void;
   onOpenAuth?: (mode: AuthViewMode) => void;
   onNavigateProfile?: () => void;
   onStartDirectMessage?: (targetUserId: string) => void;
@@ -54,6 +58,8 @@ interface ReportModalState {
 const PAGE_SIZE = 10;
 
 export const SocialFeedSection: React.FC<SocialFeedSectionProps> = ({
+  initialPostId = null,
+  onConsumeInitialPost,
   onOpenAuth,
   onNavigateProfile,
   onStartDirectMessage,
@@ -85,10 +91,13 @@ export const SocialFeedSection: React.FC<SocialFeedSectionProps> = ({
 
   // Social Graph & Reactions
   const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set());
+  const [isSocialGraphLoaded, setIsSocialGraphLoaded] = useState(false);
   const [likedPostMap, setLikedPostMap] = useState<Record<string, boolean>>({});
 
-  // Modals
+  // Modals & Deep-Linking
   const [detailPostId, setDetailPostId] = useState<string | null>(null);
+  const [deepLinkedPost, setDeepLinkedPost] = useState<AtaPost | null>(null);
+  const [deepLinkNotice, setDeepLinkNotice] = useState<string | null>(null);
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [reportTarget, setReportTarget] = useState<ReportModalState | null>(
     null
@@ -96,10 +105,12 @@ export const SocialFeedSection: React.FC<SocialFeedSectionProps> = ({
 
   // Load blocked list and following IDs when user session changes
   const refreshSocialGraph = useCallback(async () => {
+    setIsSocialGraphLoaded(false);
     if (!firebaseUser) {
       setBlockedUserIds(new Set());
       setFollowingIds([]);
       setLikedPostMap({});
+      setIsSocialGraphLoaded(true);
       return;
     }
 
@@ -112,6 +123,8 @@ export const SocialFeedSection: React.FC<SocialFeedSectionProps> = ({
       setFollowingIds(followed);
     } catch {
       // Non-fatal fallback; community feed still operates cleanly
+    } finally {
+      setIsSocialGraphLoaded(true);
     }
   }, [firebaseUser]);
 
@@ -267,27 +280,30 @@ export const SocialFeedSection: React.FC<SocialFeedSectionProps> = ({
     setCommunityPosts(applyCount);
     setExtraCommunityPosts(applyCount);
     setFollowingPosts(applyCount);
+    setDeepLinkedPost((prev) =>
+      prev && prev.id === post.id
+        ? { ...prev, likeCount: result.likeCount }
+        : prev
+    );
   };
 
   const handlePostUpdated = (postId: string, updated: UpdatePostInput) => {
-    const applyUpdate = (list: AtaPost[]) =>
-      list.map((p) =>
-        p.id === postId
-          ? {
-              ...p,
-              content: updated.content.trim(),
-              animeTitle: updated.animeTitle.trim(),
-              hasSpoiler: updated.hasSpoiler,
-              spoilerLabel: updated.hasSpoiler
-                ? updated.spoilerLabel.trim()
-                : '',
-              isEdited: true,
-            }
-          : p
-      );
+    const patchPost = (p: AtaPost) =>
+      p.id === postId
+        ? {
+            ...p,
+            content: updated.content.trim(),
+            animeTitle: updated.animeTitle.trim(),
+            hasSpoiler: updated.hasSpoiler,
+            spoilerLabel: updated.hasSpoiler ? updated.spoilerLabel.trim() : '',
+            isEdited: true,
+          }
+        : p;
+    const applyUpdate = (list: AtaPost[]) => list.map(patchPost);
     setCommunityPosts(applyUpdate);
     setExtraCommunityPosts(applyUpdate);
     setFollowingPosts(applyUpdate);
+    setDeepLinkedPost((prev) => (prev ? patchPost(prev) : null));
   };
 
   const handlePostDeleted = (postId: string) => {
@@ -295,6 +311,7 @@ export const SocialFeedSection: React.FC<SocialFeedSectionProps> = ({
     setCommunityPosts(remove);
     setExtraCommunityPosts(remove);
     setFollowingPosts(remove);
+    setDeepLinkedPost((prev) => (prev?.id === postId ? null : prev));
   };
 
   const handleCommentCountSync = (postId: string, totalCount: number) => {
@@ -305,6 +322,9 @@ export const SocialFeedSection: React.FC<SocialFeedSectionProps> = ({
     setCommunityPosts(applyCount);
     setExtraCommunityPosts(applyCount);
     setFollowingPosts(applyCount);
+    setDeepLinkedPost((prev) =>
+      prev && prev.id === postId ? { ...prev, commentCount: totalCount } : prev
+    );
   };
 
   const handleBlockAuthor = async (
@@ -319,16 +339,84 @@ export const SocialFeedSection: React.FC<SocialFeedSectionProps> = ({
       return next;
     });
     setFollowingIds((prev) => prev.filter((id) => id !== authorId));
+    setDeepLinkedPost((prev) => (prev?.authorId === authorId ? null : prev));
   };
+
+  // Resolve notification deep-linked post once feed + block state are ready
+  useEffect(() => {
+    if (!initialPostId || isLoadingCommunity || !isSocialGraphLoaded) return;
+
+    let cancelled = false;
+    onConsumeInitialPost?.();
+
+    const loaded = [...mergedCommunityPosts, ...visibleFollowingPosts].find(
+      (p) => p.id === initialPostId
+    );
+    if (loaded) {
+      setDeepLinkNotice(null);
+      setDeepLinkedPost(null);
+      setDetailPostId(loaded.id);
+      return;
+    }
+
+    void fetchPostById(initialPostId)
+      .then((fetched) => {
+        if (cancelled) return;
+        if (!fetched) {
+          setDeepLinkNotice(
+            'This discussion post is no longer available or was deleted.'
+          );
+          return;
+        }
+        if (blockedUserIds.has(fetched.authorId)) {
+          setDeepLinkNotice(
+            'This post belongs to a blocked account and cannot be viewed.'
+          );
+          return;
+        }
+        setDeepLinkNotice(null);
+        setDeepLinkedPost(fetched);
+        setDetailPostId(fetched.id);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDeepLinkNotice(
+            'Unable to open that discussion post right now.'
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    initialPostId,
+    isLoadingCommunity,
+    isSocialGraphLoaded,
+    mergedCommunityPosts,
+    visibleFollowingPosts,
+    blockedUserIds,
+    onConsumeInitialPost,
+  ]);
 
   const activeDetailPost = useMemo(() => {
     if (!detailPostId) return null;
-    return (
+    const found =
       [...mergedCommunityPosts, ...visibleFollowingPosts].find(
         (p) => p.id === detailPostId
-      ) || null
-    );
-  }, [detailPostId, mergedCommunityPosts, visibleFollowingPosts]);
+      ) ||
+      (deepLinkedPost && deepLinkedPost.id === detailPostId
+        ? deepLinkedPost
+        : null);
+    if (!found || blockedUserIds.has(found.authorId)) return null;
+    return found;
+  }, [
+    detailPostId,
+    mergedCommunityPosts,
+    visibleFollowingPosts,
+    deepLinkedPost,
+    blockedUserIds,
+  ]);
 
   const displayedPosts =
     activeTab === 'community' ? mergedCommunityPosts : visibleFollowingPosts;
@@ -345,6 +433,29 @@ export const SocialFeedSection: React.FC<SocialFeedSectionProps> = ({
         onOpenAuth={onOpenAuth}
         onNavigateProfile={onNavigateProfile}
       />
+
+      {deepLinkNotice && (
+        <div
+          role="status"
+          className="bg-white dark:bg-[#171923] border border-[#EF3038] rounded-2xl px-4 py-3 flex items-center justify-between gap-3 text-xs sm:text-sm text-[#090B14] dark:text-white"
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <AlertCircle
+              className="h-4 w-4 text-[#EF3038] shrink-0"
+              aria-hidden="true"
+            />
+            <span>{deepLinkNotice}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setDeepLinkNotice(null)}
+            aria-label="Dismiss notice"
+            className="p-1 text-[#52576B] dark:text-[#A7A9B8] hover:text-[#EF3038]"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* Real Firestore Social Feed */}
       <section aria-labelledby="ata-social-feed-heading" className="space-y-4">
@@ -568,7 +679,10 @@ export const SocialFeedSection: React.FC<SocialFeedSectionProps> = ({
           activeDetailPost ? Boolean(likedPostMap[activeDetailPost.id]) : false
         }
         blockedUserIds={blockedUserIds}
-        onClose={() => setDetailPostId(null)}
+        onClose={() => {
+          setDetailPostId(null);
+          setDeepLinkedPost(null);
+        }}
         onToggleLike={handleToggleLike}
         onOpenAuthorProfile={(uid) => setProfileUserId(uid)}
         onPostUpdated={handlePostUpdated}

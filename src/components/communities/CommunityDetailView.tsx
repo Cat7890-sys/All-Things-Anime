@@ -39,6 +39,7 @@ import {
 } from '../../services/communityService';
 import {
   fetchMoreCommunityPosts,
+  fetchPostById,
   getUserLikedPostMap,
   subscribeToCommunityPosts,
   togglePostLike,
@@ -74,6 +75,9 @@ import { CommunityMembersTab } from './CommunityMembersTab';
 
 interface CommunityDetailViewProps {
   community: AtaCommunity;
+  initialPostId?: string | null;
+  initialTab?: CommunityDetailTab | null;
+  onConsumeDeepLink?: () => void;
   onBack: () => void;
   onCommunityUpdated: (updated: AtaCommunity) => void;
   onCommunityDeleted: (communityId: string) => void;
@@ -98,6 +102,9 @@ const PAGE_SIZE = 10;
 
 export const CommunityDetailView: React.FC<CommunityDetailViewProps> = ({
   community: initialCommunity,
+  initialPostId = null,
+  initialTab = null,
+  onConsumeDeepLink,
   onBack,
   onCommunityUpdated,
   onCommunityDeleted,
@@ -149,8 +156,9 @@ export const CommunityDetailView: React.FC<CommunityDetailViewProps> = ({
   const [isLoadingRequests, setIsLoadingRequests] = useState(false);
   const [requestsError, setRequestsError] = useState<string | null>(null);
 
-  // Modals
+  // Modals & Deep-Linking
   const [detailPostId, setDetailPostId] = useState<string | null>(null);
+  const [deepLinkedPost, setDeepLinkedPost] = useState<AtaPost | null>(null);
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [reportTarget, setReportTarget] = useState<ReportModalState | null>(
     null
@@ -500,32 +508,36 @@ export const CommunityDetailView: React.FC<CommunityDetailViewProps> = ({
       );
     setPosts(apply);
     setExtraPosts(apply);
+    setDeepLinkedPost((prev) =>
+      prev && prev.id === post.id
+        ? { ...prev, likeCount: result.likeCount }
+        : prev
+    );
   };
 
   const handlePostUpdated = (postId: string, updated: UpdatePostInput) => {
-    const apply = (list: AtaPost[]) =>
-      list.map((p) =>
-        p.id === postId
-          ? {
-              ...p,
-              content: updated.content.trim(),
-              animeTitle: updated.animeTitle.trim(),
-              hasSpoiler: updated.hasSpoiler,
-              spoilerLabel: updated.hasSpoiler
-                ? updated.spoilerLabel.trim()
-                : '',
-              isEdited: true,
-            }
-          : p
-      );
+    const patchPost = (p: AtaPost) =>
+      p.id === postId
+        ? {
+            ...p,
+            content: updated.content.trim(),
+            animeTitle: updated.animeTitle.trim(),
+            hasSpoiler: updated.hasSpoiler,
+            spoilerLabel: updated.hasSpoiler ? updated.spoilerLabel.trim() : '',
+            isEdited: true,
+          }
+        : p;
+    const apply = (list: AtaPost[]) => list.map(patchPost);
     setPosts(apply);
     setExtraPosts(apply);
+    setDeepLinkedPost((prev) => (prev ? patchPost(prev) : null));
   };
 
   const handlePostDeleted = (postId: string) => {
     const remove = (list: AtaPost[]) => list.filter((p) => p.id !== postId);
     setPosts(remove);
     setExtraPosts(remove);
+    setDeepLinkedPost((prev) => (prev?.id === postId ? null : prev));
   };
 
   const handleCommentCountSync = (postId: string, totalCount: number) => {
@@ -535,6 +547,9 @@ export const CommunityDetailView: React.FC<CommunityDetailViewProps> = ({
       );
     setPosts(apply);
     setExtraPosts(apply);
+    setDeepLinkedPost((prev) =>
+      prev && prev.id === postId ? { ...prev, commentCount: totalCount } : prev
+    );
   };
 
   const handleBlockAuthor = async (
@@ -548,12 +563,109 @@ export const CommunityDetailView: React.FC<CommunityDetailViewProps> = ({
       next.add(authorId);
       return next;
     });
+    setDeepLinkedPost((prev) => (prev?.authorId === authorId ? null : prev));
   };
+
+  // Resolve notification deep-linked community tab or community post once access is known
+  useEffect(() => {
+    if (isLoadingAccess) return;
+    if (!initialPostId && !initialTab) return;
+
+    let cancelled = false;
+
+    if (initialTab) {
+      if (initialTab === 'manage') {
+        if (isModerator) {
+          setActiveTab('manage');
+        }
+      } else {
+        setActiveTab(initialTab);
+      }
+    }
+
+    if (!initialPostId) {
+      onConsumeDeepLink?.();
+      return;
+    }
+
+    if (!canReadContent) {
+      onConsumeDeepLink?.();
+      setBannerError(
+        community.status === 'archived'
+          ? 'This community is archived and its discussion post cannot be accessed.'
+          : 'Join this private community to view the linked discussion post.'
+      );
+      return;
+    }
+
+    if (isLoadingPosts) {
+      return;
+    }
+
+    onConsumeDeepLink?.();
+
+    const loaded = mergedPosts.find((p) => p.id === initialPostId);
+    if (loaded) {
+      setBannerError(null);
+      setDeepLinkedPost(null);
+      setDetailPostId(loaded.id);
+      return;
+    }
+
+    void fetchPostById(initialPostId, community.id)
+      .then((fetched) => {
+        if (cancelled) return;
+        if (!fetched) {
+          setBannerError(
+            'This community post is no longer available or was deleted.'
+          );
+          return;
+        }
+        if (blockedUserIds.has(fetched.authorId)) {
+          setBannerError(
+            'This post belongs to a blocked account and cannot be viewed.'
+          );
+          return;
+        }
+        setBannerError(null);
+        setDeepLinkedPost(fetched);
+        setDetailPostId(fetched.id);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setBannerError(
+            'Unable to open that community discussion post right now.'
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isLoadingAccess,
+    isLoadingPosts,
+    initialPostId,
+    initialTab,
+    isModerator,
+    canReadContent,
+    community.id,
+    community.status,
+    mergedPosts,
+    blockedUserIds,
+    onConsumeDeepLink,
+  ]);
 
   const activeDetailPost = useMemo(() => {
     if (!detailPostId) return null;
-    return mergedPosts.find((p) => p.id === detailPostId) || null;
-  }, [detailPostId, mergedPosts]);
+    const found =
+      mergedPosts.find((p) => p.id === detailPostId) ||
+      (deepLinkedPost && deepLinkedPost.id === detailPostId
+        ? deepLinkedPost
+        : null);
+    if (!found || blockedUserIds.has(found.authorId)) return null;
+    return found;
+  }, [detailPostId, mergedPosts, deepLinkedPost, blockedUserIds]);
 
   const moderatorMembers = useMemo(
     () =>
@@ -1285,7 +1397,10 @@ export const CommunityDetailView: React.FC<CommunityDetailViewProps> = ({
           activeDetailPost ? Boolean(likedPostMap[activeDetailPost.id]) : false
         }
         blockedUserIds={blockedUserIds}
-        onClose={() => setDetailPostId(null)}
+        onClose={() => {
+          setDetailPostId(null);
+          setDeepLinkedPost(null);
+        }}
         onToggleLike={handleToggleLike}
         onOpenAuthorProfile={(uid) => setProfileUserId(uid)}
         onPostUpdated={handlePostUpdated}

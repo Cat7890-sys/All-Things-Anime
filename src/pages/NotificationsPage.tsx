@@ -8,7 +8,10 @@ import {
   dismissNotification,
   clearDismissedNotifications,
 } from '../services/notifications/notificationService';
-import { getNotificationRouteInfo } from '../services/notifications/notificationRoutingService';
+import {
+  getNotificationRouteInfo,
+  type NotificationRouteTarget,
+} from '../services/notifications/notificationRoutingService';
 import { UserAvatar } from '../components/UserAvatar';
 import { formatRelativeTimestamp } from '../utils/time';
 import { NotificationSettings } from '../components/notifications/NotificationSettings';
@@ -16,7 +19,7 @@ import { NotificationSettings } from '../components/notifications/NotificationSe
 interface NotificationsPageProps {
   currentUserId?: string;
   onNavigateDestination: (destination: NavDestinationId) => void;
-  onSelectRouteTarget?: (routeInfo: { destination: NavDestinationId; params?: Record<string, string> }) => void;
+  onSelectRouteTarget?: (routeInfo: NotificationRouteTarget) => void;
 }
 
 type TabMode = 'all' | 'unread' | 'settings';

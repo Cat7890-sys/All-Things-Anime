@@ -8,9 +8,12 @@ import {
   Lock,
   LogOut,
   MailCheck,
+  Quote,
   RefreshCw,
   Save,
   ShieldAlert,
+  SlidersHorizontal,
+  Sparkles,
 } from 'lucide-react';
 import { AtaLoadingSpinner } from '../components/AtaLoadingSpinner';
 import { PostCard } from '../components/social/PostCard';
@@ -49,11 +52,13 @@ import { AuthPage } from './AuthPage';
 interface ProfilePageProps {
   initialAuthMode?: AuthViewMode;
   onStartDirectMessage?: (targetUserId: string) => void;
+  onNavigatePersonalisation?: () => void;
 }
 
 export const ProfilePage: React.FC<ProfilePageProps> = ({
   initialAuthMode = 'login',
   onStartDirectMessage,
+  onNavigatePersonalisation,
 }) => {
   const {
     firebaseUser,
@@ -71,6 +76,8 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     displayName: '',
     bio: '',
     avatarUrl: '',
+    bannerUrl: '',
+    favouriteQuote: '',
   });
   const [fieldErrors, setFieldErrors] = useState<
     ValidationErrors<UpdateProfileInput>
@@ -115,6 +122,14 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       setPublicSocialProfile(pubProf);
       setOwnPosts(postsRes.posts);
       setBlockedUsers(blockedList);
+
+      if (pubProf) {
+        setEditForm((prev) => ({
+          ...prev,
+          bannerUrl: pubProf.bannerUrl || '',
+          favouriteQuote: pubProf.favouriteQuote || '',
+        }));
+      }
 
       if (postsRes.posts.length > 0) {
         const likes = await getUserLikedPostMap(
@@ -372,6 +387,19 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         aria-labelledby="ata-profile-heading"
         className="bg-white dark:bg-[#171923] border border-[#D4D7E2] dark:border-[#303342] rounded-2xl overflow-hidden shadow-sm dark:shadow-[0_14px_34px_rgba(0,0,0,0.45)]"
       >
+        {publicSocialProfile?.bannerUrl && (
+          <div className="h-32 sm:h-44 w-full overflow-hidden bg-[#090B14]">
+            <img
+              src={publicSocialProfile.bannerUrl}
+              alt={`${displayName}'s profile banner`}
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          </div>
+        )}
+
         <div className="bg-[#090B14] px-6 py-7 border-b border-[#303342] cosmic-backdrop-grid">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center gap-4">
@@ -411,18 +439,44 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => void logout()}
-              className="inline-flex items-center justify-center gap-2 self-start sm:self-center px-4 py-2 min-h-[42px] text-xs font-semibold text-white bg-[#171923] border border-[#303342] rounded-xl hover:border-[#EF3038] transition-colors whitespace-nowrap"
-            >
-              <LogOut className="h-3.5 w-3.5 text-[#EF3038]" aria-hidden="true" />
-              <span>Sign Out</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
+              {onNavigatePersonalisation && (
+                <button
+                  type="button"
+                  onClick={onNavigatePersonalisation}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[42px] text-xs font-semibold text-white bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl transition-colors whitespace-nowrap"
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5 text-[#EF3038]" aria-hidden="true" />
+                  <span>Personalisation</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => void logout()}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 min-h-[42px] text-xs font-semibold text-white bg-[#171923] border border-[#303342] rounded-xl hover:border-[#EF3038] transition-colors whitespace-nowrap"
+              >
+                <LogOut className="h-3.5 w-3.5 text-[#EF3038]" aria-hidden="true" />
+                <span>Sign Out</span>
+              </button>
+            </div>
           </div>
         </div>
 
         <div className="p-6 space-y-5">
+          {publicSocialProfile?.favouriteQuote && (
+            <div className="rounded-xl bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] p-4 flex items-start gap-3">
+              <Quote className="h-5 w-5 text-[#EF3038] shrink-0 mt-0.5" aria-hidden="true" />
+              <div>
+                <p className="text-xs font-semibold text-[#52576B] dark:text-[#A7A9B8] uppercase tracking-wider">
+                  Favourite Anime Quote / Motto
+                </p>
+                <p className="mt-1 text-sm italic font-medium text-[#090B14] dark:text-white">
+                  &ldquo;{publicSocialProfile.favouriteQuote}&rdquo;
+                </p>
+              </div>
+            </div>
+          )}
+
           <div>
             <h2 className="text-xs font-bold uppercase tracking-wider text-[#52576B] dark:text-[#A7A9B8]">
               Bio
@@ -598,6 +652,72 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               </p>
             )}
           </div>
+
+          <div>
+            <label
+              htmlFor="ata-edit-banner-url"
+              className="block text-xs font-semibold text-[#090B14] dark:text-white mb-1.5"
+            >
+              Profile Banner Image URL (Optional)
+            </label>
+            <input
+              id="ata-edit-banner-url"
+              type="url"
+              disabled={!isVerified || isSaving}
+              value={editForm.bannerUrl || ''}
+              onChange={(e) => {
+                setEditForm((prev) => ({ ...prev, bannerUrl: e.target.value }));
+              }}
+              placeholder="https://example.com/anime-banner.jpg"
+              className="w-full rounded-xl bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] px-3.5 py-2.5 min-h-[44px] text-sm text-[#090B14] dark:text-white placeholder:text-[#52576B] dark:placeholder:text-[#A7A9B8]/70 disabled:opacity-60 focus:border-[#EF3038] focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="ata-edit-quote"
+              className="block text-xs font-semibold text-[#090B14] dark:text-white mb-1.5"
+            >
+              Favourite Anime Quote / Motto (Optional)
+            </label>
+            <input
+              id="ata-edit-quote"
+              type="text"
+              maxLength={140}
+              disabled={!isVerified || isSaving}
+              value={editForm.favouriteQuote || ''}
+              onChange={(e) => {
+                setEditForm((prev) => ({
+                  ...prev,
+                  favouriteQuote: e.target.value,
+                }));
+              }}
+              placeholder="e.g. In the ninja world, those who break the rules are scum..."
+              className="w-full rounded-xl bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] px-3.5 py-2.5 min-h-[44px] text-sm text-[#090B14] dark:text-white placeholder:text-[#52576B] dark:placeholder:text-[#A7A9B8]/70 disabled:opacity-60 focus:border-[#EF3038] focus:outline-none"
+            />
+          </div>
+
+          {onNavigatePersonalisation && (
+            <div className="rounded-xl bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="space-y-0.5">
+                <p className="text-xs font-bold text-[#090B14] dark:text-white flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5 text-[#EF3038]" aria-hidden="true" />
+                  <span>Looking for Anime Interests & Theme Colors?</span>
+                </p>
+                <p className="text-[11px] text-[#52576B] dark:text-[#A7A9B8]">
+                  Select your top genres, favorite characters, accent palette, and feed density in the Personalisation Centre.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onNavigatePersonalisation}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-[#EF3038] rounded-xl hover:bg-[#B92335] shrink-0 transition-colors"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Open Personalisation</span>
+              </button>
+            </div>
+          )}
 
           <div className="pt-1 flex justify-end">
             <button

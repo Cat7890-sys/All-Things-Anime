@@ -69,6 +69,11 @@ export async function getPublicProfile(
       displayName: String(data.displayName),
       bio: typeof data.bio === 'string' ? data.bio : '',
       avatarUrl: typeof data.avatarUrl === 'string' ? data.avatarUrl : '',
+      bannerUrl: typeof data.bannerUrl === 'string' ? data.bannerUrl : '',
+      favouriteQuote: typeof data.favouriteQuote === 'string' ? data.favouriteQuote : '',
+      favouriteAnimeTitles: Array.isArray(data.favouriteAnimeTitles) ? data.favouriteAnimeTitles : [],
+      favouriteCharacters: Array.isArray(data.favouriteCharacters) ? data.favouriteCharacters : [],
+      favouriteGenres: Array.isArray(data.favouriteGenres) ? data.favouriteGenres : [],
       followersCount:
         typeof data.followersCount === 'number' ? data.followersCount : 0,
       followingCount:
@@ -151,20 +156,31 @@ export async function updateOwnProfile(
       }
 
       const now = serverTimestamp();
-
-      transaction.update(userRef, {
+      const updateData: Record<string, unknown> = {
         displayName: trimmedDisplayName,
         bio: trimmedBio,
         avatarUrl: trimmedAvatarUrl,
         updatedAt: now,
-      });
+      };
 
-      transaction.update(publicRef, {
-        displayName: trimmedDisplayName,
-        bio: trimmedBio,
-        avatarUrl: trimmedAvatarUrl,
-        updatedAt: now,
-      });
+      if (input.bannerUrl !== undefined) {
+        updateData.bannerUrl = input.bannerUrl.trim();
+      }
+      if (input.favouriteQuote !== undefined) {
+        updateData.favouriteQuote = input.favouriteQuote.trim();
+      }
+      if (Array.isArray(input.favouriteAnimeTitles)) {
+        updateData.favouriteAnimeTitles = input.favouriteAnimeTitles.slice(0, 10);
+      }
+      if (Array.isArray(input.favouriteCharacters)) {
+        updateData.favouriteCharacters = input.favouriteCharacters.slice(0, 10);
+      }
+      if (Array.isArray(input.favouriteGenres)) {
+        updateData.favouriteGenres = input.favouriteGenres.slice(0, 15);
+      }
+
+      transaction.update(userRef, updateData);
+      transaction.update(publicRef, updateData);
     });
 
     await updateProfile(currentUser, {

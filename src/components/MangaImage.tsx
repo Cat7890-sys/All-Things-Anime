@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AtaLoadingSpinner } from './AtaLoadingSpinner';
 
 interface MangaImageProps {
@@ -16,14 +16,21 @@ export const MangaImage: React.FC<MangaImageProps> = ({
   aspectClassName = 'aspect-video',
   fallbackTitle = 'ATA Visual Preview',
 }) => {
-  const [hasError, setHasError] = useState(false);
+  const hasValidSrc = Boolean(src && src.trim().length > 0);
+  const [hasError, setHasError] = useState(!hasValidSrc);
   const [isLoaded, setIsLoaded] = useState(false);
+
+  useEffect(() => {
+    const valid = Boolean(src && src.trim().length > 0);
+    setHasError(!valid);
+    setIsLoaded(false);
+  }, [src]);
 
   return (
     <div
       className={`relative overflow-hidden bg-[#EAECEF] dark:bg-[#090B14] ${aspectClassName} ${className}`}
     >
-      {!hasError ? (
+      {!hasError && hasValidSrc ? (
         <>
           {!isLoaded && (
             <div className="absolute inset-0 flex items-center justify-center bg-[#EAECEF] dark:bg-[#090B14]">
@@ -33,6 +40,7 @@ export const MangaImage: React.FC<MangaImageProps> = ({
           <img
             src={src}
             alt={alt}
+            loading="lazy"
             referrerPolicy="no-referrer"
             onLoad={() => setIsLoaded(true)}
             onError={() => setHasError(true)}

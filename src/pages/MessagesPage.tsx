@@ -55,6 +55,11 @@ import type {
 interface MessagesPageProps {
   initialDirectTargetUserId?: string | null;
   onConsumeDirectTarget?: () => void;
+  initialRouteTarget?: {
+    conversationId?: string;
+    tab?: 'chats' | 'requests' | 'groups';
+  } | null;
+  onConsumeRouteTarget?: () => void;
   onOpenAuth: (mode: AuthViewMode) => void;
   onNavigateProfile: () => void;
 }
@@ -64,6 +69,8 @@ type MessagesTab = 'chats' | 'requests' | 'groups' | 'privacy';
 export const MessagesPage: React.FC<MessagesPageProps> = ({
   initialDirectTargetUserId = null,
   onConsumeDirectTarget,
+  initialRouteTarget = null,
+  onConsumeRouteTarget,
   onOpenAuth,
   onNavigateProfile,
 }) => {
@@ -263,6 +270,52 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
     isVerified,
     conversations,
     onConsumeDirectTarget,
+  ]);
+
+  // Handle deep links from Notifications (conversation, group, or message requests)
+  useEffect(() => {
+    if (!initialRouteTarget || !firebaseUser || !isVerified) return;
+
+    const { conversationId, tab } = initialRouteTarget;
+
+    if (!conversationId) {
+      if (tab) {
+        setActiveTab(tab);
+        if (tab === 'requests') {
+          setSelectedConversationId(null);
+        }
+      }
+      onConsumeRouteTarget?.();
+      return;
+    }
+
+    if (isLoadingConversations) {
+      return;
+    }
+
+    const targetConv = conversations.find((c) => c.id === conversationId);
+    if (targetConv) {
+      setActionFeedback(null);
+      setActiveTab(targetConv.type === 'group' ? 'groups' : 'chats');
+      setSelectedConversationId(targetConv.id);
+    } else {
+      if (tab) {
+        setActiveTab(tab);
+      }
+      setSelectedConversationId(null);
+      setActionFeedback(
+        'That conversation is no longer available or you are not a participant.'
+      );
+    }
+
+    onConsumeRouteTarget?.();
+  }, [
+    initialRouteTarget,
+    firebaseUser,
+    isVerified,
+    isLoadingConversations,
+    conversations,
+    onConsumeRouteTarget,
   ]);
 
   // Auto-clear selected conversation if user left or group was deleted

@@ -12,7 +12,8 @@ export const ComingSoonPage: React.FC<ComingSoonPageProps> = ({
   destinationId,
   onReturnHome,
 }) => {
-  const spec = COMING_SOON_SPECS[destinationId];
+  const spec =
+    COMING_SOON_SPECS[destinationId] ?? COMING_SOON_SPECS.discover!;
 
   return <ComingSoonPanel spec={spec} onReturnHome={onReturnHome} />;
 };

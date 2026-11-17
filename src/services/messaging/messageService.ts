@@ -31,7 +31,6 @@ import {
   requireVerifiedMessagingUser,
   toDateOrNull,
 } from './messagingUtils';
-import { emitMessagingNotificationEvent } from './notificationBoundaryService';
 import { setTypingState } from './typingService';
 
 export interface PaginatedMessagesResult {
@@ -169,8 +168,6 @@ export async function sendTextMessage(
     : '';
 
   try {
-    let otherParticipants: string[] = [];
-
     await runTransaction(db, async (transaction) => {
       const convRef = doc(db, 'conversations', conversation.id);
       const rateRef = doc(db, 'messageRateLimits', sender.uid);
@@ -191,7 +188,7 @@ export async function sendTextMessage(
         throw new Error('You are no longer a participant in this conversation.');
       }
 
-      otherParticipants = participantIds.filter((id) => id !== sender.uid);
+      const otherParticipants = participantIds.filter((id) => id !== sender.uid);
 
       const memberRefs = otherParticipants.map((memberUid) =>
         doc(db, 'conversationMembers', `${conversation.id}__${memberUid}`)
@@ -265,16 +262,6 @@ export async function sendTextMessage(
       { uid: sender.uid, displayName: sender.displayName },
       false
     );
-
-    emitMessagingNotificationEvent({
-      type:
-        conversation.type === 'direct'
-          ? 'new_direct_message'
-          : 'new_group_message',
-      recipientIds: otherParticipants,
-      actorId: sender.uid,
-      conversationId: conversation.id,
-    });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     if (

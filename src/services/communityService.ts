@@ -1,4 +1,3 @@
-import { createNotification } from './notifications/notificationEventService';
 import {
   collection,
   doc,
@@ -1045,31 +1044,6 @@ export async function requestPrivateMembership(
     if (!savedSnap.exists()) {
       throw new Error('Membership request could not be reloaded.');
     }
-    const commSnap = await getDoc(communityRef);
-    if (commSnap.exists()) {
-      const commData = commSnap.data();
-      const recipients = Array.from(
-        new Set([
-          String(commData.ownerId || ''),
-          ...((commData.moderatorIds as string[]) || []),
-        ])
-      ).filter((id) => id && id !== currentUser.uid);
-
-      for (const recipientId of recipients) {
-        void createNotification({
-          recipientId,
-          actorId: currentUser.uid,
-          type: 'join_request',
-          category: 'communities',
-          title: 'Community Join Request',
-          body: `${userProfile.displayName} requested to join ${commData.name || 'community'}.`,
-          targetType: 'community',
-          targetId: communityId,
-          route: `/communities/${communityId}`,
-          dedupeKey: `joinreq_${communityId}_${currentUser.uid}`,
-        });
-      }
-    }
     return mapDocToJoinRequest(savedSnap.id, savedSnap.data());
   } catch (error) {
     if (
@@ -1207,19 +1181,6 @@ export async function approveJoinRequest(
       return countVal;
     });
 
-    void createNotification({
-      recipientId: request.userId,
-      actorId: moderatorUid,
-      type: 'approve_request',
-      category: 'communities',
-      title: 'Membership Approved',
-      body: 'Your community membership request was approved.',
-      targetType: 'community',
-      targetId: communityId,
-      route: `/communities/${communityId}`,
-      dedupeKey: `appreq_${communityId}_${request.userId}`,
-    });
-
     return nextCount;
   } catch (error) {
     if (
@@ -1266,19 +1227,6 @@ export async function rejectJoinRequest(
         reviewedBy: moderatorUid,
         updatedAt: serverTimestamp(),
       });
-    });
-
-    void createNotification({
-      recipientId: targetUserId,
-      actorId: moderatorUid,
-      type: 'decline_request',
-      category: 'communities',
-      title: 'Membership Declined',
-      body: 'Your community membership request was declined.',
-      targetType: 'community',
-      targetId: communityId,
-      route: `/communities/${communityId}`,
-      dedupeKey: `decreq_${communityId}_${targetUserId}`,
     });
   } catch (error) {
     if (error instanceof Error && error.message.includes('no longer pending')) {

@@ -1,0 +1,365 @@
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  runTransaction,
+  serverTimestamp,
+  setDoc,
+  Timestamp,
+  updateDoc,
+  where,
+  type Unsubscribe,
+} from 'firebase/firestore';
+import type {
+  CollectionItem,
+  CreateCollectionInput,
+  UpdateCollectionInput,
+  UserCollection,
+} from '../../types';
+import { db, handleFirestoreError, OperationType } from '../firebase';
+import { getPublicProfile } from '../userProfileService';
+import {
+  validateCollectionDescription,
+  validateCollectionItemsCount,
+  validateCollectionTitle,
+  validateCollectionVisibility,
+} from '../validation';
+
+function toDateOrNull(value: unknown): Date | null {
+  if (value instanceof Timestamp) {
+    return value.toDate();
+  }
+  if (
+    typeof value === 'object' &&
+    value &&
+    'toDate' in value &&
+    typeof (value as { toDate: () => Date }).toDate === 'function'
+  ) {
+    return (value as { toDate: () => Date }).toDate();
+  }
+  return null;
+}
+
+export function mapDocToCollection(
+  id: string,
+  data: Record<string, unknown>
+): UserCollection {
+  const items = Array.isArray(data.items)
+    ? (data.items as Record<string, unknown>[]).map((it, idx) => ({
+        id: String(it.id || it.animeId || idx),
+        animeId: String(it.animeId || ''),
+        title: String(it.title || ''),
+        coverImage: String(it.coverImage || ''),
+        format: typeof it.format === 'string' ? it.format : undefined,
+        note: typeof it.note === 'string' ? it.note : undefined,
+        position: typeof it.position === 'number' ? it.position : idx,
+        addedAt: toDateOrNull(it.addedAt),
+      }))
+    : [];
+
+  return {
+    id,
+    ownerId: String(data.ownerId || ''),
+    ownerUsername: String(data.ownerUsername || ''),
+    ownerDisplayName: String(data.ownerDisplayName || 'ATA Member'),
+    ownerAvatarUrl: String(data.ownerAvatarUrl || ''),
+    title: String(data.title || 'Untitled Collection'),
+    description: String(data.description || ''),
+    coverImageUrl: String(data.coverImageUrl || ''),
+    visibility: (data.visibility as 'private' | 'public') || 'private',
+    items,
+    itemCount: typeof data.itemCount === 'number' ? data.itemCount : items.length,
+    likeCount: typeof data.likeCount === 'number' ? data.likeCount : 0,
+    saveCount: typeof data.saveCount === 'number' ? data.saveCount : 0,
+    createdAt: toDateOrNull(data.createdAt),
+    updatedAt: toDateOrNull(data.updatedAt),
+  };
+}
+
+export function subscribeToUserCollections(
+  userId: string,
+  onCollections: (collections: UserCollection[]) => void,
+  onError?: (errMessage: string) => void
+): Unsubscribe {
+  if (!userId) {
+    onCollections([]);
+    return () => {};
+  }
+
+  const q = query(
+    collection(db, 'userCollections'),
+    where('ownerId', '==', userId),
+    orderBy('updatedAt', 'desc')
+  );
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const list = snapshot.docs.map((d) =>
+        mapDocToCollection(d.id, d.data())
+      );
+      onCollections(list);
+    },
+    (error) => {
+      try {
+        handleFirestoreError(error, OperationType.LIST, 'userCollections');
+      } catch (err) {
+        onError?.(
+          err instanceof Error ? err.message : 'Unable to sync user collections.'
+        );
+      }
+    }
+  );
+}
+
+export async function getUserCollections(
+  userId: string
+): Promise<UserCollection[]> {
+  if (!userId) return [];
+  const q = query(
+    collection(db, 'userCollections'),
+    where('ownerId', '==', userId),
+    orderBy('updatedAt', 'desc')
+  );
+  try {
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => mapDocToCollection(d.id, d.data()));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'userCollections');
+  }
+}
+
+export async function getPublicCollections(
+  maxItems: number = 20
+): Promise<UserCollection[]> {
+  const q = query(
+    collection(db, 'userCollections'),
+    where('visibility', '==', 'public'),
+    orderBy('updatedAt', 'desc'),
+    limit(maxItems)
+  );
+  try {
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => mapDocToCollection(d.id, d.data()));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'userCollections');
+  }
+}
+
+export async function getCollectionById(
+  collectionId: string
+): Promise<UserCollection | null> {
+  if (!collectionId) return null;
+  const path = `userCollections/${collectionId}`;
+  try {
+    const snap = await getDoc(doc(db, 'userCollections', collectionId));
+    if (!snap.exists()) return null;
+    return mapDocToCollection(snap.id, snap.data());
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+  }
+}
+
+export async function createCollection(
+  ownerId: string,
+  input: CreateCollectionInput
+): Promise<UserCollection> {
+  if (!ownerId) {
+    throw new Error('You must be signed in to create a collection.');
+  }
+
+  const titleErr = validateCollectionTitle(input.title);
+  if (titleErr) throw new Error(titleErr);
+
+  const descErr = validateCollectionDescription(input.description);
+  if (descErr) throw new Error(descErr);
+
+  const visErr = validateCollectionVisibility(input.visibility);
+  if (visErr) throw new Error(visErr);
+
+  if (input.items) {
+    const countErr = validateCollectionItemsCount(input.items.length);
+    if (countErr) throw new Error(countErr);
+  }
+
+  const profile = await getPublicProfile(ownerId).catch(() => null);
+  const colRef = doc(collection(db, 'userCollections'));
+  const collectionId = colRef.id;
+
+  const now = new Date();
+  const items: CollectionItem[] = (input.items || []).map((it, idx) => {
+    const item: CollectionItem = {
+      id: it.animeId,
+      animeId: it.animeId,
+      title: it.title,
+      coverImage: it.coverImage,
+      position: typeof it.position === 'number' ? it.position : idx,
+      addedAt: now,
+    };
+    if (typeof it.format === 'string' && it.format.trim()) {
+      item.format = it.format.trim();
+    }
+    if (typeof it.note === 'string' && it.note.trim()) {
+      item.note = it.note.trim();
+    }
+    return item;
+  });
+
+  const payload = {
+    id: collectionId,
+    ownerId,
+    ownerUsername: profile?.username || 'member',
+    ownerDisplayName: profile?.displayName || 'ATA Member',
+    ownerAvatarUrl: profile?.avatarUrl || '',
+    title: input.title.trim(),
+    description: (input.description || '').trim(),
+    coverImageUrl: input.coverImageUrl || items[0]?.coverImage || '',
+    visibility: input.visibility,
+    items,
+    itemCount: items.length,
+    likeCount: 0,
+    saveCount: 0,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  try {
+    await setDoc(colRef, payload);
+    return {
+      ...payload,
+      createdAt: now,
+      updatedAt: now,
+    };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `userCollections/${collectionId}`);
+  }
+}
+
+export async function updateCollection(
+  ownerId: string,
+  collectionId: string,
+  input: UpdateCollectionInput
+): Promise<void> {
+  if (!ownerId || !collectionId) return;
+
+  const path = `userCollections/${collectionId}`;
+  const colRef = doc(db, 'userCollections', collectionId);
+
+  try {
+    const snap = await getDoc(colRef);
+    if (!snap.exists()) {
+      throw new Error('Collection not found.');
+    }
+    const current = snap.data();
+    if (current.ownerId !== ownerId) {
+      throw new Error('You do not have permission to edit this collection.');
+    }
+
+    const updates: Record<string, unknown> = {
+      updatedAt: serverTimestamp(),
+    };
+
+    if (typeof input.title === 'string') {
+      const err = validateCollectionTitle(input.title);
+      if (err) throw new Error(err);
+      updates.title = input.title.trim();
+    }
+
+    if (typeof input.description === 'string') {
+      const err = validateCollectionDescription(input.description);
+      if (err) throw new Error(err);
+      updates.description = input.description.trim();
+    }
+
+    if (input.visibility) {
+      const err = validateCollectionVisibility(input.visibility);
+      if (err) throw new Error(err);
+      updates.visibility = input.visibility;
+    }
+
+    if (typeof input.coverImageUrl === 'string') {
+      updates.coverImageUrl = input.coverImageUrl;
+    }
+
+    if (input.items) {
+      const err = validateCollectionItemsCount(input.items.length);
+      if (err) throw new Error(err);
+      const now = new Date();
+      updates.items = input.items.map((it, idx) => {
+        const item: CollectionItem = {
+          id: it.animeId,
+          animeId: it.animeId,
+          title: it.title,
+          coverImage: it.coverImage,
+          position: typeof it.position === 'number' ? it.position : idx,
+          addedAt: now,
+        };
+        if (typeof it.format === 'string' && it.format.trim()) {
+          item.format = it.format.trim();
+        }
+        if (typeof it.note === 'string' && it.note.trim()) {
+          item.note = it.note.trim();
+        }
+        return item;
+      });
+      updates.itemCount = input.items.length;
+      if (!updates.coverImageUrl && input.items[0]?.coverImage) {
+        updates.coverImageUrl = input.items[0].coverImage;
+      }
+    }
+
+    await updateDoc(colRef, updates);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function deleteCollection(
+  ownerId: string,
+  collectionId: string
+): Promise<void> {
+  if (!ownerId || !collectionId) return;
+  const path = `userCollections/${collectionId}`;
+  const colRef = doc(db, 'userCollections', collectionId);
+
+  try {
+    const snap = await getDoc(colRef);
+    if (!snap.exists()) return;
+    if (snap.data().ownerId !== ownerId) {
+      throw new Error('You do not have permission to delete this collection.');
+    }
+    await deleteDoc(colRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export async function likeCollection(
+  userId: string,
+  collectionId: string
+): Promise<void> {
+  if (!userId || !collectionId) return;
+
+  const colRef = doc(db, 'userCollections', collectionId);
+  const path = `userCollections/${collectionId}`;
+
+  try {
+    await runTransaction(db, async (transaction) => {
+      const snap = await transaction.get(colRef);
+      if (!snap.exists()) return;
+      const data = snap.data();
+      const currentLikes = Number(data.likeCount || 0);
+      transaction.update(colRef, {
+        likeCount: currentLikes + 1,
+      });
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}

@@ -13,6 +13,8 @@ import type {
 interface HomePageProps {
   discussions: DiscussionThread[];
   featuredSeries: DiscoverySeriesItem[];
+  initialPostId?: string | null;
+  onConsumeInitialPost?: () => void;
   onNavigate: (destination: NavDestinationId) => void;
   onOpenAuth: (mode: AuthViewMode) => void;
   onStartDirectMessage?: (targetUserId: string) => void;
@@ -21,6 +23,8 @@ interface HomePageProps {
 export const HomePage: React.FC<HomePageProps> = ({
   discussions,
   featuredSeries,
+  initialPostId = null,
+  onConsumeInitialPost,
   onNavigate,
   onOpenAuth,
   onStartDirectMessage,
@@ -45,12 +49,19 @@ export const HomePage: React.FC<HomePageProps> = ({
       />
 
       <SocialFeedSection
+        initialPostId={initialPostId}
+        onConsumeInitialPost={onConsumeInitialPost}
         onOpenAuth={onOpenAuth}
         onNavigateProfile={() => onNavigate('profile')}
         onStartDirectMessage={onStartDirectMessage}
       />
 
-      {/* Explicit Separation Between Live Firestore Content & Build 01 Showcase Previews */}
+      <AnimeDiscoveryArea
+        series={featuredSeries}
+        onOpenDiscoverPage={() => onNavigate('discover')}
+      />
+
+      {/* Explicit Separation Between Live Content & Build 01 Showcase Previews */}
       <div className="pt-2 border-t-2 border-dashed border-[#D4D7E2] dark:border-[#303342]">
         <p className="font-accent-orbitron text-[11px] font-semibold tracking-[0.12em] text-[#52576B] dark:text-[#A7A9B8] uppercase">
           Sample Showcase <span aria-hidden="true">·</span> Demonstration
@@ -59,11 +70,6 @@ export const HomePage: React.FC<HomePageProps> = ({
       </div>
 
       <PopularDiscussions discussions={discussions} />
-
-      <AnimeDiscoveryArea
-        series={featuredSeries}
-        onOpenDiscoverPage={() => onNavigate('discover')}
-      />
     </div>
   );
 };

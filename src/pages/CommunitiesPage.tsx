@@ -37,6 +37,12 @@ import type {
 } from '../types';
 
 interface CommunitiesPageProps {
+  initialCommunityTarget?: {
+    communityId: string;
+    postId?: string;
+    tab?: 'discussions' | 'rules' | 'members' | 'manage';
+  } | null;
+  onConsumeCommunityTarget?: () => void;
   onOpenAuth?: (mode: AuthViewMode) => void;
   onNavigateProfile?: () => void;
   onStartDirectMessage?: (targetUserId: string) => void;
@@ -45,6 +51,8 @@ interface CommunitiesPageProps {
 type DiscoveryTab = 'featured' | 'popular' | 'recent' | 'joined';
 
 export const CommunitiesPage: React.FC<CommunitiesPageProps> = ({
+  initialCommunityTarget = null,
+  onConsumeCommunityTarget,
   onOpenAuth,
   onNavigateProfile,
   onStartDirectMessage,
@@ -80,6 +88,11 @@ export const CommunitiesPage: React.FC<CommunitiesPageProps> = ({
 
   const [selectedCommunity, setSelectedCommunity] =
     useState<AtaCommunity | null>(null);
+  const [deepLinkPostId, setDeepLinkPostId] = useState<string | null>(null);
+  const [deepLinkTab, setDeepLinkTab] = useState<
+    'discussions' | 'rules' | 'members' | 'manage' | null
+  >(null);
+  const [deepLinkNotice, setDeepLinkNotice] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   const loadDiscovery = useCallback(async () => {
@@ -160,6 +173,65 @@ export const CommunitiesPage: React.FC<CommunitiesPageProps> = ({
   useEffect(() => {
     void loadDiscovery();
   }, [loadDiscovery]);
+
+  // Resolve notification deep-linked community (and optional post/tab)
+  useEffect(() => {
+    if (!initialCommunityTarget?.communityId) return;
+
+    const target = initialCommunityTarget;
+    let cancelled = false;
+    onConsumeCommunityTarget?.();
+
+    const known = [
+      ...popularCommunities,
+      ...recentCommunities,
+      ...joinedCommunities,
+    ].find((c) => c.id === target.communityId);
+
+    if (known) {
+      setDeepLinkNotice(null);
+      setDeepLinkPostId(target.postId || null);
+      setDeepLinkTab(target.tab || null);
+      setSelectedCommunity(known);
+      return;
+    }
+
+    void fetchCommunityById(target.communityId)
+      .then((fetched) => {
+        if (cancelled) return;
+        if (!fetched) {
+          setSelectedCommunity(null);
+          setDeepLinkPostId(null);
+          setDeepLinkTab(null);
+          setDeepLinkNotice(
+            'This community is no longer available or you do not have access.'
+          );
+          return;
+        }
+        setDeepLinkNotice(null);
+        setDeepLinkPostId(target.postId || null);
+        setDeepLinkTab(target.tab || null);
+        setSelectedCommunity(fetched);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSelectedCommunity(null);
+          setDeepLinkNotice(
+            'This community is private, archived, or unavailable.'
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    initialCommunityTarget,
+    popularCommunities,
+    recentCommunities,
+    joinedCommunities,
+    onConsumeCommunityTarget,
+  ]);
 
   const handleCommunityUpdated = (updated: AtaCommunity) => {
     const replaceIn = (list: AtaCommunity[]) => {
@@ -289,7 +361,17 @@ export const CommunitiesPage: React.FC<CommunitiesPageProps> = ({
     return (
       <CommunityDetailView
         community={selectedCommunity}
-        onBack={() => setSelectedCommunity(null)}
+        initialPostId={deepLinkPostId}
+        initialTab={deepLinkTab}
+        onConsumeDeepLink={() => {
+          setDeepLinkPostId(null);
+          setDeepLinkTab(null);
+        }}
+        onBack={() => {
+          setDeepLinkPostId(null);
+          setDeepLinkTab(null);
+          setSelectedCommunity(null);
+        }}
         onCommunityUpdated={handleCommunityUpdated}
         onCommunityDeleted={handleCommunityDeleted}
         onMembershipChanged={() => void loadDiscovery()}
@@ -302,6 +384,29 @@ export const CommunitiesPage: React.FC<CommunitiesPageProps> = ({
 
   return (
     <div className="space-y-6">
+      {deepLinkNotice && (
+        <div
+          role="status"
+          className="bg-white dark:bg-[#171923] border border-[#EF3038] rounded-2xl px-4 py-3 flex items-center justify-between gap-3 text-xs sm:text-sm text-[#090B14] dark:text-white"
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <AlertCircle
+              className="h-4 w-4 text-[#EF3038] shrink-0"
+              aria-hidden="true"
+            />
+            <span>{deepLinkNotice}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setDeepLinkNotice(null)}
+            aria-label="Dismiss notice"
+            className="p-1 text-[#52576B] dark:text-[#A7A9B8] hover:text-[#EF3038]"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* Discovery Hero Header */}
       <section className="bg-[#090B14] border border-[#303342] rounded-2xl p-6 sm:p-8 text-white">
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-5">

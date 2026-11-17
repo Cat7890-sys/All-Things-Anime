@@ -4,7 +4,11 @@ export type NavDestinationId =
   | 'communities'
   | 'messages'
   | 'notifications'
-  | 'profile';
+  | 'profile'
+  | 'my-anime'
+  | 'anime-tracker'
+  | 'collections'
+  | 'personalisation';
 
 export interface NavDestination {
   id: NavDestinationId;
@@ -114,6 +118,12 @@ export interface AtaPublicProfile {
   displayName: string;
   bio: string;
   avatarUrl: string;
+  bannerUrl?: string;
+  accentColor?: string;
+  favouriteQuote?: string;
+  favouriteAnimeTitles?: string[];
+  favouriteCharacters?: string[];
+  favouriteGenres?: string[];
   followersCount: number;
   followingCount: number;
   createdAt: Date | null;
@@ -138,6 +148,12 @@ export interface UpdateProfileInput {
   displayName: string;
   bio: string;
   avatarUrl: string;
+  bannerUrl?: string;
+  accentColor?: string;
+  favouriteQuote?: string;
+  favouriteAnimeTitles?: string[];
+  favouriteCharacters?: string[];
+  favouriteGenres?: string[];
 }
 
 export type AuthViewMode = 'login' | 'register' | 'reset';
@@ -145,10 +161,16 @@ export type AuthViewMode = 'login' | 'register' | 'reset';
 export type ValidationErrors<T> = Partial<Record<keyof T, string>>;
 
 // ==========================================
-// Build 03: Social Feed, Reactions, Comments, Follows, Safety
+// Build 03 & 06: Social Feed, Reactions, Comments, Follows, Personalised Feeds
 // ==========================================
 
-export type FeedTabMode = 'community' | 'following';
+export type FeedTabMode =
+  | 'community'
+  | 'for_you'
+  | 'following'
+  | 'communities'
+  | 'trending'
+  | 'latest';
 
 export interface AtaPost {
   id: string;
@@ -576,4 +598,202 @@ export interface AtaNotificationSettings {
 export type UpdateNotificationSettingsInput = Partial<
   Omit<AtaNotificationSettings, 'userId' | 'updatedAt'>
 >;
+
+// ==========================================
+// Build 06: Complete Personalisation
+// ==========================================
+
+export type AtaThemePreference = 'dark' | 'light' | 'system';
+export type AtaAccentColor = 'red' | 'crimson' | 'amber' | 'violet' | 'azure' | 'emerald';
+export type AtaFeedDensity = 'comfortable' | 'compact';
+export type DefaultFeedTab = 'for_you' | 'following' | 'communities' | 'trending' | 'latest';
+
+export interface DashboardWidgetConfig {
+  id: string;
+  label: string;
+  enabled: boolean;
+  order: number;
+}
+
+export interface AtaUserPreferences {
+  userId: string;
+  themePreference: AtaThemePreference;
+  accentColor: AtaAccentColor;
+  feedDensity: AtaFeedDensity;
+  reducedMotion: boolean;
+  defaultFeed: DefaultFeedTab;
+  hiddenTopics: string[];
+  hiddenGenres: string[];
+  recommendationsEnabled: boolean;
+  onboardingCompleted: boolean;
+  profileBannerUrl?: string;
+  profileAccentColor?: string;
+  favouriteQuote?: string;
+  favouriteAnimeTitles: string[];
+  favouriteCharacters: string[];
+  favouriteGenres: string[];
+  preferredFormats: string[];
+  preferredPeriods: string[];
+  topicsToAvoid: string[];
+  dashboardWidgets: DashboardWidgetConfig[];
+  updatedAt: Date | null;
+}
+
+export type UpdateUserPreferencesInput = Partial<
+  Omit<AtaUserPreferences, 'userId' | 'updatedAt'>
+>;
+
+// Curated Anime Catalogue
+export interface AnimeCatalogueItem {
+  id: string;
+  title: string;
+  romajiTitle: string;
+  englishTitle: string;
+  genres: string[];
+  format: 'TV Series' | 'Movie' | 'OVA' | 'ONA' | 'Special';
+  episodes: number | null; // null if unconfirmed or ongoing
+  seasonYear: string;
+  synopsis: string;
+  coverImage: string;
+  score: number;
+  characters: string[];
+  tags: string[];
+  isFeatured?: boolean;
+}
+
+// Watchlist and Anime Tracker
+export type WatchlistStatus =
+  | 'watching'
+  | 'planning'
+  | 'completed'
+  | 'on_hold'
+  | 'dropped';
+
+export interface UserAnimeListItem {
+  id: string; // animeId
+  userId: string;
+  animeId: string;
+  animeTitle: string;
+  animeCoverUrl: string;
+  genres: string[];
+  format: string;
+  totalEpisodes: number | null; // verified when known, otherwise null
+  episodesWatched: number;
+  status: WatchlistStatus;
+  userRating: number | null; // 1-10 or null
+  startDate: string | null; // YYYY-MM-DD
+  completionDate: string | null; // YYYY-MM-DD
+  personalNotes: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export interface UpsertAnimeListItemInput {
+  animeId: string;
+  animeTitle: string;
+  animeCoverUrl: string;
+  genres: string[];
+  format: string;
+  totalEpisodes: number | null;
+  episodesWatched: number;
+  status: WatchlistStatus;
+  userRating?: number | null;
+  startDate?: string | null;
+  completionDate?: string | null;
+  personalNotes?: string;
+}
+
+// Custom Anime Collections
+export type CollectionVisibility = 'private' | 'public';
+
+export interface CollectionItem {
+  id: string; // animeId
+  animeId: string;
+  title: string;
+  coverImage: string;
+  format?: string;
+  note?: string;
+  position: number;
+  addedAt: Date | null;
+}
+
+export interface UserCollection {
+  id: string;
+  ownerId: string;
+  ownerUsername: string;
+  ownerDisplayName: string;
+  ownerAvatarUrl: string;
+  title: string;
+  description: string;
+  coverImageUrl: string;
+  visibility: CollectionVisibility;
+  items: CollectionItem[];
+  itemCount: number;
+  likeCount: number;
+  saveCount: number;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export interface CreateCollectionInput {
+  title: string;
+  description: string;
+  coverImageUrl?: string;
+  visibility: CollectionVisibility;
+  items?: Omit<CollectionItem, 'addedAt'>[];
+}
+
+export interface UpdateCollectionInput {
+  title?: string;
+  description?: string;
+  coverImageUrl?: string;
+  visibility?: CollectionVisibility;
+  items?: Omit<CollectionItem, 'addedAt'>[];
+}
+
+// Recommendation Engine & Feedback
+export type RecommendationFeedbackType =
+  | 'like'
+  | 'dislike'
+  | 'not_interested'
+  | 'saved';
+
+export interface RecommendationFeedback {
+  animeId: string;
+  feedbackType: RecommendationFeedbackType;
+  reason?: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export interface AnimeRecommendation {
+  anime: AnimeCatalogueItem;
+  score: number;
+  reasonCategory:
+    | 'Recommended for You'
+    | 'Because You Like...'
+    | 'Similar Genres'
+    | 'Popular in Your Communities'
+    | 'Hidden Gems';
+  reasonDetail: string;
+  matchedSignals: string[];
+}
+
+// Personal Statistics & Insights
+export interface PersonalAnimeInsights {
+  totalTracked: number;
+  totalCompleted: number;
+  totalWatching: number;
+  totalPlanning: number;
+  totalOnHold: number;
+  totalDropped: number;
+  totalEpisodesWatched: number;
+  averageRating: number | null;
+  genreDistribution: Record<string, number>;
+  ratingDistribution: Record<number, number>;
+  formatDistribution: Record<string, number>;
+  recentWatchlistChanges: UserAnimeListItem[];
+  totalCollections: number;
+}
+
 

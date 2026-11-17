@@ -1353,6 +1353,238 @@
         }
       },
       "required": ["uid", "lastMessageAt", "lastRequestAt", "lastGroupCreatedAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Server-generated notification document delivered to a recipient inbox with deterministic deduplication.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 360,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "recipientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "actorId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 128
+        },
+        "actorUsername": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 20
+        },
+        "actorDisplayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "actorAvatarUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "like_post",
+            "comment_post",
+            "reply_comment",
+            "mention",
+            "new_follower",
+            "join_request",
+            "approve_request",
+            "decline_request",
+            "remove_member",
+            "change_role",
+            "transfer_owner",
+            "community_announcement",
+            "new_message_request",
+            "accepted_message_request",
+            "new_direct_message",
+            "new_group_message",
+            "group_added",
+            "group_removed",
+            "group_admin_promote",
+            "group_update",
+            "system_notice"
+          ]
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "social",
+            "followers",
+            "communities",
+            "messaging",
+            "groups",
+            "system"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "body": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 300
+        },
+        "targetType": {
+          "type": "string",
+          "enum": [
+            "post",
+            "comment",
+            "profile",
+            "community",
+            "conversation",
+            "message_request",
+            "group",
+            "system"
+          ]
+        },
+        "targetId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 300
+        },
+        "route": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 360
+        },
+        "isRead": {
+          "type": "boolean"
+        },
+        "isDismissed": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "readAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "dedupeKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 280
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "recipientId",
+        "actorId",
+        "actorUsername",
+        "actorDisplayName",
+        "actorAvatarUrl",
+        "type",
+        "category",
+        "title",
+        "body",
+        "targetType",
+        "targetId",
+        "route",
+        "isRead",
+        "isDismissed",
+        "createdAt",
+        "readAt",
+        "dedupeKey",
+        "metadata"
+      ]
+    },
+    "NotificationSettings": {
+      "title": "NotificationSettings",
+      "description": "Per-user notification category, popup, sound, and quiet hours configuration.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "socialEnabled": {
+          "type": "boolean"
+        },
+        "followersEnabled": {
+          "type": "boolean"
+        },
+        "communitiesEnabled": {
+          "type": "boolean"
+        },
+        "messagingEnabled": {
+          "type": "boolean"
+        },
+        "groupsEnabled": {
+          "type": "boolean"
+        },
+        "systemEnabled": {
+          "type": "boolean"
+        },
+        "popupEnabled": {
+          "type": "boolean"
+        },
+        "soundEnabled": {
+          "type": "boolean"
+        },
+        "quietHoursEnabled": {
+          "type": "boolean"
+        },
+        "quietHoursStart": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        },
+        "quietHoursEnd": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "userId",
+        "enabled",
+        "socialEnabled",
+        "followersEnabled",
+        "communitiesEnabled",
+        "messagingEnabled",
+        "groupsEnabled",
+        "systemEnabled",
+        "popupEnabled",
+        "soundEnabled",
+        "quietHoursEnabled",
+        "quietHoursStart",
+        "quietHoursEnd",
+        "timezone",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -1517,6 +1749,18 @@
         "$ref": "#/entities/MessageRateLimit"
       },
       "description": "Server-time rate limiting checkpoints for messaging actions."
+    },
+    "/notifications/{notificationId}": {
+      "schema": {
+        "$ref": "#/entities/Notification"
+      },
+      "description": "Server-generated real-time notifications accessible strictly to the recipient."
+    },
+    "/notificationSettings/{userId}": {
+      "schema": {
+        "$ref": "#/entities/NotificationSettings"
+      },
+      "description": "Owner-only notification category, toast, and quiet-hours preferences."
     }
   }
 }

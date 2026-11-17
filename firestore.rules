@@ -35,6 +35,79 @@ service cloud.firestore {
       return id is string && id.size() >= 3 && id.size() <= 260 && id.matches('^[a-zA-Z0-9_\\-]+__[a-zA-Z0-9_\\-]+$');
     }
 
+    function isValidNotificationId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 360 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidNotificationUpdate(next, prev) {
+      return next.diff(prev).affectedKeys().hasOnly(['isRead', 'isDismissed', 'readAt'])
+        && next.diff(prev).affectedKeys().size() >= 1
+        && next.isRead is bool
+        && next.isDismissed is bool
+        && (!prev.isRead || next.isRead)
+        && (!prev.isDismissed || next.isDismissed)
+        && (
+          next.readAt == prev.readAt
+          || (next.isRead == true && next.readAt == request.time)
+        );
+    }
+
+    function isValidNotificationSettings(data, userId) {
+      return data.keys().hasAll([
+          'userId',
+          'enabled',
+          'socialEnabled',
+          'followersEnabled',
+          'communitiesEnabled',
+          'messagingEnabled',
+          'groupsEnabled',
+          'systemEnabled',
+          'popupEnabled',
+          'soundEnabled',
+          'quietHoursEnabled',
+          'quietHoursStart',
+          'quietHoursEnd',
+          'timezone',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'userId',
+          'enabled',
+          'socialEnabled',
+          'followersEnabled',
+          'communitiesEnabled',
+          'messagingEnabled',
+          'groupsEnabled',
+          'systemEnabled',
+          'popupEnabled',
+          'soundEnabled',
+          'quietHoursEnabled',
+          'quietHoursStart',
+          'quietHoursEnd',
+          'timezone',
+          'updatedAt'
+        ])
+        && data.userId == userId
+        && data.enabled is bool
+        && data.socialEnabled is bool
+        && data.followersEnabled is bool
+        && data.communitiesEnabled is bool
+        && data.messagingEnabled is bool
+        && data.groupsEnabled is bool
+        && data.systemEnabled is bool
+        && data.popupEnabled is bool
+        && data.soundEnabled is bool
+        && data.quietHoursEnabled is bool
+        && data.quietHoursStart is string
+        && data.quietHoursStart.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+        && data.quietHoursEnd is string
+        && data.quietHoursEnd.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+        && data.timezone is string
+        && data.timezone.size() >= 1
+        && data.timezone.size() <= 80
+        && data.updatedAt == request.time;
+    }
+
     function isValidSlug(slug) {
       return slug is string && slug.size() >= 3 && slug.size() <= 40 && slug.matches('^[a-z0-9]+(?:-[a-z0-9]+)*$');
     }
@@ -2446,26 +2519,39 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Build 05: Notifications
+    // Build 05: Notifications (trusted Cloud Functions Admin SDK creation only)
     match /notifications/{notificationId} {
-      allow get, list: if isSignedIn()
-        && resource.data.recipientId == request.auth.uid;
+      allow get: if isValidNotificationId(notificationId)
+        && isSignedIn()
+        && resource != null
+        && existing().recipientId == request.auth.uid;
 
-      allow create: if isEmailVerified()
-        && resource == null;
+      allow list: if isSignedIn()
+        && existing().recipientId == request.auth.uid;
 
-      allow update: if isSignedIn()
-        && resource.data.recipientId == request.auth.uid;
+      allow create: if false;
 
-      allow delete: if isSignedIn()
-        && resource.data.recipientId == request.auth.uid;
+      allow update: if isValidNotificationId(notificationId)
+        && isSignedIn()
+        && resource != null
+        && existing().recipientId == request.auth.uid
+        && isValidNotificationUpdate(incoming(), existing());
+
+      allow delete: if isValidNotificationId(notificationId)
+        && isSignedIn()
+        && resource != null
+        && existing().recipientId == request.auth.uid
+        && existing().isDismissed == true;
     }
 
     // Build 05: Notification Settings
     match /notificationSettings/{userId} {
       allow get: if isValidId(userId) && isOwner(userId);
       allow list: if false;
-      allow create, update: if isValidId(userId) && isOwner(userId) && isEmailVerified();
+      allow create, update: if isValidId(userId)
+        && isOwner(userId)
+        && isEmailVerified()
+        && isValidNotificationSettings(incoming(), userId);
       allow delete: if false;
     }
   }

@@ -1,0 +1,22 @@
+{
+  "name": "ata-functions",
+  "private": true,
+  "description": "Trusted Firebase Cloud Functions for ATA — All Things Anime",
+  "scripts": {
+    "build": "tsc",
+    "lint": "tsc --noEmit",
+    "test": "npm run build && node --test lib/__tests__/notifications.test.js"
+  },
+  "engines": {
+    "node": "22"
+  },
+  "main": "lib/index.js",
+  "dependencies": {
+    "firebase-admin": "^13.0.0",
+    "firebase-functions": "^6.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "typescript": "^5.7.3"
+  }
+}

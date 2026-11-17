@@ -1,4 +1,3 @@
-import { createNotification } from './notifications/notificationEventService';
 import {
   collection,
   deleteDoc,
@@ -115,19 +114,6 @@ export async function followUser(
           followingCount: ownFollowing + 1,
         });
       }
-    });
-
-    void createNotification({
-      recipientId: targetUserId,
-      actorId: followerId,
-      type: 'new_follower',
-      category: 'followers',
-      title: 'New Follower',
-      body: 'You have a new follower.',
-      targetType: 'profile',
-      targetId: followerId,
-      route: `/profile/${followerId}`,
-      dedupeKey: `follow_${targetUserId}_${followerId}`,
     });
   } catch (error) {
     if (
