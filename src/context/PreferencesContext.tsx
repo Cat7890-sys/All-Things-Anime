@@ -169,7 +169,7 @@ export const PreferencesProvider: React.FC<{ children: React.ReactNode }> = ({
     if (!firebaseUser) {
       throw new Error('Please sign in to save personalisation settings.');
     }
-    if (!firebaseUser.emailVerified) {
+    if (!firebaseUser.emailVerified && !input.onboardingCompleted) {
       throw new Error(
         'Please verify your email address before saving personalisation preferences.'
       );

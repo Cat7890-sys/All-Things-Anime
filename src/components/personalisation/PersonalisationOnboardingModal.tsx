@@ -29,7 +29,7 @@ export const PersonalisationOnboardingModal: React.FC<OnboardingModalProps> = ({
   isOpen,
   onClose,
 }) => {
-  const { preferences, updatePreferences } = usePreferences();
+  const { preferences, updatePreferences, setIsOnboardingOpen } = usePreferences();
   const [step, setStep] = useState(1);
   const totalSteps = 4;
 
@@ -70,22 +70,34 @@ export const PersonalisationOnboardingModal: React.FC<OnboardingModalProps> = ({
   };
 
   const handleFinish = async () => {
-    await updatePreferences({
-      favouriteGenres: selectedGenres,
-      favouriteAnimeTitles: selectedAnime,
-      preferredFormats: selectedFormats,
-      accentColor,
-      feedDensity,
-      onboardingCompleted: true,
-    });
-    onClose();
+    try {
+      await updatePreferences({
+        favouriteGenres: selectedGenres,
+        favouriteAnimeTitles: selectedAnime,
+        preferredFormats: selectedFormats,
+        accentColor,
+        feedDensity,
+        onboardingCompleted: true,
+      });
+    } catch (err) {
+      console.error('Failed to save preferences:', err);
+    } finally {
+      setIsOnboardingOpen(false);
+      onClose();
+    }
   };
 
   const handleSkipAll = async () => {
-    await updatePreferences({
-      onboardingCompleted: true,
-    });
-    onClose();
+    try {
+      await updatePreferences({
+        onboardingCompleted: true,
+      });
+    } catch (err) {
+      console.error('Failed to skip preferences:', err);
+    } finally {
+      setIsOnboardingOpen(false);
+      onClose();
+    }
   };
 
   return (

@@ -2554,5 +2554,42 @@ service cloud.firestore {
         && isValidNotificationSettings(incoming(), userId);
       allow delete: if false;
     }
+
+    // Build 06: User Preferences
+    match /userPreferences/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+      allow create, update: if isValidId(userId)
+        && isOwner(userId)
+        && isEmailVerified();
+      allow delete: if false;
+    }
+
+    // Build 06: User Anime Lists (Tracker)
+    match /userAnimeLists/{userId}/items/{itemId} {
+      allow get, list: if isValidId(userId) && isOwner(userId);
+      allow create, update, delete: if isValidId(userId)
+        && isOwner(userId)
+        && isEmailVerified();
+    }
+
+    // Build 06: User Collections
+    match /userCollections/{collectionId} {
+      allow get: if resource != null
+        && (resource.data.visibility == 'public' || (isSignedIn() && resource.data.ownerId == request.auth.uid));
+      allow list: if true;
+      allow create: if isEmailVerified()
+        && incoming().ownerId == request.auth.uid;
+      allow update, delete: if isSignedIn()
+        && existing().ownerId == request.auth.uid;
+    }
+
+    // Build 06: Recommendation Feedback
+    match /recommendationFeedback/{userId}/items/{itemId} {
+      allow get, list: if isValidId(userId) && isOwner(userId);
+      allow create, update, delete: if isValidId(userId)
+        && isOwner(userId)
+        && isEmailVerified();
+    }
   }
 }

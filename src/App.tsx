@@ -69,14 +69,7 @@ export default function App() {
   const [trendingAnime, setTrendingAnime] = useState<TrendingAnimeItem[]>([]);
   const [communities, setCommunities] = useState<CommunityHighlight[]>([]);
 
-  // Onboarding modal visibility state
-  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
-
-  useEffect(() => {
-    if (firebaseUser && firebaseUser.emailVerified && preferences && preferences.onboardingCompleted === false) {
-      setIsOnboardingOpen(true);
-    }
-  }, [firebaseUser, preferences]);
+  const { isOnboardingOpen, setIsOnboardingOpen } = usePreferences();
 
   useEffect(() => {
     let isMounted = true;
