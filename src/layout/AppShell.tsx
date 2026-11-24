@@ -1,8 +1,9 @@
-import React from 'react';
 import {
   Bell,
   Bookmark,
+  Calendar,
   Compass,
+  Footprints,
   Home,
   Layers,
   LayoutDashboard,
@@ -10,6 +11,7 @@ import {
   LogOut,
   Mail,
   Moon,
+  Newspaper,
   Sliders,
   Sun,
   User,
@@ -50,6 +52,9 @@ const NAV_ICONS: Record<
   'anime-tracker': Bookmark,
   collections: Layers,
   discover: Compass,
+  calendar: Calendar,
+  news: Newspaper,
+  journey: Footprints,
   communities: Users,
   messages: Mail,
   notifications: Bell,

@@ -92,6 +92,27 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     description: 'Explore trending, seasonal, airing, upcoming, popular, and top-rated anime via AniList.',
     isImplemented: true,
   },
+  {
+    id: 'calendar',
+    label: 'Release Calendar',
+    shortLabel: 'Calendar',
+    description: 'Weekly airing schedules, episode countdowns, seasonal planner, and watch reminders.',
+    isImplemented: true,
+  },
+  {
+    id: 'news',
+    label: 'News Centre',
+    shortLabel: 'News',
+    description: 'Curated anime industry news, production reports, reviews, and saved bookmarks.',
+    isImplemented: true,
+  },
+  {
+    id: 'journey',
+    label: 'Watch Journey',
+    shortLabel: 'Journey',
+    description: 'Visual watch timeline, completion milestones, and viewing statistics.',
+    isImplemented: true,
+  },
 ];
 
 export const SAMPLE_DISCUSSIONS: DiscussionThread[] = [

@@ -2560,8 +2560,7 @@ service cloud.firestore {
       allow get: if isValidId(userId) && isOwner(userId);
       allow list: if false;
       allow create, update: if isValidId(userId)
-        && isOwner(userId)
-        && isEmailVerified();
+        && isOwner(userId);
       allow delete: if false;
     }
 
@@ -2569,8 +2568,21 @@ service cloud.firestore {
     match /userAnimeLists/{userId}/items/{itemId} {
       allow get, list: if isValidId(userId) && isOwner(userId);
       allow create, update, delete: if isValidId(userId)
-        && isOwner(userId)
-        && isEmailVerified();
+        && isOwner(userId);
+    }
+
+    // Build 07A: User Watch Reminders
+    match /userReminders/{userId}/items/{itemId} {
+      allow get, list: if isValidId(userId) && isOwner(userId);
+      allow create, update, delete: if isValidId(userId)
+        && isOwner(userId);
+    }
+
+    // Build 07A: User News Bookmarks
+    match /userNewsBookmarks/{userId}/items/{itemId} {
+      allow get, list: if isValidId(userId) && isOwner(userId);
+      allow create, update, delete: if isValidId(userId)
+        && isOwner(userId);
     }
 
     // Build 06: User Collections
@@ -2578,7 +2590,7 @@ service cloud.firestore {
       allow get: if resource != null
         && (resource.data.visibility == 'public' || (isSignedIn() && resource.data.ownerId == request.auth.uid));
       allow list: if true;
-      allow create: if isEmailVerified()
+      allow create: if isSignedIn()
         && incoming().ownerId == request.auth.uid;
       allow update, delete: if isSignedIn()
         && existing().ownerId == request.auth.uid;
@@ -2588,8 +2600,7 @@ service cloud.firestore {
     match /recommendationFeedback/{userId}/items/{itemId} {
       allow get, list: if isValidId(userId) && isOwner(userId);
       allow create, update, delete: if isValidId(userId)
-        && isOwner(userId)
-        && isEmailVerified();
+        && isOwner(userId);
     }
   }
 }

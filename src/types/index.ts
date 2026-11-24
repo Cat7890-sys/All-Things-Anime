@@ -8,7 +8,10 @@ export type NavDestinationId =
   | 'my-anime'
   | 'anime-tracker'
   | 'collections'
-  | 'personalisation';
+  | 'personalisation'
+  | 'calendar'
+  | 'news'
+  | 'journey';
 
 export interface NavDestination {
   id: NavDestinationId;
@@ -852,5 +855,47 @@ export interface PersonalAnimeInsights {
   recentWatchlistChanges: UserAnimeListItem[];
   totalCollections: number;
 }
+
+// ==========================================
+// Build 07A: Anime Companion Experience
+// ==========================================
+
+export interface WatchReminder {
+  id: string; // animeId_episodeNumber
+  userId: string;
+  animeId: string;
+  animeTitle: string;
+  animeCoverUrl: string;
+  episodeNumber: number;
+  airingAt: number; // Unix timestamp in seconds
+  offsetMinutes: number; // e.g. 0, 15, 60
+  isNotified?: boolean;
+  createdAt: Date | null;
+}
+
+export type NewsCategory = 'Industry' | 'Releases' | 'Reviews' | 'Interviews' | 'Events';
+
+export interface AnimeNewsArticle {
+  id: string;
+  title: string;
+  source: string;
+  sourceUrl: string;
+  category: NewsCategory;
+  publishedAt: string;
+  summary: string;
+  imageUrl: string;
+  author: string;
+  isBookmarked?: boolean;
+}
+
+export interface WatchJourneyMilestone {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  achieved: boolean;
+  progressText: string;
+}
+
 
 

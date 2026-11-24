@@ -21,6 +21,9 @@ import { MyAnimeDashboardPage } from './pages/MyAnimeDashboardPage';
 import { AnimeTrackerPage } from './pages/AnimeTrackerPage';
 import { CollectionsPage } from './pages/CollectionsPage';
 import { PersonalisationPage } from './pages/PersonalisationPage';
+import { CalendarPage } from './pages/CalendarPage';
+import { NewsCenterPage } from './pages/NewsCenterPage';
+import { WatchJourneyPage } from './pages/WatchJourneyPage';
 import { NotificationToastContainer } from './components/notifications/NotificationToastContainer';
 import { subscribeToUserNotifications } from './services/notifications/notificationService';
 import type { NotificationRouteTarget } from './services/notifications/notificationRoutingService';
@@ -344,6 +347,23 @@ export default function App() {
       ) : activeDestination === 'personalisation' ? (
         <PersonalisationPage
           currentUserId={firebaseUser?.uid}
+          onNavigateDestination={handleSelectDestination}
+        />
+      ) : activeDestination === 'calendar' ? (
+        <CalendarPage
+          currentUserId={firebaseUser?.uid}
+          onOpenAuth={() => handleOpenAuth('login')}
+          onNavigateDestination={handleSelectDestination}
+        />
+      ) : activeDestination === 'news' ? (
+        <NewsCenterPage
+          currentUserId={firebaseUser?.uid}
+          onOpenAuth={() => handleOpenAuth('login')}
+        />
+      ) : activeDestination === 'journey' ? (
+        <WatchJourneyPage
+          currentUserId={firebaseUser?.uid}
+          onOpenAuth={() => handleOpenAuth('login')}
           onNavigateDestination={handleSelectDestination}
         />
       ) : (
