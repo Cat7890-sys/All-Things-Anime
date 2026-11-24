@@ -912,4 +912,262 @@ export function validateDefaultFeedTab(tab: string): string | null {
   return null;
 }
 
+// ==========================================
+// Build 08A: Where to Watch Validation
+// ==========================================
+
+export const STREAMING_REPORT_REASONS = [
+  'Geoblocked / Unavailable in Region',
+  'No Longer Free / Requires Subscription',
+  'Broken or Incorrect Official Link',
+  'Incorrect Country Mapping',
+  'Missing Verified Free Option',
+  'Other',
+] as const;
+
+export const STREAMING_REPORT_DETAILS_MAX = 500;
+
+export function validateCountryCode(code: string): string | null {
+  const normalized = (code || '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(normalized)) {
+    return 'Country code must be a valid 2-letter ISO code (e.g. ZA, US, JP).';
+  }
+  return null;
+}
+
+export function validateStreamingReportInput(input: {
+  animeId: number;
+  animeTitle: string;
+  countryCode: string;
+  reason: string;
+  details: string;
+}): string | null {
+  if (!Number.isInteger(input.animeId) || input.animeId <= 0) {
+    return 'A valid anime title selection is required.';
+  }
+  const title = (input.animeTitle || '').trim();
+  if (!title || title.length > 200) {
+    return 'Anime title must be between 1 and 200 characters.';
+  }
+  const countryErr = validateCountryCode(input.countryCode);
+  if (countryErr) return countryErr;
+
+  const reason = (input.reason || '').trim();
+  if (
+    !STREAMING_REPORT_REASONS.includes(
+      reason as (typeof STREAMING_REPORT_REASONS)[number]
+    )
+  ) {
+    return 'Please select an approved report reason.';
+  }
+
+  const details = (input.details || '').trim();
+  if (details.length > STREAMING_REPORT_DETAILS_MAX) {
+    return `Report details must be ${STREAMING_REPORT_DETAILS_MAX} characters or fewer.`;
+  }
+
+  return null;
+}
+
+// ==========================================
+// Build 08B: Legal, Complaints, Feedback & Admin Validation
+// ==========================================
+
+export function validateCopyrightComplaintInput(input: {
+  claimantName: string;
+  claimantEmail: string;
+  rightsHolderOrganization?: string;
+  workTitle: string;
+  targetType: string;
+  targetReference: string;
+  description: string;
+  goodFaithConfirmed: boolean;
+  accuracyConfirmed: boolean;
+}): string | null {
+  const name = (input.claimantName || '').trim();
+  if (name.length < 2 || name.length > 120) {
+    return 'Full legal or claimant name must be between 2 and 120 characters.';
+  }
+  const emailErr = validateEmail(input.claimantEmail || '');
+  if (emailErr) return emailErr;
+
+  if ((input.rightsHolderOrganization || '').trim().length > 160) {
+    return 'Rights holder or organisation name must be 160 characters or fewer.';
+  }
+  const workTitle = (input.workTitle || '').trim();
+  if (workTitle.length < 1 || workTitle.length > 200) {
+    return 'Copyrighted work title must be between 1 and 200 characters.';
+  }
+  const allowedTargets = [
+    'post',
+    'comment',
+    'community',
+    'collection',
+    'news',
+    'streaming_link',
+    'other',
+  ];
+  if (!allowedTargets.includes(input.targetType)) {
+    return 'Please select a valid target content type.';
+  }
+  const targetRef = (input.targetReference || '').trim();
+  if (targetRef.length < 1 || targetRef.length > 400) {
+    return 'Target reference or URL must be between 1 and 400 characters.';
+  }
+  const desc = (input.description || '').trim();
+  if (desc.length < 10 || desc.length > 1500) {
+    return 'Infringement description must be between 10 and 1500 characters.';
+  }
+  if (input.goodFaithConfirmed !== true || input.accuracyConfirmed !== true) {
+    return 'Both the good-faith belief and accuracy declarations must be confirmed before submitting.';
+  }
+  return null;
+}
+
+export function validateAccountDeletionInput(input: {
+  reason: string;
+  acknowledgedIrreversible: boolean;
+}): string | null {
+  if ((input.reason || '').trim().length > 500) {
+    return 'Deletion reason must be 500 characters or fewer.';
+  }
+  if (input.acknowledgedIrreversible !== true) {
+    return 'Please confirm that you understand account deletion is irreversible.';
+  }
+  return null;
+}
+
+export function validateUserFeedbackInput(input: {
+  category: string;
+  subject: string;
+  message: string;
+}): string | null {
+  const allowedCategories = [
+    'bug',
+    'feature_request',
+    'accessibility',
+    'safety',
+    'streaming',
+    'general',
+  ];
+  if (!allowedCategories.includes(input.category)) {
+    return 'Please select a valid feedback category.';
+  }
+  const subject = (input.subject || '').trim();
+  if (subject.length < 3 || subject.length > 140) {
+    return 'Subject must be between 3 and 140 characters.';
+  }
+  const message = (input.message || '').trim();
+  if (message.length < 10 || message.length > 1500) {
+    return 'Feedback message must be between 10 and 1500 characters.';
+  }
+  return null;
+}
+
+export function validateAdminNewsInput(input: {
+  title: string;
+  source: string;
+  sourceUrl?: string;
+  category: string;
+  publishedAt: string;
+  summary: string;
+  imageUrl?: string;
+  author: string;
+  status: string;
+}): string | null {
+  const title = (input.title || '').trim();
+  if (title.length < 4 || title.length > 180) {
+    return 'Article title must be between 4 and 180 characters.';
+  }
+  const source = (input.source || '').trim();
+  if (source.length < 2 || source.length > 100) {
+    return 'Source name must be between 2 and 100 characters.';
+  }
+  const srcUrlErr = validateOptionalHttpsUrl(input.sourceUrl, 500, 'Source URL');
+  if (srcUrlErr) return srcUrlErr;
+
+  const allowedCats = ['Industry', 'Releases', 'Reviews', 'Interviews', 'Events'];
+  if (!allowedCats.includes(input.category)) {
+    return 'Please select an approved news category.';
+  }
+  const pub = (input.publishedAt || '').trim();
+  if (pub.length < 2 || pub.length > 60) {
+    return 'Publication date label must be between 2 and 60 characters.';
+  }
+  const summary = (input.summary || '').trim();
+  if (summary.length < 10 || summary.length > 1500) {
+    return 'Article summary must be between 10 and 1500 characters.';
+  }
+  const imgErr = validateOptionalHttpsUrl(input.imageUrl, 600, 'Image URL');
+  if (imgErr) return imgErr;
+
+  const author = (input.author || '').trim();
+  if (author.length < 2 || author.length > 80) {
+    return 'Author name must be between 2 and 80 characters.';
+  }
+  if (!['published', 'draft', 'archived'].includes(input.status)) {
+    return 'Article status must be published, draft, or archived.';
+  }
+  return null;
+}
+
+export function validateAnnouncementInput(input: {
+  title: string;
+  body: string;
+  kind: string;
+  audience: string;
+  targetUserIds?: string[];
+}): string | null {
+  const title = (input.title || '').trim();
+  if (title.length < 3 || title.length > 120) {
+    return 'Announcement title must be between 3 and 120 characters.';
+  }
+  const body = (input.body || '').trim();
+  if (body.length < 5 || body.length > 1200) {
+    return 'Announcement body must be between 5 and 1200 characters.';
+  }
+  if (!['general', 'maintenance', 'safety', 'feature'].includes(input.kind)) {
+    return 'Please select a valid announcement type.';
+  }
+  if (!['all_users', 'selected_users'].includes(input.audience)) {
+    return 'Please select a valid target audience.';
+  }
+  if (
+    input.audience === 'selected_users' &&
+    (!Array.isArray(input.targetUserIds) || input.targetUserIds.length === 0)
+  ) {
+    return 'Provide at least one target user UID when targeting selected users.';
+  }
+  if (Array.isArray(input.targetUserIds) && input.targetUserIds.length > 50) {
+    return 'Targeted announcements support up to 50 recipient UIDs per notice.';
+  }
+  return null;
+}
+
+export function validateSecurityIncidentInput(input: {
+  title: string;
+  severity: string;
+  status: string;
+  summary: string;
+  remediationSteps: string;
+}): string | null {
+  const title = (input.title || '').trim();
+  if (title.length < 4 || title.length > 160) {
+    return 'Incident title must be between 4 and 160 characters.';
+  }
+  if (!['low', 'medium', 'high', 'critical'].includes(input.severity)) {
+    return 'Select a valid severity level.';
+  }
+  if (!['investigating', 'contained', 'resolved'].includes(input.status)) {
+    return 'Select a valid incident status.';
+  }
+  const summary = (input.summary || '').trim();
+  if (summary.length < 10 || summary.length > 1500) {
+    return 'Incident summary must be between 10 and 1500 characters.';
+  }
+  if ((input.remediationSteps || '').trim().length > 1500) {
+    return 'Remediation steps must be 1500 characters or fewer.';
+  }
+  return null;
+}
 

@@ -1585,6 +1585,224 @@
         "timezone",
         "updatedAt"
       ]
+    },
+    "WhereToWatchPreference": {
+      "title": "WhereToWatchPreference",
+      "description": "Owner-only preferred country/region setting for free streaming availability lookup.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "countryCode": { "type": "string", "pattern": "^[A-Z]{2}$" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "countryCode", "updatedAt"]
+    },
+    "StreamingAvailabilityReport": {
+      "title": "StreamingAvailabilityReport",
+      "description": "User-submitted availability correction report stored privately for moderator review.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "animeId": { "type": "integer", "minimum": 1 },
+        "animeTitle": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "countryCode": { "type": "string", "pattern": "^[A-Z]{2}$" },
+        "providerId": { "type": "string", "maxLength": 128 },
+        "providerName": { "type": "string", "maxLength": 120 },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "details": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["open", "reviewed"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "userId",
+        "animeId",
+        "animeTitle",
+        "countryCode",
+        "reason",
+        "details",
+        "status",
+        "createdAt"
+      ]
+    },
+    "StreamingProviderRecord": {
+      "title": "StreamingProviderRecord",
+      "description": "Admin-verified legitimate free anime streaming provider directory entry.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "shortLabel": { "type": "string", "minLength": 1, "maxLength": 10 },
+        "accentHex": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+        "description": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "supportedCountries": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[A-Z]{2}$" }
+        },
+        "officialUrl": { "type": "string", "format": "uri", "maxLength": 500 },
+        "allowedDomains": {
+          "type": "array",
+          "items": { "type": "string", "maxLength": 120 }
+        },
+        "accessModel": { "type": "string", "enum": ["Free", "Free with Ads"] },
+        "isFree": { "type": "boolean" },
+        "isLegitimate": { "type": "boolean" },
+        "verificationStatus": {
+          "type": "string",
+          "enum": ["verified", "unverified", "needs_review"]
+        },
+        "lastVerifiedAt": { "type": "string", "minLength": 4, "maxLength": 40 }
+      },
+      "required": [
+        "id",
+        "name",
+        "shortLabel",
+        "accentHex",
+        "description",
+        "supportedCountries",
+        "officialUrl",
+        "allowedDomains",
+        "accessModel",
+        "isFree",
+        "isLegitimate",
+        "verificationStatus",
+        "lastVerifiedAt"
+      ]
+    },
+    "StreamingAvailabilityRecord": {
+      "title": "StreamingAvailabilityRecord",
+      "description": "Admin-verified title-and-country free legal streaming availability record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "animeId": { "type": "integer", "minimum": 1 },
+        "animeTitle": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "providerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "providerName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "countryCode": { "type": "string", "pattern": "^[A-Z]{2}$" },
+        "isFree": { "type": "boolean" },
+        "isLegitimate": { "type": "boolean" },
+        "officialUrl": { "type": "string", "format": "uri", "maxLength": 500 },
+        "accessModel": { "type": "string", "enum": ["Free", "Free with Ads"] },
+        "availabilityType": {
+          "type": "string",
+          "enum": ["full_series", "selected_episodes", "promotional", "movie"]
+        },
+        "verificationStatus": {
+          "type": "string",
+          "enum": ["verified", "unverified", "needs_review"]
+        },
+        "lastVerifiedAt": { "type": "string", "minLength": 4, "maxLength": 40 },
+        "source": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "notes": { "type": "string", "maxLength": 300 }
+      },
+      "required": [
+        "id",
+        "animeId",
+        "animeTitle",
+        "providerId",
+        "providerName",
+        "countryCode",
+        "isFree",
+        "isLegitimate",
+        "officialUrl",
+        "accessModel",
+        "availabilityType",
+        "verificationStatus",
+        "lastVerifiedAt",
+        "source"
+      ]
+    },
+    "AdminAccount": {
+      "title": "AdminAccount",
+      "description": "Authorized administrator seat binding (max 3 seats: owner, platform_admin, content_admin).",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "seatId": { "type": "string", "enum": ["owner", "platform_admin", "content_admin"] },
+        "role": { "type": "string", "enum": ["owner", "platform_admin", "content_admin"] },
+        "email": { "type": "string", "format": "email", "maxLength": 254 },
+        "displayLabel": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "permissions": { "type": "array", "items": { "type": "string" } },
+        "status": { "type": "string", "enum": ["active", "restricted", "revoked"] },
+        "assignedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "seatId", "role", "email", "permissions", "status", "assignedByUid", "updatedAt"]
+    },
+    "AdminAuditLog": {
+      "title": "AdminAuditLog",
+      "description": "Append-only tamper-resistant record of administrator actions.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "actorUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "actorRole": { "type": "string", "enum": ["owner", "platform_admin", "content_admin"] },
+        "actorSeatId": { "type": "string", "enum": ["owner", "platform_admin", "content_admin"] },
+        "actionType": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "targetCollection": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "targetId": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 400 },
+        "source": { "type": "string", "enum": ["cloud_function", "admin_console"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "actorUid", "actorRole", "actorSeatId", "actionType", "targetCollection", "targetId", "summary", "source", "createdAt"]
+    },
+    "CopyrightComplaint": {
+      "title": "CopyrightComplaint",
+      "description": "Rights holder copyright and takedown complaint record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "reporterUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "claimantName": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "claimantEmail": { "type": "string", "format": "email", "maxLength": 254 },
+        "workTitle": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "targetType": { "type": "string", "enum": ["post", "comment", "community", "collection", "news", "streaming_link", "other"] },
+        "targetReference": { "type": "string", "minLength": 1, "maxLength": 400 },
+        "description": { "type": "string", "minLength": 10, "maxLength": 1500 },
+        "status": { "type": "string", "enum": ["pending", "under_review", "action_taken", "dismissed", "escalated"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "reporterUid", "claimantName", "claimantEmail", "workTitle", "targetType", "targetReference", "description", "status", "createdAt", "updatedAt"]
+    },
+    "PlatformAnnouncement": {
+      "title": "PlatformAnnouncement",
+      "description": "Admin-managed platform and maintenance announcements.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "title": { "type": "string", "minLength": 3, "maxLength": 120 },
+        "body": { "type": "string", "minLength": 5, "maxLength": 1200 },
+        "kind": { "type": "string", "enum": ["general", "maintenance", "safety", "feature"] },
+        "audience": { "type": "string", "enum": ["all_users", "selected_users"] },
+        "isActive": { "type": "boolean" },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "body", "kind", "audience", "isActive", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "CatalogueOverride": {
+      "title": "CatalogueOverride",
+      "description": "ATA editorial overrides, metadata corrections, and featured flags layered atop AniList records.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "animeId": { "type": "integer", "minimum": 1 },
+        "animeTitle": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "isFeatured": { "type": "boolean" },
+        "isTrendingOverride": { "type": "boolean" },
+        "isSeasonalHighlight": { "type": "boolean" },
+        "recommendationPinned": { "type": "boolean" },
+        "isHiddenFromCatalogue": { "type": "boolean" },
+        "metadataIssueFlag": { "type": "boolean" },
+        "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "animeId", "animeTitle", "isFeatured", "isTrendingOverride", "isSeasonalHighlight", "recommendationPinned", "isHiddenFromCatalogue", "metadataIssueFlag", "updatedByUid", "updatedAt"]
     }
   },
   "firestore": {
@@ -1761,6 +1979,82 @@
         "$ref": "#/entities/NotificationSettings"
       },
       "description": "Owner-only notification category, toast, and quiet-hours preferences."
+    },
+    "/userWhereToWatchPrefs/{userId}": {
+      "schema": {
+        "$ref": "#/entities/WhereToWatchPreference"
+      },
+      "description": "Owner-only preferred country/region preference for Where to Watch."
+    },
+    "/streamingReports/{reportId}": {
+      "schema": {
+        "$ref": "#/entities/StreamingAvailabilityReport"
+      },
+      "description": "Private user-submitted availability correction reports reviewed by ATA moderators."
+    },
+    "/streamingProviders/{providerId}": {
+      "schema": {
+        "$ref": "#/entities/StreamingProviderRecord"
+      },
+      "description": "Admin-managed verified free legal streaming providers."
+    },
+    "/streamingAvailability/{availabilityId}": {
+      "schema": {
+        "$ref": "#/entities/StreamingAvailabilityRecord"
+      },
+      "description": "Admin-managed verified free streaming availability mappings by anime ID and country."
+    },
+    "/admins/{userId}": {
+      "schema": { "$ref": "#/entities/AdminAccount" },
+      "description": "Server/Owner-provisioned administrator role & permission records."
+    },
+    "/adminSeats/{seatId}": {
+      "schema": { "$ref": "#/entities/AdminAccount" },
+      "description": "Three designated administrator seats (owner, platform_admin, content_admin)."
+    },
+    "/adminAuditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AdminAuditLog" },
+      "description": "Immutable audit logs of administrator actions."
+    },
+    "/adminLoginEvents/{eventId}": {
+      "schema": { "$ref": "#/entities/AdminAuditLog" },
+      "description": "Server-written administrator login, logout, and denial events."
+    },
+    "/moderationDecisions/{decisionId}": {
+      "schema": { "$ref": "#/entities/AdminAuditLog" },
+      "description": "Immutable evidence-backed moderation decision log."
+    },
+    "/copyrightComplaints/{complaintId}": {
+      "schema": { "$ref": "#/entities/CopyrightComplaint" },
+      "description": "Rights holder copyright infringement and takedown complaints."
+    },
+    "/accountDeletionRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/ModerationReport" },
+      "description": "User-submitted account deletion requests for admin processing."
+    },
+    "/userFeedback/{feedbackId}": {
+      "schema": { "$ref": "#/entities/ModerationReport" },
+      "description": "User feedback, bug, and accessibility reports."
+    },
+    "/platformAnnouncements/{announcementId}": {
+      "schema": { "$ref": "#/entities/PlatformAnnouncement" },
+      "description": "Platform-wide and targeted maintenance/safety announcements."
+    },
+    "/catalogueOverrides/{animeId}": {
+      "schema": { "$ref": "#/entities/CatalogueOverride" },
+      "description": "Editorial metadata corrections and featured flags separate from AniList source data."
+    },
+    "/adminNews/{articleId}": {
+      "schema": { "$ref": "#/entities/PlatformAnnouncement" },
+      "description": "Admin-authored anime news dispatches."
+    },
+    "/legalDocuments/{docSlug}": {
+      "schema": { "$ref": "#/entities/PlatformAnnouncement" },
+      "description": "Public legal and community guideline updates."
+    },
+    "/securityIncidents/{incidentId}": {
+      "schema": { "$ref": "#/entities/PlatformAnnouncement" },
+      "description": "Security incident containment & POPIA Section 22 response register."
     }
   }
 }

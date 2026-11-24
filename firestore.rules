@@ -124,6 +124,224 @@ service cloud.firestore {
       return url is string && url.size() <= maxLen && (url == '' || url.matches('^https://.+'));
     }
 
+    function isAdminSeatValid(role) {
+      return role in ['owner', 'platform_admin', 'content_admin'];
+    }
+
+    function isAdminDocActive() {
+      return isEmailVerified()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.status == 'active'
+        && isAdminSeatValid(get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role);
+    }
+
+    function isOwnerAdmin() {
+      return isAdminDocActive()
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'owner';
+    }
+
+    function hasAdminPermission(permission) {
+      return isOwnerAdmin()
+        || (
+          isAdminDocActive()
+          && permission in get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.permissions
+        );
+    }
+
+    function isStreamingAdmin() {
+      return hasAdminPermission('where_to_watch')
+        || hasAdminPermission('country_availability')
+        || hasAdminPermission('streaming_verification');
+    }
+
+    function isValidCountryCode(code) {
+      return code is string && code.matches('^[A-Z]{2}$');
+    }
+
+    function isApprovedOfficialStreamingDomainUrl(url) {
+      return url is string
+        && url.size() >= 10
+        && url.size() <= 500
+        && url.matches('^https://(www\\.)?(youtube\\.com|tubitv\\.com|pluto\\.tv|retrocrush\\.tv|abema\\.tv|bilibili\\.tv|itv\\.com|bbc\\.co\\.uk|iview\\.abc\\.net\\.au)(/.*)?$');
+    }
+
+    function isValidWhereToWatchPrefs(data, userId) {
+      return data.keys().hasAll(['userId', 'countryCode', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'countryCode', 'updatedAt'])
+        && data.userId == userId
+        && isValidCountryCode(data.countryCode)
+        && data.updatedAt == request.time;
+    }
+
+    function isValidStreamingReport(data, reportId) {
+      return data.keys().hasAll([
+          'id',
+          'userId',
+          'animeId',
+          'animeTitle',
+          'countryCode',
+          'providerId',
+          'providerName',
+          'reason',
+          'details',
+          'status',
+          'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'userId',
+          'animeId',
+          'animeTitle',
+          'countryCode',
+          'providerId',
+          'providerName',
+          'reason',
+          'details',
+          'status',
+          'createdAt'
+        ])
+        && data.id == reportId
+        && data.animeId is int
+        && data.animeId > 0
+        && data.animeTitle is string
+        && data.animeTitle.size() >= 1
+        && data.animeTitle.size() <= 200
+        && isValidCountryCode(data.countryCode)
+        && data.providerId is string
+        && data.providerId.size() <= 128
+        && data.providerName is string
+        && data.providerName.size() <= 120
+        && data.reason is string
+        && data.reason.size() >= 1
+        && data.reason.size() <= 120
+        && data.details is string
+        && data.details.size() <= 500
+        && data.status == 'open';
+    }
+
+    function isValidStreamingProvider(data, providerId) {
+      return data.keys().hasAll([
+          'id',
+          'name',
+          'shortLabel',
+          'accentHex',
+          'description',
+          'supportedCountries',
+          'officialUrl',
+          'allowedDomains',
+          'accessModel',
+          'isFree',
+          'isLegitimate',
+          'verificationStatus',
+          'lastVerifiedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'name',
+          'shortLabel',
+          'accentHex',
+          'logoUrl',
+          'description',
+          'supportedCountries',
+          'officialUrl',
+          'allowedDomains',
+          'accessModel',
+          'isFree',
+          'isLegitimate',
+          'verificationStatus',
+          'lastVerifiedAt'
+        ])
+        && data.id == providerId
+        && data.name is string
+        && data.name.size() >= 1
+        && data.name.size() <= 120
+        && data.shortLabel is string
+        && data.shortLabel.size() >= 1
+        && data.shortLabel.size() <= 10
+        && data.accentHex is string
+        && data.accentHex.matches('^#[0-9a-fA-F]{6}$')
+        && (!('logoUrl' in data) || isValidOptionalHttpsUrl(data.logoUrl, 500))
+        && data.description is string
+        && data.description.size() >= 1
+        && data.description.size() <= 500
+        && data.supportedCountries is list
+        && data.supportedCountries.size() >= 1
+        && data.supportedCountries.size() <= 100
+        && data.allowedDomains is list
+        && data.allowedDomains.size() >= 1
+        && data.allowedDomains.size() <= 10
+        && isApprovedOfficialStreamingDomainUrl(data.officialUrl)
+        && data.accessModel in ['Free', 'Free with Ads']
+        && data.isFree == true
+        && data.isLegitimate == true
+        && data.verificationStatus in ['verified', 'unverified', 'needs_review']
+        && data.lastVerifiedAt is string
+        && data.lastVerifiedAt.size() >= 4
+        && data.lastVerifiedAt.size() <= 40;
+    }
+
+    function isValidStreamingAvailability(data, availabilityId) {
+      return data.keys().hasAll([
+          'id',
+          'animeId',
+          'animeTitle',
+          'providerId',
+          'providerName',
+          'countryCode',
+          'isFree',
+          'isLegitimate',
+          'officialUrl',
+          'accessModel',
+          'availabilityType',
+          'verificationStatus',
+          'lastVerifiedAt',
+          'source'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'animeId',
+          'animeTitle',
+          'providerId',
+          'providerName',
+          'countryCode',
+          'isFree',
+          'isLegitimate',
+          'officialUrl',
+          'accessModel',
+          'availabilityType',
+          'verificationStatus',
+          'lastVerifiedAt',
+          'source',
+          'notes'
+        ])
+        && data.id == availabilityId
+        && data.animeId is int
+        && data.animeId > 0
+        && data.animeTitle is string
+        && data.animeTitle.size() >= 1
+        && data.animeTitle.size() <= 200
+        && data.providerId is string
+        && data.providerId.size() >= 1
+        && data.providerId.size() <= 128
+        && data.providerName is string
+        && data.providerName.size() >= 1
+        && data.providerName.size() <= 120
+        && isValidCountryCode(data.countryCode)
+        && data.isFree == true
+        && data.isLegitimate == true
+        && isApprovedOfficialStreamingDomainUrl(data.officialUrl)
+        && data.accessModel in ['Free', 'Free with Ads']
+        && data.availabilityType in ['full_series', 'selected_episodes', 'promotional', 'movie']
+        && data.verificationStatus in ['verified', 'unverified', 'needs_review']
+        && data.lastVerifiedAt is string
+        && data.lastVerifiedAt.size() >= 4
+        && data.lastVerifiedAt.size() <= 40
+        && data.source is string
+        && data.source.size() >= 1
+        && data.source.size() <= 120
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 300));
+    }
+
     function isValidCommunityCategory(category) {
       return category in [
         'Shonen',
@@ -208,6 +426,10 @@ service cloud.firestore {
           'avatarUrl',
           'emailVerified',
           'accountStatus',
+          'suspensionReason',
+          'suspendedUntil',
+          'banReason',
+          'isVerifiedBadge',
           'createdAt',
           'updatedAt'
         ])
@@ -226,7 +448,10 @@ service cloud.firestore {
         && data.bio.size() <= 280
         && isValidOptionalHttpsUrl(data.avatarUrl, 500)
         && data.emailVerified is bool
-        && data.accountStatus in ['pending_verification', 'active']
+        && data.accountStatus in ['pending_verification', 'active', 'suspended', 'banned', 'deletion_requested']
+        && (!('suspensionReason' in data) || (data.suspensionReason is string && data.suspensionReason.size() <= 300))
+        && (!('banReason' in data) || (data.banReason is string && data.banReason.size() <= 300))
+        && (!('isVerifiedBadge' in data) || data.isVerifiedBadge is bool)
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -828,12 +1053,15 @@ service cloud.firestore {
           'reason',
           'details',
           'status',
+          'reviewNotes',
+          'reviewedByUid',
+          'reviewedAt',
           'createdAt'
         ])
         && data.id is string
         && data.id == reportId
         && isValidId(data.reporterId)
-        && data.targetType in ['post', 'comment', 'community', 'message', 'conversation']
+        && data.targetType in ['post', 'comment', 'community', 'message', 'conversation', 'profile', 'collection']
         && isValidConversationId(data.targetId)
         && isValidConversationId(data.postId)
         && (!('communityId' in data) || (data.communityId is string && data.communityId.size() <= 128))
@@ -846,12 +1074,356 @@ service cloud.firestore {
           'hate_speech',
           'inappropriate_community',
           'rule_violation',
+          'copyright_infringement',
+          'impersonation',
           'other'
         ]
         && data.details is string
         && data.details.size() <= 500
-        && data.status == 'open'
+        && data.status in ['open', 'pending', 'under_review', 'action_taken', 'dismissed', 'escalated']
+        && (!('reviewNotes' in data) || (data.reviewNotes is string && data.reviewNotes.size() <= 500))
+        && (!('reviewedByUid' in data) || (data.reviewedByUid is string && data.reviewedByUid.size() <= 128))
         && data.createdAt is timestamp;
+    }
+
+    function isValidAdminAuditLog(data, logId) {
+      return data.keys().hasAll([
+          'id',
+          'actorUid',
+          'actorRole',
+          'actorSeatId',
+          'actionType',
+          'targetCollection',
+          'targetId',
+          'summary',
+          'source',
+          'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'actorUid',
+          'actorRole',
+          'actorSeatId',
+          'actionType',
+          'targetCollection',
+          'targetId',
+          'summary',
+          'source',
+          'createdAt'
+        ])
+        && data.id == logId
+        && isValidId(data.actorUid)
+        && data.actorRole in ['owner', 'platform_admin', 'content_admin']
+        && data.actorSeatId in ['owner', 'platform_admin', 'content_admin']
+        && data.actionType is string && data.actionType.size() >= 2 && data.actionType.size() <= 80
+        && data.targetCollection is string && data.targetCollection.size() >= 1 && data.targetCollection.size() <= 80
+        && data.targetId is string && data.targetId.size() >= 1 && data.targetId.size() <= 200
+        && data.summary is string && data.summary.size() >= 1 && data.summary.size() <= 400
+        && data.source in ['cloud_function', 'admin_console']
+        && data.createdAt is timestamp;
+    }
+
+    function isValidModerationDecision(data, decisionId) {
+      return data.keys().hasAll(['id', 'targetType', 'targetId', 'action', 'reason', 'evidenceSummary', 'actorUid', 'actorRole', 'createdAt'])
+        && data.keys().hasOnly(['id', 'targetType', 'targetId', 'action', 'reason', 'evidenceSummary', 'actorUid', 'actorRole', 'createdAt'])
+        && data.id == decisionId
+        && data.targetType is string && data.targetType.size() >= 1 && data.targetType.size() <= 60
+        && data.targetId is string && data.targetId.size() >= 1 && data.targetId.size() <= 200
+        && data.action in ['remove', 'restore', 'dismiss', 'escalate', 'suspend', 'ban', 'restore_account']
+        && data.reason is string && data.reason.size() >= 1 && data.reason.size() <= 400
+        && data.evidenceSummary is string && data.evidenceSummary.size() >= 1 && data.evidenceSummary.size() <= 600
+        && isValidId(data.actorUid)
+        && data.actorRole in ['owner', 'platform_admin', 'content_admin']
+        && data.createdAt is timestamp;
+    }
+
+    function isValidCopyrightComplaint(data, complaintId) {
+      return data.keys().hasAll([
+          'id',
+          'reporterUid',
+          'claimantName',
+          'claimantEmail',
+          'rightsHolderOrganization',
+          'workTitle',
+          'targetType',
+          'targetReference',
+          'description',
+          'goodFaithConfirmed',
+          'accuracyConfirmed',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'reporterUid',
+          'claimantName',
+          'claimantEmail',
+          'rightsHolderOrganization',
+          'workTitle',
+          'targetType',
+          'targetReference',
+          'description',
+          'goodFaithConfirmed',
+          'accuracyConfirmed',
+          'status',
+          'resolutionNotes',
+          'handledByUid',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.id == complaintId
+        && isValidId(data.reporterUid)
+        && data.claimantName is string && data.claimantName.size() >= 2 && data.claimantName.size() <= 120
+        && data.claimantEmail is string && data.claimantEmail.size() >= 5 && data.claimantEmail.size() <= 254
+        && data.rightsHolderOrganization is string && data.rightsHolderOrganization.size() <= 160
+        && data.workTitle is string && data.workTitle.size() >= 1 && data.workTitle.size() <= 200
+        && data.targetType in ['post', 'comment', 'community', 'collection', 'news', 'streaming_link', 'other']
+        && data.targetReference is string && data.targetReference.size() >= 1 && data.targetReference.size() <= 400
+        && data.description is string && data.description.size() >= 10 && data.description.size() <= 1500
+        && data.goodFaithConfirmed == true
+        && data.accuracyConfirmed == true
+        && data.status in ['pending', 'under_review', 'action_taken', 'dismissed', 'escalated']
+        && (!('resolutionNotes' in data) || (data.resolutionNotes is string && data.resolutionNotes.size() <= 800))
+        && (!('handledByUid' in data) || (data.handledByUid is string && data.handledByUid.size() <= 128))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAccountDeletionRequest(data, requestId) {
+      return data.keys().hasAll([
+          'id',
+          'userId',
+          'username',
+          'email',
+          'reason',
+          'acknowledgedIrreversible',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'userId',
+          'username',
+          'email',
+          'reason',
+          'acknowledgedIrreversible',
+          'status',
+          'reviewNotes',
+          'reviewedByUid',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.id == requestId
+        && isValidId(data.userId)
+        && data.username is string && data.username.size() <= 40
+        && data.email is string && data.email.size() >= 5 && data.email.size() <= 254
+        && data.reason is string && data.reason.size() <= 500
+        && data.acknowledgedIrreversible == true
+        && data.status in ['pending', 'under_review', 'completed', 'declined']
+        && (!('reviewNotes' in data) || (data.reviewNotes is string && data.reviewNotes.size() <= 500))
+        && (!('reviewedByUid' in data) || (data.reviewedByUid is string && data.reviewedByUid.size() <= 128))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUserFeedback(data, feedbackId) {
+      return data.keys().hasAll([
+          'id',
+          'userId',
+          'category',
+          'subject',
+          'message',
+          'pageContext',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'userId',
+          'category',
+          'subject',
+          'message',
+          'pageContext',
+          'status',
+          'adminNotes',
+          'reviewedByUid',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.id == feedbackId
+        && isValidId(data.userId)
+        && data.category in ['bug', 'feature_request', 'accessibility', 'safety', 'streaming', 'general']
+        && data.subject is string && data.subject.size() >= 3 && data.subject.size() <= 140
+        && data.message is string && data.message.size() >= 10 && data.message.size() <= 1500
+        && data.pageContext is string && data.pageContext.size() <= 120
+        && data.status in ['open', 'reviewed', 'resolved']
+        && (!('adminNotes' in data) || (data.adminNotes is string && data.adminNotes.size() <= 600))
+        && (!('reviewedByUid' in data) || (data.reviewedByUid is string && data.reviewedByUid.size() <= 128))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPlatformAnnouncement(data, announcementId) {
+      return data.keys().hasAll([
+          'id',
+          'title',
+          'body',
+          'kind',
+          'audience',
+          'targetUserIds',
+          'isActive',
+          'sendInAppNotification',
+          'createdByUid',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'title',
+          'body',
+          'kind',
+          'audience',
+          'targetUserIds',
+          'isActive',
+          'sendInAppNotification',
+          'createdByUid',
+          'createdAt',
+          'updatedAt',
+          'archivedAt'
+        ])
+        && data.id == announcementId
+        && data.title is string && data.title.size() >= 3 && data.title.size() <= 120
+        && data.body is string && data.body.size() >= 5 && data.body.size() <= 1200
+        && data.kind in ['general', 'maintenance', 'safety', 'feature']
+        && data.audience in ['all_users', 'selected_users']
+        && data.targetUserIds is list && data.targetUserIds.size() <= 50
+        && data.isActive is bool
+        && data.sendInAppNotification is bool
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCatalogueOverride(data, animeId) {
+      return data.keys().hasAll([
+          'id',
+          'animeId',
+          'animeTitle',
+          'isFeatured',
+          'isTrendingOverride',
+          'isSeasonalHighlight',
+          'recommendationPinned',
+          'isHiddenFromCatalogue',
+          'metadataIssueFlag',
+          'updatedByUid',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'animeId',
+          'animeTitle',
+          'overrideTitle',
+          'overrideSynopsis',
+          'editorialNote',
+          'isFeatured',
+          'isTrendingOverride',
+          'isSeasonalHighlight',
+          'recommendationPinned',
+          'isHiddenFromCatalogue',
+          'metadataIssueFlag',
+          'updatedByUid',
+          'updatedAt'
+        ])
+        && data.id == animeId
+        && data.animeId is int && data.animeId > 0
+        && data.animeTitle is string && data.animeTitle.size() >= 1 && data.animeTitle.size() <= 200
+        && (!('overrideTitle' in data) || (data.overrideTitle is string && data.overrideTitle.size() <= 200))
+        && (!('overrideSynopsis' in data) || (data.overrideSynopsis is string && data.overrideSynopsis.size() <= 2000))
+        && (!('editorialNote' in data) || (data.editorialNote is string && data.editorialNote.size() <= 500))
+        && data.isFeatured is bool
+        && data.isTrendingOverride is bool
+        && data.isSeasonalHighlight is bool
+        && data.recommendationPinned is bool
+        && data.isHiddenFromCatalogue is bool
+        && data.metadataIssueFlag is bool
+        && isValidId(data.updatedByUid)
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAdminNewsArticle(data, articleId) {
+      return data.keys().hasAll([
+          'id',
+          'title',
+          'source',
+          'sourceUrl',
+          'category',
+          'publishedAt',
+          'summary',
+          'imageUrl',
+          'author',
+          'status',
+          'isFeatured',
+          'createdByUid',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'title',
+          'source',
+          'sourceUrl',
+          'category',
+          'publishedAt',
+          'summary',
+          'imageUrl',
+          'author',
+          'status',
+          'isFeatured',
+          'createdByUid',
+          'updatedAt'
+        ])
+        && data.id == articleId
+        && data.title is string && data.title.size() >= 4 && data.title.size() <= 180
+        && data.source is string && data.source.size() >= 2 && data.source.size() <= 100
+        && isValidOptionalHttpsUrl(data.sourceUrl, 500)
+        && data.category in ['Industry', 'Releases', 'Reviews', 'Interviews', 'Events']
+        && data.publishedAt is string && data.publishedAt.size() >= 2 && data.publishedAt.size() <= 60
+        && data.summary is string && data.summary.size() >= 10 && data.summary.size() <= 1500
+        && isValidOptionalHttpsUrl(data.imageUrl, 600)
+        && data.author is string && data.author.size() >= 2 && data.author.size() <= 80
+        && data.status in ['published', 'draft', 'archived']
+        && data.isFeatured is bool
+        && isValidId(data.createdByUid)
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidLegalDocOverride(data, docSlug) {
+      return data.keys().hasAll(['id', 'title', 'customSummary', 'guidelinesList', 'lastUpdatedLabel', 'updatedByUid', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'title', 'customSummary', 'guidelinesList', 'lastUpdatedLabel', 'updatedByUid', 'updatedAt'])
+        && data.id == docSlug
+        && data.title is string && data.title.size() >= 2 && data.title.size() <= 120
+        && data.customSummary is string && data.customSummary.size() <= 2000
+        && data.guidelinesList is list && data.guidelinesList.size() <= 30
+        && data.lastUpdatedLabel is string && data.lastUpdatedLabel.size() >= 4 && data.lastUpdatedLabel.size() <= 60
+        && isValidId(data.updatedByUid)
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSecurityIncident(data, incidentId) {
+      return data.keys().hasAll(['id', 'title', 'severity', 'status', 'summary', 'remediationSteps', 'regulatorsNotified', 'reportedByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'title', 'severity', 'status', 'summary', 'remediationSteps', 'regulatorsNotified', 'reportedByUid', 'createdAt', 'updatedAt'])
+        && data.id == incidentId
+        && data.title is string && data.title.size() >= 4 && data.title.size() <= 160
+        && data.severity in ['low', 'medium', 'high', 'critical']
+        && data.status in ['investigating', 'contained', 'resolved']
+        && data.summary is string && data.summary.size() >= 10 && data.summary.size() <= 1500
+        && data.remediationSteps is string && data.remediationSteps.size() <= 1500
+        && data.regulatorsNotified is bool
+        && isValidId(data.reportedByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
     }
 
     function isValidCommunity(data, communityId) {
@@ -1032,10 +1604,10 @@ service cloud.firestore {
         && data.updatedAt is timestamp;
     }
 
-    // Owner-only private account document (protects email and account status)
+    // Owner-only private account document (protects email and account status; authorized admin read/moderate)
     match /users/{userId} {
-      allow get: if isValidId(userId) && isOwner(userId);
-      allow list: if false;
+      allow get: if isValidId(userId) && (isOwner(userId) || hasAdminPermission('user_management') || hasAdminPermission('account_moderation'));
+      allow list: if hasAdminPermission('user_management') || hasAdminPermission('account_moderation');
 
       allow create: if isValidId(userId)
         && isOwner(userId)
@@ -1043,13 +1615,15 @@ service cloud.firestore {
         && incoming().email.lower() == request.auth.token.email.lower()
         && incoming().emailVerified == false
         && incoming().accountStatus == 'pending_verification'
+        && !('isVerifiedBadge' in incoming())
+        && !('suspensionReason' in incoming())
+        && !('banReason' in incoming())
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time
         && existsAfter(/databases/$(database)/documents/usernames/$(incoming().usernameLowercase))
         && existsAfter(/databases/$(database)/documents/publicProfiles/$(userId));
 
       allow update: if isValidId(userId)
-        && isOwner(userId)
         && isEmailVerified()
         && isValidUserAccount(incoming(), userId)
         && incoming().uid == existing().uid
@@ -1060,7 +1634,8 @@ service cloud.firestore {
         && incoming().updatedAt == request.time
         && (
           (
-            existing().emailVerified == false
+            isOwner(userId)
+            && existing().emailVerified == false
             && incoming().emailVerified == true
             && existing().accountStatus == 'pending_verification'
             && incoming().accountStatus == 'active'
@@ -1068,7 +1643,8 @@ service cloud.firestore {
           )
           ||
           (
-            existing().emailVerified == true
+            isOwner(userId)
+            && existing().emailVerified == true
             && existing().accountStatus == 'active'
             && incoming().emailVerified == existing().emailVerified
             && incoming().accountStatus == existing().accountStatus
@@ -1082,7 +1658,7 @@ service cloud.firestore {
     // Public non-PII profile document
     match /publicProfiles/{userId} {
       allow get: if isValidId(userId);
-      allow list: if false;
+      allow list: if isAdminDocActive();
 
       allow create: if isValidId(userId)
         && isOwner(userId)
@@ -1889,17 +2465,29 @@ service cloud.firestore {
       allow update: if false;
     }
 
-    // Private Moderation Reports (never publicly readable)
+    // Private Moderation Reports (never publicly readable; admins with moderation permission only)
     match /reports/{reportId} {
-      allow read: if false;
+      allow get, list: if hasAdminPermission('user_reports')
+        || hasAdminPermission('content_moderation')
+        || hasAdminPermission('community_management');
 
       allow create: if isValidId(reportId)
         && isEmailVerified()
         && isValidReport(incoming(), reportId)
         && incoming().reporterId == request.auth.uid
+        && incoming().status == 'open'
         && incoming().createdAt == request.time;
 
-      allow update, delete: if false;
+      allow update: if isValidId(reportId)
+        && (hasAdminPermission('user_reports') || hasAdminPermission('content_moderation') || hasAdminPermission('community_management'))
+        && resource != null
+        && isValidReport(incoming(), reportId)
+        && incoming().reporterId == existing().reporterId
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'reviewNotes', 'reviewedByUid', 'reviewedAt'])
+        && incoming().status in ['open', 'pending', 'under_review', 'action_taken', 'dismissed', 'escalated'];
+
+      allow delete: if false;
     }
 
     // Per-user server-timestamp rate limits
@@ -2585,15 +3173,17 @@ service cloud.firestore {
         && isOwner(userId);
     }
 
-    // Build 06: User Collections
+    // Build 06: User Collections (tightened list query: public or owner or moderation admin)
     match /userCollections/{collectionId} {
       allow get: if resource != null
-        && (resource.data.visibility == 'public' || (isSignedIn() && resource.data.ownerId == request.auth.uid));
-      allow list: if true;
+        && (resource.data.visibility == 'public' || (isSignedIn() && resource.data.ownerId == request.auth.uid) || hasAdminPermission('content_moderation'));
+      allow list: if resource.data.visibility == 'public'
+        || (isSignedIn() && resource.data.ownerId == request.auth.uid)
+        || hasAdminPermission('content_moderation');
       allow create: if isSignedIn()
         && incoming().ownerId == request.auth.uid;
       allow update, delete: if isSignedIn()
-        && existing().ownerId == request.auth.uid;
+        && (existing().ownerId == request.auth.uid || hasAdminPermission('content_moderation'));
     }
 
     // Build 06: Recommendation Feedback
@@ -2601,6 +3191,255 @@ service cloud.firestore {
       allow get, list: if isValidId(userId) && isOwner(userId);
       allow create, update, delete: if isValidId(userId)
         && isOwner(userId);
+    }
+
+    // Build 08A: User Where to Watch Preferences
+    match /userWhereToWatchPrefs/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+      allow create, update: if isValidId(userId)
+        && isOwner(userId)
+        && isValidWhereToWatchPrefs(incoming(), userId);
+      allow delete: if false;
+    }
+
+    // Build 08A: Streaming Availability Reports (non-public; owner/admin read only)
+    match /streamingReports/{reportId} {
+      allow get: if isValidId(reportId)
+        && isSignedIn()
+        && resource != null
+        && (existing().userId == request.auth.uid || isStreamingAdmin());
+      allow list: if isStreamingAdmin();
+      allow create: if isValidId(reportId)
+        && isEmailVerified()
+        && isValidStreamingReport(incoming(), reportId)
+        && incoming().userId == request.auth.uid
+        && incoming().createdAt == request.time;
+      allow update: if isValidId(reportId)
+        && isStreamingAdmin()
+        && resource != null
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status'])
+        && incoming().status in ['open', 'reviewed'];
+      allow delete: if false;
+    }
+
+    // Build 08A: Admin-managed Verified Free Streaming Providers
+    match /streamingProviders/{providerId} {
+      allow get: if isValidId(providerId)
+        && (isStreamingAdmin() || (resource != null && resource.data.isFree == true && resource.data.isLegitimate == true && resource.data.verificationStatus == 'verified'));
+      allow list: if isStreamingAdmin()
+        || (resource.data.isFree == true && resource.data.isLegitimate == true && resource.data.verificationStatus == 'verified');
+      allow create, update: if isValidId(providerId)
+        && isStreamingAdmin()
+        && isValidStreamingProvider(incoming(), providerId);
+      allow delete: if isValidId(providerId) && isStreamingAdmin();
+    }
+
+    // Build 08A: Admin-managed Verified Free Streaming Availability
+    match /streamingAvailability/{availabilityId} {
+      allow get: if isValidId(availabilityId)
+        && (isStreamingAdmin() || (resource != null && resource.data.isFree == true && resource.data.isLegitimate == true && resource.data.verificationStatus == 'verified'));
+      allow list: if isStreamingAdmin()
+        || (resource.data.isFree == true && resource.data.isLegitimate == true && resource.data.verificationStatus == 'verified');
+      allow create, update: if isValidId(availabilityId)
+        && isStreamingAdmin()
+        && isValidStreamingAvailability(incoming(), availabilityId);
+      allow delete: if isValidId(availabilityId) && isStreamingAdmin();
+    }
+
+    // ==========================================
+    // Build 08B: Three-Admin System, Governance & Legal Compliance
+    // ==========================================
+
+    // Administrator accounts (strictly written by Cloud Functions Admin SDK or Owner console provisioning; zero client self-promotion)
+    match /admins/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isOwnerAdmin());
+      allow list: if isOwnerAdmin();
+      allow create, update, delete: if false;
+    }
+
+    // Three Designated Administrator Seats (owner, platform_admin, content_admin)
+    match /adminSeats/{seatId} {
+      allow get: if seatId in ['owner', 'platform_admin', 'content_admin'] && isAdminDocActive();
+      allow list: if isAdminDocActive();
+      allow create, update, delete: if false;
+    }
+
+    // Immutable / Tamper-Resistant Administrator Audit Logs
+    match /adminAuditLogs/{logId} {
+      allow get: if isValidId(logId) && (hasAdminPermission('audit_logs') || isOwnerAdmin());
+      allow list: if hasAdminPermission('audit_logs') || isOwnerAdmin();
+      allow create: if isValidId(logId)
+        && isAdminDocActive()
+        && isValidAdminAuditLog(incoming(), logId)
+        && incoming().actorUid == request.auth.uid
+        && incoming().createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    // Immutable Admin Login & Security Events (written strictly server-side by Cloud Functions)
+    match /adminLoginEvents/{eventId} {
+      allow get: if isValidId(eventId) && (hasAdminPermission('audit_logs') || isOwnerAdmin());
+      allow list: if hasAdminPermission('audit_logs') || isOwnerAdmin();
+      allow create, update, delete: if false;
+    }
+
+    // Immutable Moderation Decision & Evidence Log
+    match /moderationDecisions/{decisionId} {
+      allow get: if isValidId(decisionId) && (hasAdminPermission('content_moderation') || hasAdminPermission('account_moderation'));
+      allow list: if hasAdminPermission('content_moderation') || hasAdminPermission('account_moderation');
+      allow create: if isValidId(decisionId)
+        && isAdminDocActive()
+        && isValidModerationDecision(incoming(), decisionId)
+        && incoming().actorUid == request.auth.uid
+        && incoming().createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    // Copyright & Takedown Complaints
+    match /copyrightComplaints/{complaintId} {
+      allow get: if isValidId(complaintId)
+        && isSignedIn()
+        && resource != null
+        && (existing().reporterUid == request.auth.uid || hasAdminPermission('copyright_complaints'));
+      allow list: if hasAdminPermission('copyright_complaints')
+        || (isSignedIn() && resource.data.reporterUid == request.auth.uid);
+      allow create: if isValidId(complaintId)
+        && isEmailVerified()
+        && isValidCopyrightComplaint(incoming(), complaintId)
+        && incoming().reporterUid == request.auth.uid
+        && incoming().status == 'pending'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(complaintId)
+        && hasAdminPermission('copyright_complaints')
+        && resource != null
+        && isValidCopyrightComplaint(incoming(), complaintId)
+        && incoming().reporterUid == existing().reporterUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'resolutionNotes', 'handledByUid', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    // User Account Deletion Requests
+    match /accountDeletionRequests/{requestId} {
+      allow get: if isValidId(requestId)
+        && isSignedIn()
+        && resource != null
+        && (existing().userId == request.auth.uid || hasAdminPermission('account_moderation'));
+      allow list: if hasAdminPermission('account_moderation')
+        || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isValidId(requestId)
+        && isSignedIn()
+        && isValidAccountDeletionRequest(incoming(), requestId)
+        && incoming().userId == request.auth.uid
+        && incoming().status == 'pending'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(requestId)
+        && hasAdminPermission('account_moderation')
+        && resource != null
+        && isValidAccountDeletionRequest(incoming(), requestId)
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'reviewNotes', 'reviewedByUid', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    // User Feedback & Accessibility / Bug Reports
+    match /userFeedback/{feedbackId} {
+      allow get: if isValidId(feedbackId)
+        && isSignedIn()
+        && resource != null
+        && (existing().userId == request.auth.uid || hasAdminPermission('user_feedback'));
+      allow list: if hasAdminPermission('user_feedback')
+        || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isValidId(feedbackId)
+        && isSignedIn()
+        && isValidUserFeedback(incoming(), feedbackId)
+        && incoming().userId == request.auth.uid
+        && incoming().status == 'open'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(feedbackId)
+        && hasAdminPermission('user_feedback')
+        && resource != null
+        && isValidUserFeedback(incoming(), feedbackId)
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'adminNotes', 'reviewedByUid', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    // Platform Announcements (Public active general notices or targeted notices; admin managed)
+    match /platformAnnouncements/{announcementId} {
+      allow get: if isValidId(announcementId)
+        && resource != null
+        && (
+          (existing().isActive == true && existing().audience == 'all_users')
+          || hasAdminPermission('announcements')
+          || (isSignedIn() && existing().isActive == true && request.auth.uid in existing().targetUserIds)
+        );
+      allow list: if (resource.data.isActive == true && resource.data.audience == 'all_users')
+        || hasAdminPermission('announcements')
+        || (isSignedIn() && resource.data.isActive == true && request.auth.uid in resource.data.targetUserIds);
+      allow create, update: if isValidId(announcementId)
+        && hasAdminPermission('announcements')
+        && isValidPlatformAnnouncement(incoming(), announcementId)
+        && incoming().updatedAt == request.time;
+      allow delete: if isValidId(announcementId) && isOwnerAdmin();
+    }
+
+    // ATA Editorial Catalogue Overrides (Read-only AniList base data remains unaltered; overrides layered cleanly)
+    match /catalogueOverrides/{animeId} {
+      allow get, list: if true;
+      allow create, update: if isValidId(animeId)
+        && (
+          hasAdminPermission('catalogue_management')
+          || hasAdminPermission('metadata_corrections')
+          || hasAdminPermission('featured_content')
+          || hasAdminPermission('seasonal_displays')
+          || hasAdminPermission('recommendations')
+        )
+        && isValidCatalogueOverride(incoming(), animeId)
+        && incoming().updatedAt == request.time;
+      allow delete: if isValidId(animeId) && hasAdminPermission('catalogue_management');
+    }
+
+    // Admin-Authored Anime News Articles
+    match /adminNews/{articleId} {
+      allow get: if isValidId(articleId)
+        && ((resource != null && resource.data.status == 'published') || hasAdminPermission('anime_news'));
+      allow list: if (resource.data.status == 'published') || hasAdminPermission('anime_news');
+      allow create, update: if isValidId(articleId)
+        && hasAdminPermission('anime_news')
+        && isValidAdminNewsArticle(incoming(), articleId)
+        && incoming().updatedAt == request.time;
+      allow delete: if isValidId(articleId) && hasAdminPermission('anime_news');
+    }
+
+    // Public Legal & Community Guidelines Overrides (no login required to read)
+    match /legalDocuments/{docSlug} {
+      allow get, list: if true;
+      allow create, update: if docSlug in ['privacy-policy', 'terms', 'cookie-policy', 'refund-policy', 'community-guidelines']
+        && (hasAdminPermission('legal_compliance') || hasAdminPermission('operational_monitoring'))
+        && isValidLegalDocOverride(incoming(), docSlug)
+        && incoming().updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    // Security Incident Register (Owner / Security Incidents Admins only)
+    match /securityIncidents/{incidentId} {
+      allow get: if isValidId(incidentId) && (hasAdminPermission('security_incidents') || isOwnerAdmin());
+      allow list: if hasAdminPermission('security_incidents') || isOwnerAdmin();
+      allow create, update: if isValidId(incidentId)
+        && (hasAdminPermission('security_incidents') || isOwnerAdmin())
+        && isValidSecurityIncident(incoming(), incidentId)
+        && incoming().updatedAt == request.time;
+      allow delete: if false;
     }
   }
 }

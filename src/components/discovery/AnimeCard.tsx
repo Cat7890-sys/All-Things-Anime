@@ -5,17 +5,20 @@ import {
   formatTimeUntilAiring,
 } from '../../services/catalogue/anilistService';
 import type { NormalizedAnime } from '../../services/catalogue/anilistTypes';
+import type { CatalogueOverrideRecord } from '../../types';
 import { MangaImage } from '../MangaImage';
 
 interface AnimeCardProps {
   anime: NormalizedAnime;
   showTrendingRank?: boolean;
+  editorialOverride?: CatalogueOverrideRecord;
   onSelect: (anime: NormalizedAnime) => void;
 }
 
 export const AnimeCard: React.FC<AnimeCardProps> = ({
   anime,
   showTrendingRank = false,
+  editorialOverride,
   onSelect,
 }) => {
   const rank = showTrendingRank ? anime.trendingRank : null;
@@ -109,6 +112,19 @@ export const AnimeCard: React.FC<AnimeCardProps> = ({
               {anime.genres.slice(0, 2).join(' · ')}
             </p>
           )}
+
+          {editorialOverride &&
+            (editorialOverride.isFeatured ||
+              editorialOverride.isSeasonalHighlight ||
+              editorialOverride.editorialNote) && (
+              <p className="text-[11px] font-semibold text-[#B92335] dark:text-[#EF3038] truncate">
+                {editorialOverride.isFeatured
+                  ? 'ATA Featured'
+                  : editorialOverride.isSeasonalHighlight
+                    ? 'Seasonal Pick'
+                    : editorialOverride.editorialNote}
+              </p>
+            )}
         </div>
 
         <div className="mt-3 pt-2.5 border-t border-[#D4D7E2]/70 dark:border-[#303342] flex items-center justify-between gap-2">

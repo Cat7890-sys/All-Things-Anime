@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, Flag, X } from 'lucide-react';
 import { submitModerationReport } from '../../services/moderationService';
 import { REPORT_DETAILS_MAX_LENGTH } from '../../services/validation';
@@ -38,9 +38,42 @@ const POST_REPORT_REASONS: Array<{ value: ReportReason; label: string; hint: str
     hint: 'Discriminatory or dehumanizing content.',
   },
   {
+    value: 'copyright_infringement',
+    label: 'Copyright Infringement / Piracy Link',
+    hint: 'Unauthorised streams, downloads, or infringing copyrighted media.',
+  },
+  {
     value: 'other',
     label: 'Other Safety Concern',
     hint: 'Any other issue that violates ATA community standards.',
+  },
+];
+
+const PROFILE_COLLECTION_REASONS: Array<{ value: ReportReason; label: string; hint: string }> = [
+  {
+    value: 'impersonation',
+    label: 'Impersonation or Misleading Identity',
+    hint: 'Account pretends to be another creator, official brand, or ATA staff.',
+  },
+  {
+    value: 'harassment',
+    label: 'Harassment or Abusive Bio / Title',
+    hint: 'Targeted attacks, doxxing, or abusive profile/collection text.',
+  },
+  {
+    value: 'spam',
+    label: 'Spam or Malicious Links',
+    hint: 'Deceptive links, phishing, or automated promotional accounts.',
+  },
+  {
+    value: 'copyright_infringement',
+    label: 'Copyright Infringement',
+    hint: 'Unauthorised copyrighted artwork or infringing external links.',
+  },
+  {
+    value: 'other',
+    label: 'Other Moderation Issue',
+    hint: 'Any other policy or safety violation.',
   },
 ];
 
@@ -84,14 +117,28 @@ export const ReportModal: React.FC<ReportModalProps> = ({
   onClose,
 }) => {
   const reasonOptions =
-    targetType === 'community' ? COMMUNITY_REPORT_REASONS : POST_REPORT_REASONS;
-  const [reason, setReason] = useState<ReportReason>(
-    targetType === 'community' ? 'rule_violation' : 'unmarked_spoiler'
-  );
+    targetType === 'community'
+      ? COMMUNITY_REPORT_REASONS
+      : targetType === 'profile' || targetType === 'collection'
+        ? PROFILE_COLLECTION_REASONS
+        : POST_REPORT_REASONS;
+  const defaultReason: ReportReason =
+    targetType === 'community'
+      ? 'rule_violation'
+      : targetType === 'profile' || targetType === 'collection'
+        ? 'impersonation'
+        : 'unmarked_spoiler';
+  const [reason, setReason] = useState<ReportReason>(defaultReason);
   const [details, setDetails] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+
+  useEffect(() => {
+    setReason(defaultReason);
+    setSubmitted(false);
+    setError(null);
+  }, [defaultReason, isOpen, targetId]);
 
   if (!isOpen) return null;
 
@@ -145,14 +192,20 @@ export const ReportModal: React.FC<ReportModalProps> = ({
               >
                 {targetType === 'community'
                   ? 'Report Community'
-                  : targetType === 'post'
-                    ? 'Report Post'
-                    : 'Report Comment'}
+                  : targetType === 'profile'
+                    ? 'Report Member Profile'
+                    : targetType === 'collection'
+                      ? 'Report Collection'
+                      : targetType === 'post'
+                        ? 'Report Post'
+                        : 'Report Comment'}
               </h2>
               <p className="text-xs text-[#52576B] dark:text-[#A7A9B8]">
                 {targetType === 'community'
                   ? `Community: ${targetAuthorUsername}`
-                  : `Content by @${targetAuthorUsername}`}
+                  : targetType === 'profile'
+                    ? `Account: @${targetAuthorUsername}`
+                    : `Content by @${targetAuthorUsername}`}
               </p>
             </div>
           </div>
@@ -269,6 +322,10 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                 className="w-full resize-none rounded-xl bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] p-3 text-xs sm:text-sm text-[#090B14] dark:text-white placeholder:text-[#52576B] dark:placeholder:text-[#A7A9B8]/70 focus:border-[#EF3038] focus:outline-none"
               />
             </div>
+
+            <p className="text-[11px] text-[#52576B] dark:text-[#A7A9B8]">
+              Reports are confidential and visible only to you and authorised ATA administrators for moderation review.
+            </p>
 
             <div className="flex items-center justify-end gap-2.5 pt-1">
               <button

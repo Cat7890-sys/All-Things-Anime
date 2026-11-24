@@ -6,6 +6,7 @@ import {
   getFirestore,
   type Firestore,
 } from 'firebase/firestore';
+import { getFunctions, type Functions } from 'firebase/functions';
 import { getStorage, type FirebaseStorage } from 'firebase/storage';
 import appletConfig from '../../firebase-applet-config.json';
 
@@ -75,6 +76,7 @@ export const db: Firestore = resolvedConfig.firestoreDatabaseId
 export const storage: FirebaseStorage | null = resolvedConfig.storageBucket
   ? getStorage(firebaseApp)
   : null;
+export const functions: Functions = getFunctions(firebaseApp);
 
 export enum OperationType {
   CREATE = 'create',

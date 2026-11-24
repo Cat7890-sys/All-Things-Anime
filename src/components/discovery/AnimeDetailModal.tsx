@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Calendar,
   Clock,
@@ -8,7 +9,6 @@ import {
   Star,
   TrendingUp,
   X,
-  Check,
   Bookmark,
 } from 'lucide-react';
 import {
@@ -26,6 +26,7 @@ import {
 } from '../../services/personalisation/animeTrackerService';
 import { getSimilarAnimeForDetail } from '../../services/personalisation/recommendationService';
 import type { AnimeRecommendation, WatchlistStatus } from '../../types';
+import { WhereToWatchSection } from './WhereToWatchSection';
 
 interface AnimeDetailModalProps {
   anime: NormalizedAnime | null;
@@ -47,6 +48,7 @@ export const AnimeDetailModal: React.FC<AnimeDetailModalProps> = ({
   const [similarAnimeList, setSimilarAnimeList] = useState<AnimeRecommendation[]>([]);
   const [isUpdatingTracker, setIsUpdatingTracker] = useState(false);
   const [trackerMessage, setTrackerMessage] = useState<string | null>(null);
+  const scrollBodyRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setResolvedAnime(anime);
@@ -54,6 +56,8 @@ export const AnimeDetailModal: React.FC<AnimeDetailModalProps> = ({
     setUserEpisodesWatched(0);
     setTrackerMessage(null);
     if (!anime) return;
+
+    scrollBodyRef.current?.scrollTo({ top: 0 });
 
     const controller = new AbortController();
     void anilistService
@@ -98,8 +102,11 @@ export const AnimeDetailModal: React.FC<AnimeDetailModalProps> = ({
         onClose();
       }
     };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     window.addEventListener('keydown', handleKeyDown);
     return () => {
+      document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [anime, onClose]);
@@ -175,80 +182,90 @@ export const AnimeDetailModal: React.FC<AnimeDetailModalProps> = ({
     ? resolvedAnime.description.split(/\n{2,}/).filter(Boolean)
     : [];
 
-  return (
+  const modalNode = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 sm:p-6 overflow-hidden"
       role="dialog"
       aria-modal="true"
       aria-labelledby="anilist-detail-modal-title"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl rounded-2xl bg-white dark:bg-[#171923] border border-[#D4D7E2] dark:border-[#303342] shadow-2xl overflow-hidden max-h-[88vh] flex flex-col"
+        className="w-[min(900px,calc(100vw-24px))] sm:w-[min(900px,calc(100vw-48px))] max-w-full max-h-[calc(100vh-24px)] sm:max-h-[calc(100vh-48px)] rounded-2xl bg-white dark:bg-[#171923] border border-[#D4D7E2] dark:border-[#303342] shadow-2xl overflow-hidden flex flex-col min-w-0"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="overflow-y-auto flex-1">
-          <div className="grid grid-cols-1 sm:grid-cols-5">
-            <div className="sm:col-span-2 border-b sm:border-b-0 sm:border-r border-[#D4D7E2] dark:border-[#303342] bg-[#EAECEF] dark:bg-[#090B14]">
-              <MangaImage
-                src={resolvedAnime.coverImage.best || ''}
-                alt={`${resolvedAnime.title.display} cover artwork`}
-                aspectClassName="aspect-[3/4] sm:h-full"
-                fallbackTitle={resolvedAnime.title.display}
-              />
+        {/* Pinned Modal Header */}
+        <header className="shrink-0 flex items-start justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4 border-b border-[#D4D7E2] dark:border-[#303342] bg-white dark:bg-[#171923] min-w-0">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-accent-orbitron text-[11px] font-semibold tracking-wider text-[#B92335] dark:text-[#EF3038] uppercase">
+                {resolvedAnime.formatLabel}
+              </span>
+              <span aria-hidden="true" className="text-[#52576B]">
+                ·
+              </span>
+              <span className="text-xs font-semibold text-[#52576B] dark:text-[#A7A9B8]">
+                {resolvedAnime.statusLabel}
+              </span>
             </div>
 
-            <div className="sm:col-span-3 p-5 sm:p-6 flex flex-col justify-between gap-4">
-              <div className="space-y-4">
-                {/* Modal Top Bar */}
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-accent-orbitron text-[11px] font-semibold tracking-wider text-[#B92335] dark:text-[#EF3038] uppercase">
-                        {resolvedAnime.formatLabel}
-                      </span>
-                      <span aria-hidden="true" className="text-[#52576B]">
-                        ·
-                      </span>
-                      <span className="text-xs font-semibold text-[#52576B] dark:text-[#A7A9B8]">
-                        {resolvedAnime.statusLabel}
-                      </span>
-                    </div>
+            <h2
+              id="anilist-detail-modal-title"
+              className="mt-0.5 font-display-space font-bold text-lg sm:text-2xl leading-tight text-[#090B14] dark:text-white break-words"
+            >
+              {resolvedAnime.title.display}
+            </h2>
 
-                    <h2
-                      id="anilist-detail-modal-title"
-                      className="mt-1 font-display-space font-bold text-xl sm:text-2xl leading-tight text-[#090B14] dark:text-white"
-                    >
-                      {resolvedAnime.title.display}
-                    </h2>
+            {altTitles.length > 0 && (
+              <p className="mt-0.5 text-xs text-[#52576B] dark:text-[#A7A9B8] truncate">
+                {altTitles.join(' · ')}
+              </p>
+            )}
+          </div>
 
-                    {altTitles.length > 0 && (
-                      <p className="mt-1 text-xs text-[#52576B] dark:text-[#A7A9B8]">
-                        {altTitles.join(' · ')}
-                      </p>
-                    )}
-                  </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close anime details"
+            className="flex h-10 w-10 min-h-[40px] min-w-[40px] shrink-0 items-center justify-center rounded-lg border border-[#D4D7E2] dark:border-[#303342] bg-[#F4F5F8] dark:bg-[#090B14] text-[#090B14] dark:text-white hover:border-[#EF3038] transition-colors"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </header>
 
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    aria-label="Close anime details"
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[#D4D7E2] dark:border-[#303342] bg-[#F4F5F8] dark:bg-[#090B14] text-[#090B14] dark:text-white hover:border-[#EF3038] transition-colors"
-                  >
-                    <X className="h-4 w-4" aria-hidden="true" />
-                  </button>
-                </div>
+        {/* Single Vertically Scrollable Body */}
+        <div
+          ref={scrollBodyRef}
+          className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain p-4 sm:p-6"
+        >
+          <div className="grid grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)] lg:grid-cols-[270px_minmax(0,1fr)] gap-5 md:gap-6 items-start min-w-0">
+            {/* Constrained Cover Column */}
+            <div className="w-full min-w-0 md:sticky md:top-0">
+              <div className="mx-auto w-full max-w-[200px] sm:max-w-[220px] md:max-w-full rounded-xl overflow-hidden border border-[#D4D7E2] dark:border-[#303342] bg-[#EAECEF] dark:bg-[#090B14]">
+                <MangaImage
+                  src={resolvedAnime.coverImage.best || ''}
+                  alt={`${resolvedAnime.title.display} cover artwork`}
+                  aspectClassName="aspect-[3/4] max-h-[300px] md:max-h-[360px]"
+                  fallbackTitle={resolvedAnime.title.display}
+                />
+              </div>
+            </div>
 
+            {/* Details Column */}
+            <div className="min-w-0 w-full flex flex-col justify-between gap-4">
+              <div className="space-y-4 min-w-0">
                 {/* Quick Watchlist Bar */}
                 {firebaseUser && firebaseUser.emailVerified && (
                   <div className="p-3 rounded-xl bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] space-y-2">
-                    <div className="flex items-center justify-between text-xs font-bold text-[#090B14] dark:text-white">
-                      <span className="flex items-center gap-1.5">
-                        <Bookmark className="h-3.5 w-3.5 text-[#EF3038]" />
-                        <span>Watchlist: {userTrackStatus ? userTrackStatus.replace('_', ' ') : 'Not Tracked'}</span>
+                    <div className="flex items-center justify-between gap-2 text-xs font-bold text-[#090B14] dark:text-white">
+                      <span className="flex items-center gap-1.5 min-w-0 truncate">
+                        <Bookmark className="h-3.5 w-3.5 text-[#EF3038] shrink-0" />
+                        <span className="truncate">
+                          Watchlist: {userTrackStatus ? userTrackStatus.replace('_', ' ') : 'Not Tracked'}
+                        </span>
                       </span>
                       {userTrackStatus && (
-                        <span className="text-[11px] text-[#52576B] dark:text-[#A7A9B8] tabular-nums">
+                        <span className="text-[11px] text-[#52576B] dark:text-[#A7A9B8] tabular-nums shrink-0">
                           Ep {userEpisodesWatched}
                         </span>
                       )}
@@ -259,7 +276,7 @@ export const AnimeDetailModal: React.FC<AnimeDetailModalProps> = ({
                         type="button"
                         disabled={isUpdatingTracker}
                         onClick={() => void handleQuickTrack('watching')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                        className={`px-3 py-1.5 min-h-[36px] rounded-lg text-xs font-bold transition-all border ${
                           userTrackStatus === 'watching'
                             ? 'bg-[#EF3038] text-white border-[#B92335]'
                             : 'bg-white dark:bg-[#171923] text-[#090B14] dark:text-white border-[#D4D7E2] dark:border-[#303342]'
@@ -272,7 +289,7 @@ export const AnimeDetailModal: React.FC<AnimeDetailModalProps> = ({
                         type="button"
                         disabled={isUpdatingTracker}
                         onClick={() => void handleQuickTrack('planning')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                        className={`px-3 py-1.5 min-h-[36px] rounded-lg text-xs font-bold transition-all border ${
                           userTrackStatus === 'planning'
                             ? 'bg-[#EF3038] text-white border-[#B92335]'
                             : 'bg-white dark:bg-[#171923] text-[#090B14] dark:text-white border-[#D4D7E2] dark:border-[#303342]'
@@ -285,7 +302,7 @@ export const AnimeDetailModal: React.FC<AnimeDetailModalProps> = ({
                         type="button"
                         disabled={isUpdatingTracker}
                         onClick={() => void handleQuickTrack('completed')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                        className={`px-3 py-1.5 min-h-[36px] rounded-lg text-xs font-bold transition-all border ${
                           userTrackStatus === 'completed'
                             ? 'bg-emerald-500 text-white border-emerald-600'
                             : 'bg-white dark:bg-[#171923] text-[#090B14] dark:text-white border-[#D4D7E2] dark:border-[#303342]'
@@ -299,7 +316,7 @@ export const AnimeDetailModal: React.FC<AnimeDetailModalProps> = ({
                           type="button"
                           disabled={isUpdatingTracker}
                           onClick={() => void handleQuickIncrement()}
-                          className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-[#EF3038] hover:bg-[#B92335] flex items-center gap-1 shadow-sm"
+                          className="px-3 py-1.5 min-h-[36px] rounded-lg text-xs font-bold text-white bg-[#EF3038] hover:bg-[#B92335] flex items-center gap-1 shadow-sm"
                         >
                           <Plus className="h-3 w-3" />
                           <span>+1 Ep</span>
@@ -354,12 +371,12 @@ export const AnimeDetailModal: React.FC<AnimeDetailModalProps> = ({
 
                 {/* Metadata Grid */}
                 <dl className="grid grid-cols-2 gap-3 border-y border-[#D4D7E2] dark:border-[#303342] py-3 text-xs">
-                  <div>
+                  <div className="min-w-0">
                     <dt className="text-[#52576B] dark:text-[#A7A9B8] flex items-center gap-1">
-                      <Film className="h-3 w-3" aria-hidden="true" />
+                      <Film className="h-3 w-3 shrink-0" aria-hidden="true" />
                       <span>Episodes</span>
                     </dt>
-                    <dd className="font-display-space font-semibold text-[#090B14] dark:text-white tabular-nums mt-0.5">
+                    <dd className="font-display-space font-semibold text-[#090B14] dark:text-white tabular-nums mt-0.5 truncate">
                       {formatAnimeEpisodes(
                         resolvedAnime.episodes,
                         resolvedAnime.status
@@ -367,26 +384,26 @@ export const AnimeDetailModal: React.FC<AnimeDetailModalProps> = ({
                     </dd>
                   </div>
 
-                  <div>
+                  <div className="min-w-0">
                     <dt className="text-[#52576B] dark:text-[#A7A9B8] flex items-center gap-1">
-                      <Calendar className="h-3 w-3" aria-hidden="true" />
+                      <Calendar className="h-3 w-3 shrink-0" aria-hidden="true" />
                       <span>Season</span>
                     </dt>
-                    <dd className="font-semibold text-[#090B14] dark:text-white mt-0.5">
+                    <dd className="font-semibold text-[#090B14] dark:text-white mt-0.5 truncate">
                       {resolvedAnime.seasonLabel || 'TBA'}
                     </dd>
                   </div>
 
-                  <div>
+                  <div className="min-w-0">
                     <dt className="text-[#52576B] dark:text-[#A7A9B8]">
                       Start Date
                     </dt>
-                    <dd className="font-semibold text-[#090B14] dark:text-white mt-0.5">
+                    <dd className="font-semibold text-[#090B14] dark:text-white mt-0.5 truncate">
                       {resolvedAnime.startDate.formatted || 'TBA'}
                     </dd>
                   </div>
 
-                  <div>
+                  <div className="min-w-0">
                     <dt className="text-[#52576B] dark:text-[#A7A9B8]">
                       Studio
                     </dt>
@@ -413,12 +430,12 @@ export const AnimeDetailModal: React.FC<AnimeDetailModalProps> = ({
                 )}
 
                 {/* Sanitized Synopsis */}
-                <div className="space-y-2">
+                <div className="space-y-2 min-w-0">
                   <h3 className="font-accent-orbitron text-[10px] font-semibold tracking-wider text-[#52576B] dark:text-[#A7A9B8] uppercase">
                     Synopsis
                   </h3>
                   {descriptionParagraphs.length > 0 ? (
-                    <div className="space-y-2 text-sm leading-relaxed text-[#090B14] dark:text-white/90">
+                    <div className="space-y-2 text-sm leading-relaxed text-[#090B14] dark:text-white/90 break-words">
                       {descriptionParagraphs.map((para, idx) => (
                         <p key={idx}>{para}</p>
                       ))}
@@ -430,13 +447,16 @@ export const AnimeDetailModal: React.FC<AnimeDetailModalProps> = ({
                   )}
                 </div>
 
+                {/* Where to Watch Section */}
+                <WhereToWatchSection />
+
                 {/* Similar Anime Suggestions Section */}
                 {similarAnimeList.length > 0 && (
-                  <div className="space-y-3 pt-3 border-t border-[#D4D7E2] dark:border-[#303342]">
+                  <div className="space-y-3 pt-3 border-t border-[#D4D7E2] dark:border-[#303342] min-w-0">
                     <h3 className="font-accent-orbitron text-[10px] font-semibold tracking-wider text-[#52576B] dark:text-[#A7A9B8] uppercase">
-                      Similar & Related Anime
+                      Similar &amp; Related Anime
                     </h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 min-w-0">
                       {similarAnimeList.slice(0, 4).map((rec) => (
                         <button
                           key={rec.anime.id}
@@ -444,14 +464,15 @@ export const AnimeDetailModal: React.FC<AnimeDetailModalProps> = ({
                           onClick={() => {
                             setResolvedAnime(rec.anime);
                             onSelectAnime?.(rec.anime);
+                            scrollBodyRef.current?.scrollTo({ top: 0 });
                           }}
-                          className="p-2 rounded-xl bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] text-left hover:border-[#EF3038] transition-all group"
+                          className="min-w-0 p-2 rounded-xl bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] text-left hover:border-[#EF3038] transition-all group"
                         >
                           <div className="aspect-[3/4] w-full rounded-lg overflow-hidden mb-1.5 bg-black/20">
                             <img
                               src={rec.anime.coverImage.best || ''}
                               alt={rec.anime.title.display}
-                              className="h-full w-full object-cover group-hover:scale-105 transition-transform"
+                              className="block h-full w-full max-w-full object-cover group-hover:scale-105 transition-transform"
                             />
                           </div>
                           <p className="text-[11px] font-bold text-[#090B14] dark:text-white truncate">
@@ -477,7 +498,7 @@ export const AnimeDetailModal: React.FC<AnimeDetailModalProps> = ({
                   href={resolvedAnime.siteUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[40px] rounded-xl text-xs font-semibold text-white bg-[#EF3038] border border-[#B92335] hover:bg-[#B92335] transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[40px] rounded-xl text-xs font-semibold text-white bg-[#EF3038] border border-[#B92335] hover:bg-[#B92335] transition-colors whitespace-nowrap shrink-0"
                 >
                   <span>View on AniList</span>
                   <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
@@ -489,5 +510,9 @@ export const AnimeDetailModal: React.FC<AnimeDetailModalProps> = ({
       </div>
     </div>
   );
-};
 
+  if (typeof document !== 'undefined') {
+    return createPortal(modalNode, document.body);
+  }
+  return modalNode;
+};

@@ -5,7 +5,7 @@
   "scripts": {
     "build": "tsc",
     "lint": "tsc --noEmit",
-    "test": "npm run build && node --test lib/__tests__/notifications.test.js"
+    "test": "npm run build && node --test lib/__tests__/notifications.test.js lib/__tests__/adminLogic.test.js"
   },
   "engines": {
     "node": "22"

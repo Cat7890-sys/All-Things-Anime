@@ -4,47 +4,67 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { TrendingSidebarSection } from './components/TrendingSidebarSection';
-import { PublicProfileModal } from './components/social/PublicProfileModal';
+import { ShieldAlert } from 'lucide-react';
+import { AtaLoadingSpinner } from './components/AtaLoadingSpinner';
+import { AnnouncementBanner } from './components/layout/AnnouncementBanner';
+import { SiteFooter } from './components/layout/SiteFooter';
+import { CookiePreferencesModal } from './components/legal/CookiePreferencesModal';
+import { CopyrightFeedbackModal } from './components/legal/CopyrightFeedbackModal';
+import { NotificationToastContainer } from './components/notifications/NotificationToastContainer';
 import { PersonalisationOnboardingModal } from './components/personalisation/PersonalisationOnboardingModal';
-import { useAuth } from './hooks/useAuth';
+import { PublicProfileModal } from './components/social/PublicProfileModal';
+import { TrendingSidebarSection } from './components/TrendingSidebarSection';
 import { usePreferences } from './context/PreferencesContext';
+import { useAuth } from './hooks/useAuth';
 import { AppShell } from './layout/AppShell';
+import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
+import { AdminLoginPage } from './pages/admin/AdminLoginPage';
+import { AnimeTrackerPage } from './pages/AnimeTrackerPage';
+import { CalendarPage } from './pages/CalendarPage';
+import { CollectionsPage } from './pages/CollectionsPage';
 import { ComingSoonPage } from './pages/ComingSoonPage';
 import { CommunitiesPage } from './pages/CommunitiesPage';
 import { DiscoverPage } from './pages/DiscoverPage';
 import { HomePage } from './pages/HomePage';
+import { LegalDocumentPage } from './pages/legal/LegalDocumentPage';
 import { MessagesPage } from './pages/MessagesPage';
-import { NotificationsPage } from './pages/NotificationsPage';
-import { ProfilePage } from './pages/ProfilePage';
 import { MyAnimeDashboardPage } from './pages/MyAnimeDashboardPage';
-import { AnimeTrackerPage } from './pages/AnimeTrackerPage';
-import { CollectionsPage } from './pages/CollectionsPage';
-import { PersonalisationPage } from './pages/PersonalisationPage';
-import { CalendarPage } from './pages/CalendarPage';
 import { NewsCenterPage } from './pages/NewsCenterPage';
+import { NotificationsPage } from './pages/NotificationsPage';
+import { PersonalisationPage } from './pages/PersonalisationPage';
+import { ProfilePage } from './pages/ProfilePage';
 import { WatchJourneyPage } from './pages/WatchJourneyPage';
-import { NotificationToastContainer } from './components/notifications/NotificationToastContainer';
-import { subscribeToUserNotifications } from './services/notifications/notificationService';
-import type { NotificationRouteTarget } from './services/notifications/notificationRoutingService';
+import { verifyAdminSession } from './services/admin/adminService';
 import { subscribeToUserMemberStates } from './services/messaging/conversationService';
 import { subscribeToMessageSettings } from './services/messaging/messagingSettingsService';
 import { publishOwnPresence } from './services/messaging/presenceService';
+import type { NotificationRouteTarget } from './services/notifications/notificationRoutingService';
+import { subscribeToUserNotifications } from './services/notifications/notificationService';
+import { buildAppHref, resolveRouteFromLocation } from './services/routingService';
 import { sampleContentService } from './services/sampleContentService';
 import type {
+  AdminAccountRecord,
+  AppRouteView,
   AuthViewMode,
   CommunityHighlight,
   DiscoverySeriesItem,
   DiscussionThread,
+  LegalPageSlug,
   NavDestinationId,
   TrendingAnimeItem,
 } from './types';
 
 export default function App() {
-  const { firebaseUser } = useAuth();
-  const { preferences } = usePreferences();
-  const [activeDestination, setActiveDestination] =
-    useState<NavDestinationId>('home');
+  const { firebaseUser, profile, isLoadingAuth } = useAuth();
+  const { isOnboardingOpen, setIsOnboardingOpen } = usePreferences();
+
+  const [routeView, setRouteView] = useState<AppRouteView>(() =>
+    resolveRouteFromLocation(
+      window.location.pathname,
+      window.location.hash,
+      import.meta.env.BASE_URL
+    )
+  );
   const [authMode, setAuthMode] = useState<AuthViewMode>('login');
   const [pendingDirectMessageUserId, setPendingDirectMessageUserId] = useState<
     string | null
@@ -72,7 +92,99 @@ export default function App() {
   const [trendingAnime, setTrendingAnime] = useState<TrendingAnimeItem[]>([]);
   const [communities, setCommunities] = useState<CommunityHighlight[]>([]);
 
-  const { isOnboardingOpen, setIsOnboardingOpen } = usePreferences();
+  // Build 08B Admin & Compliance UI State
+  const [adminSession, setAdminSession] = useState<{
+    admin: AdminAccountRecord;
+    cloudFunctionsAvailable: boolean;
+  } | null>(null);
+  const [isCheckingAdminRoute, setIsCheckingAdminRoute] = useState(false);
+  const [adminDenialReason, setAdminDenialReason] = useState<string | null>(
+    null
+  );
+  const [isCookieModalOpen, setIsCookieModalOpen] = useState(false);
+  const [legalFeedbackTab, setLegalFeedbackTab] = useState<
+    'copyright' | 'feedback' | null
+  >(null);
+
+  const activeDestination: NavDestinationId =
+    routeView.kind === 'destination' ? routeView.destination : 'home';
+
+  const navigateToRoute = useCallback((nextRoute: AppRouteView) => {
+    setRouteView(nextRoute);
+    const nextHref = buildAppHref(nextRoute, import.meta.env.BASE_URL);
+    if (window.location.pathname !== nextHref) {
+      window.history.pushState({}, '', nextHref);
+    }
+    const prefersReducedMotion = window.matchMedia(
+      '(prefers-reduced-motion: reduce)'
+    ).matches;
+    window.scrollTo({
+      top: 0,
+      behavior: prefersReducedMotion ? 'auto' : 'smooth',
+    });
+  }, []);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setRouteView(
+        resolveRouteFromLocation(
+          window.location.pathname,
+          window.location.hash,
+          import.meta.env.BASE_URL
+        )
+      );
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Verify admin session whenever navigating directly to /admin
+  useEffect(() => {
+    if (routeView.kind !== 'admin-dashboard') return;
+    if (adminSession && firebaseUser && adminSession.admin.uid === firebaseUser.uid) {
+      return;
+    }
+    if (isLoadingAuth) return;
+
+    if (!firebaseUser) {
+      setAdminSession(null);
+      setAdminDenialReason('Sign in with an authorised administrator account.');
+      return;
+    }
+
+    let active = true;
+    setIsCheckingAdminRoute(true);
+    void verifyAdminSession()
+      .then((res) => {
+        if (!active) return;
+        if (res.admin) {
+          setAdminSession({
+            admin: res.admin,
+            cloudFunctionsAvailable: res.cloudFunctionsAvailable,
+          });
+          setAdminDenialReason(null);
+        } else {
+          setAdminSession(null);
+          setAdminDenialReason(
+            res.denialReason ||
+              'Your account does not have active ATA administrator permissions.'
+          );
+        }
+      })
+      .finally(() => {
+        if (active) setIsCheckingAdminRoute(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [routeView.kind, adminSession, firebaseUser, isLoadingAuth]);
+
+  useEffect(() => {
+    if (!firebaseUser) {
+      setAdminSession(null);
+    }
+  }, [firebaseUser]);
 
   useEffect(() => {
     let isMounted = true;
@@ -176,16 +288,19 @@ export default function App() {
     };
   }, [firebaseUser]);
 
-  const handleSelectDestination = useCallback((destination: NavDestinationId) => {
-    setActiveDestination(destination);
-    const prefersReducedMotion = window.matchMedia(
-      '(prefers-reduced-motion: reduce)'
-    ).matches;
-    window.scrollTo({
-      top: 0,
-      behavior: prefersReducedMotion ? 'auto' : 'smooth',
-    });
-  }, []);
+  const handleSelectDestination = useCallback(
+    (destination: NavDestinationId) => {
+      navigateToRoute({ kind: 'destination', destination });
+    },
+    [navigateToRoute]
+  );
+
+  const handleNavigateLegal = useCallback(
+    (slug: LegalPageSlug) => {
+      navigateToRoute({ kind: 'legal', slug });
+    },
+    [navigateToRoute]
+  );
 
   const handleOpenAuth = useCallback(
     (mode: AuthViewMode) => {
@@ -269,132 +384,269 @@ export default function App() {
     [firebaseUser?.uid, handleSelectDestination]
   );
 
+  // Isolated Admin Routes (No consumer AppShell / no onboarding modal clutter)
+  if (routeView.kind === 'admin-login') {
+    return (
+      <AdminLoginPage
+        initialDenialReason={adminDenialReason}
+        onAdminAuthenticated={(verifiedAdmin, cloudAvail) => {
+          setAdminSession({
+            admin: verifiedAdmin,
+            cloudFunctionsAvailable: cloudAvail,
+          });
+          setAdminDenialReason(null);
+          navigateToRoute({ kind: 'admin-dashboard' });
+        }}
+        onReturnToApp={() => handleSelectDestination('home')}
+      />
+    );
+  }
+
+  if (routeView.kind === 'admin-dashboard') {
+    if (isLoadingAuth || isCheckingAdminRoute) {
+      return (
+        <div className="min-h-screen bg-[#090B14] text-white flex flex-col items-center justify-center gap-3 p-6">
+          <AtaLoadingSpinner size="lg" label="Verifying administrator session" />
+          <p className="text-xs sm:text-sm text-[#A7A9B8]">
+            Verifying administrator seat and permissions...
+          </p>
+        </div>
+      );
+    }
+
+    if (!adminSession || !firebaseUser) {
+      return (
+        <AdminLoginPage
+          initialDenialReason={adminDenialReason}
+          onAdminAuthenticated={(verifiedAdmin, cloudAvail) => {
+            setAdminSession({
+              admin: verifiedAdmin,
+              cloudFunctionsAvailable: cloudAvail,
+            });
+            setAdminDenialReason(null);
+          }}
+          onReturnToApp={() => handleSelectDestination('home')}
+        />
+      );
+    }
+
+    return (
+      <AdminDashboardPage
+        admin={adminSession.admin}
+        cloudFunctionsAvailable={adminSession.cloudFunctionsAvailable}
+        onReturnToApp={() => handleSelectDestination('home')}
+        onSignedOut={() => {
+          setAdminSession(null);
+          navigateToRoute({ kind: 'admin-login' });
+        }}
+      />
+    );
+  }
+
+  const isAccountRestricted =
+    profile?.accountStatus === 'suspended' || profile?.accountStatus === 'banned';
+
+  const topBannerNode = (
+    <>
+      <AnnouncementBanner />
+      {isAccountRestricted && (
+        <div
+          role="alert"
+          className="rounded-2xl bg-[#EF3038]/10 border border-[#EF3038] p-4 flex items-start gap-3 text-xs sm:text-sm text-[#090B14] dark:text-white"
+        >
+          <ShieldAlert
+            className="h-5 w-5 text-[#EF3038] shrink-0 mt-0.5"
+            aria-hidden="true"
+          />
+          <div>
+            <p className="font-bold">
+              {profile?.accountStatus === 'banned'
+                ? 'Account Permanently Restricted'
+                : 'Account Temporarily Suspended'}
+            </p>
+            <p className="text-xs text-[#52576B] dark:text-[#D4D7E2] mt-0.5">
+              {profile?.accountStatus === 'banned'
+                ? profile.banReason ||
+                  'Interactive posting and messaging are disabled.'
+                : profile?.suspensionReason ||
+                  'Interactive posting and messaging are temporarily disabled pending review.'}
+            </p>
+          </div>
+        </div>
+      )}
+    </>
+  );
+
   return (
-    <AppShell
-      activeDestination={activeDestination}
-      onSelectDestination={handleSelectDestination}
-      onSelectRouteTarget={handleSelectRouteTarget}
-      onOpenAuth={handleOpenAuth}
-      unreadMessagesCount={unreadMessagesCount}
-      unreadNotificationsCount={unreadNotificationsCount}
-      rightSidebar={
-        <TrendingSidebarSection
-          trending={trendingAnime}
-          communities={communities}
-          onNavigateCommunities={() => handleSelectDestination('communities')}
-          onNavigateDiscover={() => handleSelectDestination('discover')}
-        />
-      }
-    >
-      {activeDestination === 'home' ? (
-        <HomePage
-          discussions={discussions}
-          featuredSeries={featuredSeries}
-          initialPostId={pendingPostId}
-          onConsumeInitialPost={handleConsumeInitialPost}
-          onNavigate={handleSelectDestination}
-          onOpenAuth={handleOpenAuth}
-          onStartDirectMessage={handleStartDirectMessage}
-        />
-      ) : activeDestination === 'discover' ? (
-        <DiscoverPage />
-      ) : activeDestination === 'communities' ? (
-        <CommunitiesPage
-          initialCommunityTarget={pendingCommunityTarget}
-          onConsumeCommunityTarget={handleConsumeCommunityTarget}
-          onOpenAuth={handleOpenAuth}
-          onNavigateProfile={() => handleSelectDestination('profile')}
-          onStartDirectMessage={handleStartDirectMessage}
-        />
-      ) : activeDestination === 'messages' ? (
-        <MessagesPage
-          initialDirectTargetUserId={pendingDirectMessageUserId}
-          onConsumeDirectTarget={handleConsumeDirectTarget}
-          initialRouteTarget={pendingMessagesTarget}
-          onConsumeRouteTarget={handleConsumeMessagesTarget}
-          onOpenAuth={handleOpenAuth}
-          onNavigateProfile={() => handleSelectDestination('profile')}
-        />
-      ) : activeDestination === 'notifications' ? (
-        <NotificationsPage
+    <>
+      <AppShell
+        activeDestination={activeDestination}
+        onSelectDestination={handleSelectDestination}
+        onSelectRouteTarget={handleSelectRouteTarget}
+        onOpenAuth={handleOpenAuth}
+        unreadMessagesCount={unreadMessagesCount}
+        unreadNotificationsCount={unreadNotificationsCount}
+        topBanner={topBannerNode}
+        footer={
+          <SiteFooter
+            onNavigateLegal={handleNavigateLegal}
+            onOpenCookiePreferences={() => setIsCookieModalOpen(true)}
+            onOpenCopyrightModal={() => setLegalFeedbackTab('copyright')}
+            onOpenFeedbackModal={() => setLegalFeedbackTab('feedback')}
+            onOpenAdminLogin={() => navigateToRoute({ kind: 'admin-login' })}
+          />
+        }
+        rightSidebar={
+          <TrendingSidebarSection
+            trending={trendingAnime}
+            communities={communities}
+            onNavigateCommunities={() => handleSelectDestination('communities')}
+            onNavigateDiscover={() => handleSelectDestination('discover')}
+          />
+        }
+      >
+        {routeView.kind === 'legal' ? (
+          <LegalDocumentPage
+            slug={routeView.slug}
+            onSelectSlug={handleNavigateLegal}
+            onBackToApp={() => handleSelectDestination('home')}
+            onOpenCookiePreferences={() => setIsCookieModalOpen(true)}
+            onOpenCopyrightModal={() => setLegalFeedbackTab('copyright')}
+            onOpenFeedbackModal={() => setLegalFeedbackTab('feedback')}
+          />
+        ) : activeDestination === 'home' ? (
+          <HomePage
+            discussions={discussions}
+            featuredSeries={featuredSeries}
+            initialPostId={pendingPostId}
+            onConsumeInitialPost={handleConsumeInitialPost}
+            onNavigate={handleSelectDestination}
+            onOpenAuth={handleOpenAuth}
+            onStartDirectMessage={handleStartDirectMessage}
+          />
+        ) : activeDestination === 'discover' ? (
+          <DiscoverPage />
+        ) : activeDestination === 'communities' ? (
+          <CommunitiesPage
+            initialCommunityTarget={pendingCommunityTarget}
+            onConsumeCommunityTarget={handleConsumeCommunityTarget}
+            onOpenAuth={handleOpenAuth}
+            onNavigateProfile={() => handleSelectDestination('profile')}
+            onStartDirectMessage={handleStartDirectMessage}
+          />
+        ) : activeDestination === 'messages' ? (
+          <MessagesPage
+            initialDirectTargetUserId={pendingDirectMessageUserId}
+            onConsumeDirectTarget={handleConsumeDirectTarget}
+            initialRouteTarget={pendingMessagesTarget}
+            onConsumeRouteTarget={handleConsumeMessagesTarget}
+            onOpenAuth={handleOpenAuth}
+            onNavigateProfile={() => handleSelectDestination('profile')}
+          />
+        ) : activeDestination === 'notifications' ? (
+          <NotificationsPage
+            currentUserId={firebaseUser?.uid}
+            onNavigateDestination={handleSelectDestination}
+            onSelectRouteTarget={handleSelectRouteTarget}
+          />
+        ) : activeDestination === 'profile' ? (
+          <ProfilePage
+            initialAuthMode={authMode}
+            onStartDirectMessage={handleStartDirectMessage}
+            onNavigatePersonalisation={() =>
+              handleSelectDestination('personalisation')
+            }
+            onNavigateLegal={handleNavigateLegal}
+            onOpenCopyrightModal={() => setLegalFeedbackTab('copyright')}
+            onOpenFeedbackModal={() => setLegalFeedbackTab('feedback')}
+            onOpenCookiePreferences={() => setIsCookieModalOpen(true)}
+          />
+        ) : activeDestination === 'my-anime' ? (
+          <MyAnimeDashboardPage
+            currentUserId={firebaseUser?.uid}
+            onOpenAuth={() => handleOpenAuth('login')}
+            onNavigateDestination={handleSelectDestination}
+          />
+        ) : activeDestination === 'anime-tracker' ? (
+          <AnimeTrackerPage
+            currentUserId={firebaseUser?.uid}
+            onOpenAuth={() => handleOpenAuth('login')}
+          />
+        ) : activeDestination === 'collections' ? (
+          <CollectionsPage
+            currentUserId={firebaseUser?.uid}
+            onOpenAuth={() => handleOpenAuth('login')}
+            onNavigateDestination={handleSelectDestination}
+          />
+        ) : activeDestination === 'personalisation' ? (
+          <PersonalisationPage
+            currentUserId={firebaseUser?.uid}
+            onNavigateDestination={handleSelectDestination}
+          />
+        ) : activeDestination === 'calendar' ? (
+          <CalendarPage
+            currentUserId={firebaseUser?.uid}
+            onOpenAuth={() => handleOpenAuth('login')}
+            onNavigateDestination={handleSelectDestination}
+          />
+        ) : activeDestination === 'news' ? (
+          <NewsCenterPage
+            currentUserId={firebaseUser?.uid}
+            onOpenAuth={() => handleOpenAuth('login')}
+          />
+        ) : activeDestination === 'journey' ? (
+          <WatchJourneyPage
+            currentUserId={firebaseUser?.uid}
+            onOpenAuth={() => handleOpenAuth('login')}
+            onNavigateDestination={handleSelectDestination}
+          />
+        ) : (
+          <ComingSoonPage
+            destinationId={activeDestination}
+            onReturnHome={() => handleSelectDestination('home')}
+          />
+        )}
+
+        <NotificationToastContainer
           currentUserId={firebaseUser?.uid}
           onNavigateDestination={handleSelectDestination}
           onSelectRouteTarget={handleSelectRouteTarget}
         />
-      ) : activeDestination === 'profile' ? (
-        <ProfilePage
-          initialAuthMode={authMode}
-          onStartDirectMessage={handleStartDirectMessage}
-          onNavigatePersonalisation={() => handleSelectDestination('personalisation')}
+        <PublicProfileModal
+          targetUserId={deepLinkedProfileId}
+          onClose={() => setDeepLinkedProfileId(null)}
+          onOpenAuth={handleOpenAuth}
+          onStartDirectMessage={(uid) => {
+            setDeepLinkedProfileId(null);
+            handleStartDirectMessage(uid);
+          }}
+          onOpenPostDetail={(clickedPost) => {
+            setDeepLinkedProfileId(null);
+            setPendingPostId(clickedPost.id);
+            handleSelectDestination('home');
+          }}
         />
-      ) : activeDestination === 'my-anime' ? (
-        <MyAnimeDashboardPage
-          currentUserId={firebaseUser?.uid}
-          onOpenAuth={() => handleOpenAuth('login')}
-          onNavigateDestination={handleSelectDestination}
+        <PersonalisationOnboardingModal
+          isOpen={isOnboardingOpen}
+          onClose={() => setIsOnboardingOpen(false)}
         />
-      ) : activeDestination === 'anime-tracker' ? (
-        <AnimeTrackerPage
-          currentUserId={firebaseUser?.uid}
-          onOpenAuth={() => handleOpenAuth('login')}
-        />
-      ) : activeDestination === 'collections' ? (
-        <CollectionsPage
-          currentUserId={firebaseUser?.uid}
-          onOpenAuth={() => handleOpenAuth('login')}
-          onNavigateDestination={handleSelectDestination}
-        />
-      ) : activeDestination === 'personalisation' ? (
-        <PersonalisationPage
-          currentUserId={firebaseUser?.uid}
-          onNavigateDestination={handleSelectDestination}
-        />
-      ) : activeDestination === 'calendar' ? (
-        <CalendarPage
-          currentUserId={firebaseUser?.uid}
-          onOpenAuth={() => handleOpenAuth('login')}
-          onNavigateDestination={handleSelectDestination}
-        />
-      ) : activeDestination === 'news' ? (
-        <NewsCenterPage
-          currentUserId={firebaseUser?.uid}
-          onOpenAuth={() => handleOpenAuth('login')}
-        />
-      ) : activeDestination === 'journey' ? (
-        <WatchJourneyPage
-          currentUserId={firebaseUser?.uid}
-          onOpenAuth={() => handleOpenAuth('login')}
-          onNavigateDestination={handleSelectDestination}
-        />
-      ) : (
-        <ComingSoonPage
-          destinationId={activeDestination}
-          onReturnHome={() => handleSelectDestination('home')}
-        />
-      )}
-      <NotificationToastContainer
-        currentUserId={firebaseUser?.uid}
-        onNavigateDestination={handleSelectDestination}
-        onSelectRouteTarget={handleSelectRouteTarget}
+      </AppShell>
+
+      <CookiePreferencesModal
+        isOpen={isCookieModalOpen}
+        onClose={() => setIsCookieModalOpen(false)}
+        onOpenCookiePolicy={() => handleNavigateLegal('cookie-policy')}
       />
-      <PublicProfileModal
-        targetUserId={deepLinkedProfileId}
-        onClose={() => setDeepLinkedProfileId(null)}
-        onOpenAuth={handleOpenAuth}
-        onStartDirectMessage={(uid) => {
-          setDeepLinkedProfileId(null);
-          handleStartDirectMessage(uid);
-        }}
-        onOpenPostDetail={(clickedPost) => {
-          setDeepLinkedProfileId(null);
-          setPendingPostId(clickedPost.id);
-          handleSelectDestination('home');
-        }}
+
+      <CopyrightFeedbackModal
+        isOpen={legalFeedbackTab !== null}
+        initialTab={legalFeedbackTab || 'copyright'}
+        pageContext={
+          routeView.kind === 'legal' ? `/${routeView.slug}` : `/${activeDestination}`
+        }
+        onClose={() => setLegalFeedbackTab(null)}
+        onRequireAuth={() => handleOpenAuth('login')}
       />
-      <PersonalisationOnboardingModal
-        isOpen={isOnboardingOpen}
-        onClose={() => setIsOnboardingOpen(false)}
-      />
-    </AppShell>
+    </>
   );
 }

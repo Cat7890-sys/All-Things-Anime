@@ -85,7 +85,11 @@ export function subscribeToPostComments(
   return onSnapshot(
     q,
     (snapshot) => {
-      onComments(snapshot.docs.map((d) => mapDocToComment(d.id, d.data())));
+      onComments(
+        snapshot.docs
+          .filter((d) => d.data().moderationStatus !== 'removed_by_moderator')
+          .map((d) => mapDocToComment(d.id, d.data()))
+      );
     },
     (error) => {
       try {

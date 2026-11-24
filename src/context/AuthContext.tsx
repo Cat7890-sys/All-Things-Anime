@@ -43,7 +43,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     setProfileError(null);
     try {
       let account = await getOwnAccountProfile(user.uid);
-      if (account && user.emailVerified && !account.emailVerified) {
+      if (
+        account &&
+        user.emailVerified &&
+        !account.emailVerified &&
+        account.accountStatus === 'pending_verification'
+      ) {
         await syncEmailVerificationToFirestore(user.uid);
         account = await getOwnAccountProfile(user.uid);
       }

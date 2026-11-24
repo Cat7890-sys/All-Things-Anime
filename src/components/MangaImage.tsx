@@ -28,7 +28,7 @@ export const MangaImage: React.FC<MangaImageProps> = ({
 
   return (
     <div
-      className={`relative overflow-hidden bg-[#EAECEF] dark:bg-[#090B14] ${aspectClassName} ${className}`}
+      className={`relative w-full max-w-full min-w-0 overflow-hidden bg-[#EAECEF] dark:bg-[#090B14] ${aspectClassName} ${className}`}
     >
       {!hasError && hasValidSrc ? (
         <>
@@ -44,7 +44,7 @@ export const MangaImage: React.FC<MangaImageProps> = ({
             referrerPolicy="no-referrer"
             onLoad={() => setIsLoaded(true)}
             onError={() => setHasError(true)}
-            className={`h-full w-full object-cover transition-opacity duration-200 ${
+            className={`block h-full w-full max-w-full max-h-full object-cover transition-opacity duration-200 ${
               isLoaded ? 'opacity-100' : 'opacity-0'
             }`}
           />

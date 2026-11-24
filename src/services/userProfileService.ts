@@ -62,6 +62,21 @@ function mapActivitySummary(raw: unknown): AnimeActivitySummary | undefined {
   };
 }
 
+const VALID_ACCOUNT_STATUSES = new Set<AtaUserAccount['accountStatus']>([
+  'pending_verification',
+  'active',
+  'suspended',
+  'banned',
+  'deletion_requested',
+]);
+
+function mapAccountStatus(raw: unknown): AtaUserAccount['accountStatus'] {
+  if (typeof raw === 'string' && VALID_ACCOUNT_STATUSES.has(raw as AtaUserAccount['accountStatus'])) {
+    return raw as AtaUserAccount['accountStatus'];
+  }
+  return 'pending_verification';
+}
+
 export async function getOwnAccountProfile(
   uid: string
 ): Promise<AtaUserAccount | null> {
@@ -79,8 +94,12 @@ export async function getOwnAccountProfile(
       bio: typeof data.bio === 'string' ? data.bio : '',
       avatarUrl: typeof data.avatarUrl === 'string' ? data.avatarUrl : '',
       emailVerified: Boolean(data.emailVerified),
-      accountStatus:
-        data.accountStatus === 'active' ? 'active' : 'pending_verification',
+      accountStatus: mapAccountStatus(data.accountStatus),
+      suspensionReason:
+        typeof data.suspensionReason === 'string' ? data.suspensionReason : undefined,
+      suspendedUntil: toDateOrNull(data.suspendedUntil),
+      banReason: typeof data.banReason === 'string' ? data.banReason : undefined,
+      isVerifiedBadge: Boolean(data.isVerifiedBadge),
       createdAt: toDateOrNull(data.createdAt),
       updatedAt: toDateOrNull(data.updatedAt),
     };
@@ -144,6 +163,12 @@ export async function syncEmailVerificationToFirestore(
 
   const path = `users/${uid}`;
   try {
+    const snap = await getDoc(doc(db, 'users', uid));
+    if (!snap.exists()) return;
+    const currentStatus = snap.data().accountStatus;
+    if (currentStatus !== 'pending_verification') {
+      return;
+    }
     await updateDoc(doc(db, 'users', uid), {
       emailVerified: true,
       accountStatus: 'active',

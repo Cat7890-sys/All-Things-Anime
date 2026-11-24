@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ShieldCheck, WifiOff } from 'lucide-react';
-import type { AuthViewMode } from '../types';
+import type { AuthViewMode, LegalPageSlug } from '../types';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { AtaLogo } from '../components/AtaLogo';
 import { ForgotPasswordForm } from '../components/auth/ForgotPasswordForm';
@@ -10,11 +10,13 @@ import { RegisterForm } from '../components/auth/RegisterForm';
 interface AuthPageProps {
   initialMode?: AuthViewMode;
   onAuthComplete?: () => void;
+  onNavigateLegal?: (slug: LegalPageSlug) => void;
 }
 
 export const AuthPage: React.FC<AuthPageProps> = ({
   initialMode = 'login',
   onAuthComplete,
+  onNavigateLegal,
 }) => {
   const [mode, setMode] = useState<AuthViewMode>(initialMode);
   const { isOnline } = useOnlineStatus();
@@ -141,12 +143,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           <LoginForm
             onSwitchMode={setMode}
             onLoginSuccess={onAuthComplete}
+            onNavigateLegal={onNavigateLegal}
           />
         )}
         {mode === 'register' && (
           <RegisterForm
             onSwitchMode={setMode}
             onRegistrationSuccess={onAuthComplete}
+            onNavigateLegal={onNavigateLegal}
           />
         )}
         {mode === 'reset' && <ForgotPasswordForm onSwitchMode={setMode} />}

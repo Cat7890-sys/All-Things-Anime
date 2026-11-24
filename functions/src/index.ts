@@ -13,3 +13,12 @@ export {
   onConversationMessageCreated,
   onGroupConversationMembershipWritten,
 } from './triggers/messagingTriggers';
+
+export {
+  adminGetSessionContext,
+  adminRecordSecurityEvent,
+  adminManageSeatAndPermissions,
+  adminModerateUser,
+  adminModerateContent,
+  adminPublishAnnouncement,
+} from './admin/adminCallables';

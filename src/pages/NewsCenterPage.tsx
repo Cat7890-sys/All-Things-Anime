@@ -1,20 +1,18 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Bookmark,
   ExternalLink,
-  Filter,
   Newspaper,
   Search,
-  Share2,
-  Sparkles,
 } from 'lucide-react';
+import newsPremiereImg from '../assets/images/news_seasonal_premiere_1795537482946.jpg';
 import type { AnimeNewsArticle, NewsCategory } from '../types';
 import {
   FEATURED_ANIME_NEWS,
+  fetchPublishedAdminNews,
   subscribeToUserNewsBookmarks,
   toggleNewsBookmark,
 } from '../services/companion/newsService';
-import { useAuth } from '../hooks/useAuth';
 
 interface NewsCenterPageProps {
   currentUserId?: string;
@@ -37,6 +35,17 @@ export const NewsCenterPage: React.FC<NewsCenterPageProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<NewsCategory | 'All'>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
+  const [publishedAdminArticles, setPublishedAdminArticles] = useState<AnimeNewsArticle[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    void fetchPublishedAdminNews().then((items) => {
+      if (active) setPublishedAdminArticles(items);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!currentUserId) {
@@ -60,7 +69,19 @@ export const NewsCenterPage: React.FC<NewsCenterPageProps> = ({
     await toggleNewsBookmark(currentUserId, article, isBookmarked);
   };
 
-  const filteredArticles = FEATURED_ANIME_NEWS.filter((article) => {
+  const mergedArticles = useMemo(() => {
+    const seen = new Set<string>();
+    const combined: AnimeNewsArticle[] = [];
+    for (const item of [...publishedAdminArticles, ...FEATURED_ANIME_NEWS]) {
+      if (!seen.has(item.id)) {
+        seen.add(item.id);
+        combined.push(item);
+      }
+    }
+    return combined;
+  }, [publishedAdminArticles]);
+
+  const filteredArticles = mergedArticles.filter((article) => {
     if (selectedCategory !== 'All' && article.category !== selectedCategory) {
       return false;
     }
@@ -76,16 +97,16 @@ export const NewsCenterPage: React.FC<NewsCenterPageProps> = ({
   return (
     <div className="space-y-6">
       {/* Header Banner */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#171923] via-[#090B14] to-[#171923] border border-[#D4D7E2] dark:border-[#303342] p-6 sm:p-8">
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#171923] via-[#090B14] to-[#171923] border border-[#303342] p-6 sm:p-8 text-white">
         <div className="relative z-10 space-y-2 max-w-2xl">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#EF3038]/10 text-[#EF3038] text-xs font-bold tracking-wide uppercase">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#EF3038]/15 text-[#EF3038] text-xs font-bold tracking-wide uppercase">
             <Newspaper className="h-3.5 w-3.5" aria-hidden="true" />
             <span>ATA News Centre</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-[#090B14] dark:text-white">
-            Anime Industry & Release Dispatch
+          <h1 className="font-display-space text-2xl sm:text-3xl font-black text-white">
+            Anime Industry &amp; Release Dispatch
           </h1>
-          <p className="text-sm text-[#52576B] dark:text-[#A7A9B8]">
+          <p className="text-sm text-[#D4D7E2]">
             Stay informed with verified production announcements, director interviews, seasonal reviews, and festival event schedules.
           </p>
         </div>
@@ -141,11 +162,21 @@ export const NewsCenterPage: React.FC<NewsCenterPageProps> = ({
                     <img
                       src={article.imageUrl}
                       alt={article.title}
+                      onError={(e) => {
+                        if (e.currentTarget.src !== newsPremiereImg) {
+                          e.currentTarget.src = newsPremiereImg;
+                        }
+                      }}
                       className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
                     />
-                    <span className="absolute top-3 left-3 px-2.5 py-1 rounded-lg bg-black/70 backdrop-blur-md text-white text-[10px] font-bold">
+                    <span className="absolute top-3 left-3 px-2.5 py-1 rounded-lg bg-black/75 backdrop-blur-md text-white text-[10px] font-bold">
                       {article.category}
                     </span>
+                    {article.isSamplePreview && (
+                      <span className="absolute top-3 right-3 px-2.5 py-1 rounded-lg bg-[#090B14]/85 text-[#D4D7E2] border border-[#303342] text-[10px] font-semibold">
+                        Sample Preview
+                      </span>
+                    )}
                   </div>
 
                   <div className="p-5 space-y-3">

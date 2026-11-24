@@ -15,8 +15,10 @@ import {
   validateRegistrationForm,
   validateUsername,
 } from '../../services/validation';
+import { buildAppHref } from '../../services/routingService';
 import type {
   AuthViewMode,
+  LegalPageSlug,
   RegisterAccountInput,
   ValidationErrors,
 } from '../../types';
@@ -24,11 +26,13 @@ import type {
 interface RegisterFormProps {
   onSwitchMode: (mode: AuthViewMode) => void;
   onRegistrationSuccess?: () => void;
+  onNavigateLegal?: (slug: LegalPageSlug) => void;
 }
 
 export const RegisterForm: React.FC<RegisterFormProps> = ({
   onSwitchMode,
   onRegistrationSuccess,
+  onNavigateLegal,
 }) => {
   const [form, setForm] = useState<RegisterAccountInput>({
     email: '',
@@ -45,8 +49,20 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
   const [usernameStatus, setUsernameStatus] = useState<
     'idle' | 'checking' | 'available' | 'taken'
   >('idle');
+  const [acceptedLegalAndAge, setAcceptedLegalAndAge] = useState(false);
+  const [consentError, setConsentError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const openLegal = (slug: LegalPageSlug) => {
+    if (onNavigateLegal) {
+      onNavigateLegal(slug);
+      return;
+    }
+    const href = buildAppHref({ kind: 'legal', slug }, import.meta.env.BASE_URL);
+    window.history.pushState({}, '', href);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
 
   const handleUsernameBlur = async () => {
     const formatErr = validateUsername(form.username);
@@ -74,8 +90,15 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
     if (isSubmitting) return;
 
     setSubmitError(null);
+    setConsentError(null);
     const errors = validateRegistrationForm(form);
     setFieldErrors(errors);
+    if (!acceptedLegalAndAge) {
+      setConsentError(
+        'Please confirm the minimum age requirement and accept the Terms & Conditions and Privacy Policy.'
+      );
+      return;
+    }
     if (Object.keys(errors).length > 0) return;
 
     setIsSubmitting(true);
@@ -320,6 +343,62 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
         {fieldErrors.confirmPassword && (
           <p className="mt-1.5 text-xs text-[#B92335] dark:text-[#EF3038]">
             {fieldErrors.confirmPassword}
+          </p>
+        )}
+      </div>
+
+      {/* Privacy Notice & Un-prechecked Consent Checkbox */}
+      <div className="rounded-xl bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] p-3.5 space-y-2.5 text-xs">
+        <p className="text-[#52576B] dark:text-[#A7A9B8] leading-relaxed">
+          Your email is used strictly for Firebase Authentication, verification,
+          and account recovery and is never displayed on public profiles.
+        </p>
+
+        <label className="flex items-start gap-2.5 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={acceptedLegalAndAge}
+            onChange={(e) => {
+              setAcceptedLegalAndAge(e.target.checked);
+              if (e.target.checked && consentError) {
+                setConsentError(null);
+              }
+            }}
+            aria-invalid={Boolean(consentError)}
+            className="mt-0.5 h-4 w-4 accent-[#EF3038] shrink-0"
+          />
+          <span className="text-[#090B14] dark:text-[#D4D7E2] leading-relaxed">
+            I confirm I am at least 13 years old (or have verifiable parental/guardian consent if under 18 where required) and agree to the{' '}
+            <button
+              type="button"
+              onClick={() => openLegal('terms')}
+              className="font-semibold text-[#B92335] dark:text-[#EF3038] underline underline-offset-2"
+            >
+              Terms &amp; Conditions
+            </button>
+            ,{' '}
+            <button
+              type="button"
+              onClick={() => openLegal('privacy-policy')}
+              className="font-semibold text-[#B92335] dark:text-[#EF3038] underline underline-offset-2"
+            >
+              Privacy Policy
+            </button>
+            , and{' '}
+            <button
+              type="button"
+              onClick={() => openLegal('community-guidelines')}
+              className="font-semibold text-[#B92335] dark:text-[#EF3038] underline underline-offset-2"
+            >
+              Community Guidelines
+            </button>
+            .
+          </span>
+        </label>
+
+        {consentError && (
+          <p role="alert" className="text-xs font-medium text-[#B92335] dark:text-[#EF3038]">
+            {consentError}
           </p>
         )}
       </div>

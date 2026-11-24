@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   Calendar,
@@ -24,6 +24,11 @@ import type {
   DiscoveryCategoryMeta,
   NormalizedAnime,
 } from '../services/catalogue/anilistTypes';
+import {
+  applyCatalogueOverrides,
+  fetchCatalogueOverrides,
+} from '../services/catalogue/catalogueOverrideService';
+import type { CatalogueOverrideRecord } from '../types';
 
 type FilterCategoryTab = 'all' | DiscoveryCategoryKey;
 
@@ -42,6 +47,7 @@ function formatLastUpdated(timestampMs: number | null): string | null {
 interface CategorySectionProps {
   meta: DiscoveryCategoryMeta;
   state: CategoryDiscoveryState;
+  catalogueOverrides: Record<number, CatalogueOverrideRecord>;
   filterQuery: string;
   isExpanded: boolean;
   isSingleTabView: boolean;
@@ -54,6 +60,7 @@ interface CategorySectionProps {
 const CategorySection: React.FC<CategorySectionProps> = ({
   meta,
   state,
+  catalogueOverrides,
   filterQuery,
   isExpanded,
   isSingleTabView,
@@ -64,9 +71,14 @@ const CategorySection: React.FC<CategorySectionProps> = ({
 }) => {
   const normalizedQuery = filterQuery.trim().toLowerCase();
 
+  const overriddenItems = useMemo(
+    () => applyCatalogueOverrides(state.items, catalogueOverrides),
+    [state.items, catalogueOverrides]
+  );
+
   const filteredItems = useMemo(() => {
-    if (!normalizedQuery) return state.items;
-    return state.items.filter((item) => {
+    if (!normalizedQuery) return overriddenItems;
+    return overriddenItems.filter(({ anime: item }) => {
       const matchesTitle =
         item.title.display.toLowerCase().includes(normalizedQuery) ||
         (item.title.english || '').toLowerCase().includes(normalizedQuery) ||
@@ -80,7 +92,7 @@ const CategorySection: React.FC<CategorySectionProps> = ({
       );
       return matchesTitle || matchesGenre || matchesStudio;
     });
-  }, [normalizedQuery, state.items]);
+  }, [normalizedQuery, overriddenItems]);
 
   const showAll = isSingleTabView || isExpanded || Boolean(normalizedQuery);
   const visibleItems = showAll ? filteredItems : filteredItems.slice(0, 8);
@@ -239,10 +251,11 @@ const CategorySection: React.FC<CategorySectionProps> = ({
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-          {visibleItems.map((anime) => (
+          {visibleItems.map((entry) => (
             <AnimeCard
-              key={anime.id}
-              anime={anime}
+              key={entry.anime.id}
+              anime={entry.anime}
+              editorialOverride={entry.override}
               showTrendingRank={meta.id === 'trending'}
               onSelect={onSelectAnime}
             />
@@ -270,6 +283,19 @@ export const DiscoverPage: React.FC = () => {
   const [selectedAnime, setSelectedAnime] = useState<NormalizedAnime | null>(
     null
   );
+  const [catalogueOverrides, setCatalogueOverrides] = useState<
+    Record<number, CatalogueOverrideRecord>
+  >({});
+
+  useEffect(() => {
+    let active = true;
+    void fetchCatalogueOverrides().then((res) => {
+      if (active) setCatalogueOverrides(res);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const currentSeason =
     categories.seasonal.seasonInfo ?? getCurrentAnimeSeason();
@@ -434,6 +460,7 @@ export const DiscoverPage: React.FC = () => {
             key={meta.id}
             meta={meta}
             state={categories[meta.id]}
+            catalogueOverrides={catalogueOverrides}
             filterQuery={filterQuery}
             isExpanded={Boolean(expandedCategories[meta.id])}
             isSingleTabView={activeTab !== 'all'}
@@ -472,6 +499,7 @@ export const DiscoverPage: React.FC = () => {
       <AnimeDetailModal
         anime={selectedAnime}
         onClose={() => setSelectedAnime(null)}
+        onSelectAnime={setSelectedAnime}
       />
     </div>
   );

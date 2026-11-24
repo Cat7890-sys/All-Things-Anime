@@ -40,6 +40,8 @@ interface AppShellProps {
   unreadMessagesCount?: number;
   unreadNotificationsCount?: number;
   rightSidebar: React.ReactNode;
+  topBanner?: React.ReactNode;
+  footer?: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -77,6 +79,8 @@ export const AppShell: React.FC<AppShellProps> = ({
   unreadMessagesCount = 0,
   unreadNotificationsCount = 0,
   rightSidebar,
+  topBanner,
+  footer,
   children,
 }) => {
   const { theme, toggleTheme } = useTheme();
@@ -355,6 +359,7 @@ export const AppShell: React.FC<AppShellProps> = ({
 
           {/* Center Main Content Column */}
           <main id="ata-main-content" className="min-w-0 space-y-6">
+            {topBanner}
             <PWASystemBanners />
             <PWAInstallBanner />
             {children}
@@ -370,6 +375,8 @@ export const AppShell: React.FC<AppShellProps> = ({
             {rightSidebar}
           </aside>
         </div>
+
+        {footer}
       </div>
 
       {/* Mobile Compact Bottom Navigation (< lg) — 56px tall + safe-area bottom */}

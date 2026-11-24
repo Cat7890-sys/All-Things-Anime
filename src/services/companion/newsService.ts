@@ -3,73 +3,117 @@ import {
   deleteDoc,
   doc,
   getDocs,
+  limit,
   onSnapshot,
+  orderBy,
   query,
   serverTimestamp,
   setDoc,
   Timestamp,
+  where,
   type Unsubscribe,
 } from 'firebase/firestore';
-import type { AnimeNewsArticle, NewsCategory } from '../../types';
+import newsStudioImg from '../../assets/images/news_animation_studio_1795537483241.jpg';
+import newsPremiereImg from '../../assets/images/news_seasonal_premiere_1795537482946.jpg';
+import newsSoundtrackImg from '../../assets/images/news_soundtrack_symphony_1795537482648.jpg';
+import type { AdminNewsArticle, AnimeNewsArticle, NewsCategory } from '../../types';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 
 export const FEATURED_ANIME_NEWS: AnimeNewsArticle[] = [
   {
     id: 'news-01',
-    title: 'Wit Studio & Production I.G Announce Collaborative Animation Laboratory for Hand-Drawn Keyframes',
-    source: 'Anime News Desk',
+    title: 'Sample Editorial Preview: Traditional Keyframe & Cel-Shading Craft in Modern Action Series',
+    source: 'ATA Editorial Sample',
     sourceUrl: 'https://anilist.co',
     category: 'Industry',
-    publishedAt: '2 hours ago',
-    summary: 'A new dedicated studio wing aims to preserve traditional cel-shading principles while training next-generation digital ink artists on historical action sequences.',
-    imageUrl: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&w=800&q=80',
-    author: 'Kenji Sato',
+    publishedAt: 'Sample Preview',
+    summary: 'An editorial feature exploring how dedicated animation units preserve hand-drawn keyframe timing alongside digital compositing pipelines.',
+    imageUrl: newsStudioImg,
+    author: 'ATA Editorial Desk',
+    isSamplePreview: true,
   },
   {
     id: 'news-02',
-    title: 'Spring Season Preview: Top 10 Most Anticipated Sequel Arcs and Original Screenplays',
-    source: 'CrunchyWire',
+    title: 'Sample Editorial Preview: Upcoming Seasonal Premiere Spotlight & Studio Lineups',
+    source: 'ATA Editorial Sample',
     sourceUrl: 'https://anilist.co',
     category: 'Releases',
-    publishedAt: '5 hours ago',
-    summary: 'From sci-fi cyberpunk thrillers to pastoral slice-of-life journeys, here is the complete breakdown of character directors and production lineups returning this April.',
-    imageUrl: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?auto=format&fit=crop&w=800&q=80',
-    author: 'Mina Takahashi',
+    publishedAt: 'Sample Preview',
+    summary: 'A curated overview of newly announced seasonal television arcs, theatrical premieres, and confirmed production schedules via AniList.',
+    imageUrl: newsPremiereImg,
+    author: 'ATA Editorial Desk',
+    isSamplePreview: true,
   },
   {
     id: 'news-03',
-    title: 'Director Interview: Crafting Emotional Silence in Atmospheric Fantasy Adaptations',
-    source: 'Sakuga Studies',
+    title: 'Sample Editorial Preview: Orchestral Scoring & Emotional Silence in Fantasy Soundtracks',
+    source: 'ATA Editorial Sample',
     sourceUrl: 'https://anilist.co',
     category: 'Interviews',
-    publishedAt: '1 day ago',
-    summary: 'In an exclusive discussion, lead directors discuss why letting background audio breathe without background music creates unforgettable dramatic tension.',
-    imageUrl: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=800&q=80',
-    author: 'Ren Kurosawa',
+    publishedAt: 'Sample Preview',
+    summary: 'Examining how composers and sound directors balance live orchestral themes with intentional acoustic restraint during pivotal story scenes.',
+    imageUrl: newsSoundtrackImg,
+    author: 'ATA Editorial Desk',
+    isSamplePreview: true,
   },
   {
     id: 'news-04',
-    title: 'Annual Tokyo Animation Expo Confirms Global Virtual Screening Rooms for Upcoming Summer Features',
-    source: 'Global Anime Gazette',
+    title: 'Sample Editorial Preview: Global Simulcast Festivals & Creator Q&A Livestreams',
+    source: 'ATA Editorial Sample',
     sourceUrl: 'https://anilist.co',
     category: 'Events',
-    publishedAt: '2 days ago',
-    summary: 'International fans will have access to simultaneous theater premieres and live creator Q&A sessions through online festival passes.',
-    imageUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=800&q=80',
-    author: 'Hana Matsuoka',
+    publishedAt: 'Sample Preview',
+    summary: 'How international anime conventions and licensed online showcases connect overseas viewers with directors, animators, and voice casts.',
+    imageUrl: newsPremiereImg,
+    author: 'ATA Editorial Desk',
+    isSamplePreview: true,
   },
   {
     id: 'news-05',
-    title: 'Review: Why Monolith of Kiri Redefines World-Building Through Architectural Cinematography',
-    source: 'ATA Editorial',
+    title: 'Sample Editorial Preview: Background Art & Atmospheric Architecture in Anime Cinema',
+    source: 'ATA Editorial Sample',
     sourceUrl: 'https://anilist.co',
     category: 'Reviews',
-    publishedAt: '3 days ago',
-    summary: 'An in-depth look at how background painters use stone texture and variable horizon lines to make fantasy geography feel lived-in and authentic.',
-    imageUrl: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=800&q=80',
-    author: 'Devon Vance',
+    publishedAt: 'Sample Preview',
+    summary: 'A closer look at how art directors use painted light gradients, perspective shifts, and weather motifs to ground fantastical settings.',
+    imageUrl: newsStudioImg,
+    author: 'ATA Editorial Desk',
+    isSamplePreview: true,
   },
 ];
+
+export async function fetchPublishedAdminNews(): Promise<AdminNewsArticle[]> {
+  try {
+    const q = query(
+      collection(db, 'adminNews'),
+      where('status', '==', 'published'),
+      orderBy('updatedAt', 'desc'),
+      limit(30)
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => {
+      const data = d.data();
+      return {
+        id: d.id,
+        title: String(data.title || ''),
+        source: String(data.source || 'ATA News'),
+        sourceUrl: typeof data.sourceUrl === 'string' ? data.sourceUrl : '',
+        category: (data.category as NewsCategory) || 'Industry',
+        publishedAt: String(data.publishedAt || 'Published'),
+        summary: String(data.summary || ''),
+        imageUrl: typeof data.imageUrl === 'string' && data.imageUrl ? data.imageUrl : newsPremiereImg,
+        author: String(data.author || 'ATA Editorial'),
+        status: 'published',
+        isFeatured: Boolean(data.isFeatured),
+        createdByUid: String(data.createdByUid || ''),
+        updatedAt: toDateOrNull(data.updatedAt),
+        isSamplePreview: false,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
 
 function toDateOrNull(value: unknown): Date | null {
   if (value instanceof Timestamp) return value.toDate();

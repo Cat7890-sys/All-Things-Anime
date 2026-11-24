@@ -11,9 +11,11 @@ import {
   Quote,
   RefreshCw,
   Save,
+  Scale,
   ShieldAlert,
   SlidersHorizontal,
   Sparkles,
+  Trash2,
 } from 'lucide-react';
 import { AtaLoadingSpinner } from '../components/AtaLoadingSpinner';
 import { PostCard } from '../components/social/PostCard';
@@ -22,6 +24,10 @@ import { PublicProfileModal } from '../components/social/PublicProfileModal';
 import { ReportModal } from '../components/social/ReportModal';
 import { UserAvatar } from '../components/UserAvatar';
 import { useAuth } from '../hooks/useAuth';
+import {
+  fetchOwnDeletionRequests,
+  submitAccountDeletionRequest,
+} from '../services/moderationService';
 import {
   fetchPostsByAuthor,
   getUserLikedPostMap,
@@ -38,11 +44,13 @@ import {
 } from '../services/userProfileService';
 import { validateProfileEditForm } from '../services/validation';
 import type {
+  AccountDeletionRequest,
   AtaComment,
   AtaPost,
   AtaPublicProfile,
   AuthViewMode,
   BlockedUserRecord,
+  LegalPageSlug,
   UpdatePostInput,
   UpdateProfileInput,
   ValidationErrors,
@@ -53,12 +61,20 @@ interface ProfilePageProps {
   initialAuthMode?: AuthViewMode;
   onStartDirectMessage?: (targetUserId: string) => void;
   onNavigatePersonalisation?: () => void;
+  onNavigateLegal?: (slug: LegalPageSlug) => void;
+  onOpenCopyrightModal?: () => void;
+  onOpenFeedbackModal?: () => void;
+  onOpenCookiePreferences?: () => void;
 }
 
 export const ProfilePage: React.FC<ProfilePageProps> = ({
   initialAuthMode = 'login',
   onStartDirectMessage,
   onNavigatePersonalisation,
+  onNavigateLegal,
+  onOpenCopyrightModal,
+  onOpenFeedbackModal,
+  onOpenCookiePreferences,
 }) => {
   const {
     firebaseUser,
@@ -109,19 +125,29 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const [reportCommentTarget, setReportCommentTarget] =
     useState<AtaComment | null>(null);
 
+  // Build 08B Privacy & Account Deletion Request State
+  const [deletionRequests, setDeletionRequests] = useState<AccountDeletionRequest[]>([]);
+  const [deletionReason, setDeletionReason] = useState('');
+  const [deletionAcknowledged, setDeletionAcknowledged] = useState(false);
+  const [isSubmittingDeletion, setIsSubmittingDeletion] = useState(false);
+  const [deletionError, setDeletionError] = useState<string | null>(null);
+  const [deletionSuccessId, setDeletionSuccessId] = useState<string | null>(null);
+
   const loadSocialProfileData = useCallback(async (uid: string) => {
     setIsLoadingOwnPosts(true);
     setIsLoadingBlocked(true);
     setOwnPostsError(null);
     try {
-      const [pubProf, postsRes, blockedList] = await Promise.all([
+      const [pubProf, postsRes, blockedList, ownDeletionReqs] = await Promise.all([
         getPublicProfile(uid),
         fetchPostsByAuthor(uid, 15),
         fetchBlockedUsers(uid),
+        fetchOwnDeletionRequests(uid),
       ]);
       setPublicSocialProfile(pubProf);
       setOwnPosts(postsRes.posts);
       setBlockedUsers(blockedList);
+      setDeletionRequests(ownDeletionReqs);
 
       if (pubProf) {
         setEditForm((prev) => ({
@@ -182,7 +208,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   }
 
   if (!firebaseUser) {
-    return <AuthPage initialMode={initialAuthMode} />;
+    return (
+      <AuthPage
+        initialMode={initialAuthMode}
+        onNavigateLegal={onNavigateLegal}
+      />
+    );
   }
 
   if (isLoadingProfile && !profile) {
@@ -314,8 +345,72 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     }
   };
 
+  const handleSubmitDeletionRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmittingDeletion) return;
+    setDeletionError(null);
+    setDeletionSuccessId(null);
+    setIsSubmittingDeletion(true);
+    try {
+      const id = await submitAccountDeletionRequest({
+        username,
+        email: profile?.email || firebaseUser.email || '',
+        reason: deletionReason,
+        acknowledgedIrreversible: deletionAcknowledged,
+      });
+      setDeletionSuccessId(id);
+      setDeletionReason('');
+      setDeletionAcknowledged(false);
+      const updatedReqs = await fetchOwnDeletionRequests(firebaseUser.uid);
+      setDeletionRequests(updatedReqs);
+    } catch (err) {
+      setDeletionError(
+        err instanceof Error
+          ? err.message
+          : 'Unable to submit account deletion request.'
+      );
+    } finally {
+      setIsSubmittingDeletion(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {/* Account Restriction / Deletion Status Banner */}
+      {profile &&
+        (profile.accountStatus === 'suspended' ||
+          profile.accountStatus === 'banned' ||
+          profile.accountStatus === 'deletion_requested') && (
+          <section
+            role="alert"
+            aria-label="Account status notice"
+            className="bg-white dark:bg-[#171923] border border-[#EF3038] rounded-2xl p-5 space-y-1.5"
+          >
+            <div className="flex items-start gap-3">
+              <ShieldAlert
+                className="h-5 w-5 text-[#EF3038] shrink-0 mt-0.5"
+                aria-hidden="true"
+              />
+              <div className="space-y-1 text-xs sm:text-sm">
+                <h2 className="font-display-space font-bold text-base text-[#090B14] dark:text-white">
+                  {profile.accountStatus === 'banned'
+                    ? 'Account Permanently Restricted'
+                    : profile.accountStatus === 'suspended'
+                      ? 'Account Temporarily Suspended'
+                      : 'Account Deletion Request Recorded'}
+                </h2>
+                <p className="text-[#52576B] dark:text-[#D4D7E2] leading-relaxed">
+                  {profile.accountStatus === 'banned'
+                    ? profile.banReason || 'Your account has been permanently restricted for violating ATA Terms or Community Guidelines.'
+                    : profile.accountStatus === 'suspended'
+                      ? profile.suspensionReason || 'Your account is currently suspended pending moderation review.'
+                      : 'An account deletion request is recorded against your account and is awaiting administrator processing.'}
+                </p>
+              </div>
+            </div>
+          </section>
+        )}
+
       {/* Unverified Email Gate Banner */}
       {!isVerified && (
         <section
@@ -886,6 +981,176 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             ))}
           </ul>
         )}
+      </section>
+
+      {/* Privacy, Account Deletion & Legal Help */}
+      <section
+        aria-labelledby="ata-privacy-deletion-heading"
+        className="bg-white dark:bg-[#171923] border border-[#D4D7E2] dark:border-[#303342] rounded-2xl p-6 space-y-5"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#D4D7E2] dark:border-[#303342] pb-3.5">
+          <div className="flex items-center gap-2">
+            <Scale className="h-4 w-4 text-[#EF3038]" aria-hidden="true" />
+            <h2
+              id="ata-privacy-deletion-heading"
+              className="font-display-space font-bold text-xl text-[#090B14] dark:text-white"
+            >
+              Privacy, Account Deletion &amp; Legal Help
+            </h2>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2.5">
+          {onNavigateLegal && (
+            <>
+              <button
+                type="button"
+                onClick={() => onNavigateLegal('privacy-policy')}
+                className="px-3.5 py-2 min-h-[40px] rounded-xl text-xs font-semibold text-[#090B14] dark:text-white bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] hover:border-[#EF3038] transition-colors"
+              >
+                Privacy Policy
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigateLegal('community-guidelines')}
+                className="px-3.5 py-2 min-h-[40px] rounded-xl text-xs font-semibold text-[#090B14] dark:text-white bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] hover:border-[#EF3038] transition-colors"
+              >
+                Community Guidelines
+              </button>
+            </>
+          )}
+          {onOpenCookiePreferences && (
+            <button
+              type="button"
+              onClick={onOpenCookiePreferences}
+              className="px-3.5 py-2 min-h-[40px] rounded-xl text-xs font-semibold text-[#090B14] dark:text-white bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] hover:border-[#EF3038] transition-colors"
+            >
+              Browser Storage Preferences
+            </button>
+          )}
+          {onOpenCopyrightModal && (
+            <button
+              type="button"
+              onClick={onOpenCopyrightModal}
+              className="px-3.5 py-2 min-h-[40px] rounded-xl text-xs font-semibold text-[#090B14] dark:text-white bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] hover:border-[#EF3038] transition-colors"
+            >
+              Copyright Complaint
+            </button>
+          )}
+          {onOpenFeedbackModal && (
+            <button
+              type="button"
+              onClick={onOpenFeedbackModal}
+              className="px-3.5 py-2 min-h-[40px] rounded-xl text-xs font-semibold text-[#090B14] dark:text-white bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] hover:border-[#EF3038] transition-colors"
+            >
+              Send Platform Feedback
+            </button>
+          )}
+        </div>
+
+        <div className="rounded-xl bg-[#F4F5F8] dark:bg-[#090B14] border border-[#D4D7E2] dark:border-[#303342] p-4 sm:p-5 space-y-4">
+          <div className="flex items-start gap-2.5">
+            <Trash2 className="h-4 w-4 text-[#EF3038] shrink-0 mt-0.5" aria-hidden="true" />
+            <div className="space-y-1">
+              <h3 className="font-display-space font-bold text-sm text-[#090B14] dark:text-white">
+                Request Account &amp; Personal Data Deletion (POPIA / GDPR)
+              </h3>
+              <p className="text-xs text-[#52576B] dark:text-[#A7A9B8] leading-relaxed">
+                Submit a verified request to permanently deactivate and remove your ATA account and personal profile data. Required security/moderation audit trails may be retained briefly where legally permitted.
+              </p>
+            </div>
+          </div>
+
+          {deletionSuccessId && (
+            <div
+              role="status"
+              className="flex items-start gap-2 rounded-xl bg-emerald-500/10 border border-emerald-500/40 p-3 text-xs text-emerald-800 dark:text-emerald-200"
+            >
+              <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
+              <span>
+                Deletion request recorded (Ref: {deletionSuccessId}). An ATA compliance administrator will process your request.
+              </span>
+            </div>
+          )}
+
+          {deletionError && (
+            <div
+              role="alert"
+              className="flex items-start gap-2 rounded-xl bg-[#EF3038]/10 border border-[#EF3038] p-3 text-xs text-[#090B14] dark:text-white"
+            >
+              <AlertCircle className="h-4 w-4 text-[#EF3038] shrink-0 mt-0.5" aria-hidden="true" />
+              <span>{deletionError}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmitDeletionRequest} className="space-y-3">
+            <div>
+              <label
+                htmlFor="ata-deletion-reason"
+                className="block text-xs font-semibold text-[#090B14] dark:text-white mb-1"
+              >
+                Optional Reason (max 500 characters)
+              </label>
+              <textarea
+                id="ata-deletion-reason"
+                rows={2}
+                maxLength={500}
+                value={deletionReason}
+                onChange={(e) => setDeletionReason(e.target.value)}
+                placeholder="Let us know why you are leaving or any privacy notes..."
+                className="w-full resize-none rounded-xl bg-white dark:bg-[#171923] border border-[#D4D7E2] dark:border-[#303342] p-3 text-xs text-[#090B14] dark:text-white focus:border-[#EF3038] focus:outline-none"
+              />
+            </div>
+
+            <label className="flex items-start gap-2.5 cursor-pointer text-xs">
+              <input
+                type="checkbox"
+                checked={deletionAcknowledged}
+                onChange={(e) => setDeletionAcknowledged(e.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-[#EF3038] shrink-0"
+              />
+              <span className="text-[#090B14] dark:text-[#D4D7E2] leading-relaxed">
+                I understand that account deletion is permanent and irreversible once completed by an administrator.
+              </span>
+            </label>
+
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={isSubmittingDeletion}
+                className="inline-flex items-center gap-2 px-4 py-2 min-h-[42px] rounded-xl text-xs font-semibold text-white bg-[#EF3038] border border-[#B92335] hover:bg-[#B92335] disabled:opacity-60 transition-colors"
+              >
+                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>
+                  {isSubmittingDeletion ? 'Submitting Request...' : 'Submit Deletion Request'}
+                </span>
+              </button>
+            </div>
+          </form>
+
+          {deletionRequests.length > 0 && (
+            <div className="pt-3 border-t border-[#D4D7E2] dark:border-[#303342] space-y-2">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-[#52576B] dark:text-[#A7A9B8]">
+                Your Deletion Requests
+              </p>
+              <ul className="space-y-1.5 text-xs">
+                {deletionRequests.map((reqItem) => (
+                  <li
+                    key={reqItem.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white dark:bg-[#171923] border border-[#D4D7E2] dark:border-[#303342] px-3 py-2"
+                  >
+                    <span className="font-mono text-[11px] text-[#52576B] dark:text-[#A7A9B8]">
+                      Ref {reqItem.id}
+                    </span>
+                    <span className="font-semibold capitalize text-[#090B14] dark:text-white">
+                      {reqItem.status.replace('_', ' ')}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
       </section>
 
       <PostDetailModal

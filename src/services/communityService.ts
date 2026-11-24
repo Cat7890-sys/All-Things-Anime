@@ -222,7 +222,9 @@ export async function fetchPopularCommunities(
       limit(maxCount)
     );
     const snapshot = await getDocs(q);
-    return snapshot.docs.map((d) => mapDocToCommunity(d.id, d.data()));
+    return snapshot.docs
+      .filter((d) => d.data().moderationStatus !== 'removed_by_moderator')
+      .map((d) => mapDocToCommunity(d.id, d.data()));
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'communities');
   }
@@ -239,7 +241,9 @@ export async function fetchRecentCommunities(
       limit(maxCount)
     );
     const snapshot = await getDocs(q);
-    return snapshot.docs.map((d) => mapDocToCommunity(d.id, d.data()));
+    return snapshot.docs
+      .filter((d) => d.data().moderationStatus !== 'removed_by_moderator')
+      .map((d) => mapDocToCommunity(d.id, d.data()));
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'communities');
   }
@@ -257,7 +261,9 @@ export async function fetchOwnedCommunities(
       limit(30)
     );
     const snapshot = await getDocs(q);
-    return snapshot.docs.map((d) => mapDocToCommunity(d.id, d.data()));
+    return snapshot.docs
+      .filter((d) => d.data().moderationStatus !== 'removed_by_moderator')
+      .map((d) => mapDocToCommunity(d.id, d.data()));
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'communities');
   }
@@ -270,6 +276,7 @@ export async function fetchCommunityById(
   try {
     const snap = await getDoc(doc(db, 'communities', communityId));
     if (!snap.exists()) return null;
+    if (snap.data().moderationStatus === 'removed_by_moderator') return null;
     return mapDocToCommunity(snap.id, snap.data());
   } catch (error) {
     handleFirestoreError(

@@ -98,7 +98,12 @@ export interface DataBoundaryResult<T> {
 // Build 02: Independent ATA Accounts & Profiles
 // ==========================================
 
-export type AccountStatus = 'pending_verification' | 'active';
+export type AccountStatus =
+  | 'pending_verification'
+  | 'active'
+  | 'suspended'
+  | 'banned'
+  | 'deletion_requested';
 
 export interface AtaUserAccount {
   uid: string;
@@ -110,6 +115,10 @@ export interface AtaUserAccount {
   avatarUrl: string;
   emailVerified: boolean;
   accountStatus: AccountStatus;
+  suspensionReason?: string;
+  suspendedUntil?: Date | null;
+  banReason?: string;
+  isVerifiedBadge?: boolean;
   createdAt: Date | null;
   updatedAt: Date | null;
 }
@@ -249,7 +258,9 @@ export type ReportTargetType =
   | 'comment'
   | 'community'
   | 'message'
-  | 'conversation';
+  | 'conversation'
+  | 'profile'
+  | 'collection';
 
 export type ReportReason =
   | 'spam'
@@ -258,6 +269,8 @@ export type ReportReason =
   | 'hate_speech'
   | 'inappropriate_community'
   | 'rule_violation'
+  | 'copyright_infringement'
+  | 'impersonation'
   | 'other';
 
 export interface CreateReportInput {
@@ -886,6 +899,7 @@ export interface AnimeNewsArticle {
   imageUrl: string;
   author: string;
   isBookmarked?: boolean;
+  isSamplePreview?: boolean;
 }
 
 export interface WatchJourneyMilestone {
@@ -897,5 +911,316 @@ export interface WatchJourneyMilestone {
   progressText: string;
 }
 
+// ==========================================
+// Build 08A: Where to Watch (Free Streaming Directory)
+// ==========================================
 
+export type StreamingAccessModel = 'Free with Ads' | 'Free';
+export type StreamingAvailabilityType =
+  | 'full_series'
+  | 'selected_episodes'
+  | 'promotional'
+  | 'movie';
+export type StreamingVerificationStatus =
+  | 'verified'
+  | 'unverified'
+  | 'needs_review';
+
+export interface StreamingProvider {
+  id: string;
+  name: string;
+  shortLabel: string;
+  accentHex: string;
+  logoUrl?: string;
+  description: string;
+  supportedCountries: string[];
+  officialUrl: string;
+  allowedDomains: string[];
+  accessModel: StreamingAccessModel;
+  isFree: boolean;
+  isLegitimate: boolean;
+  verificationStatus: StreamingVerificationStatus;
+  lastVerifiedAt: string;
+}
+
+export interface AnimeStreamingAvailability {
+  id: string;
+  animeId: number;
+  animeTitle: string;
+  providerId: string;
+  providerName: string;
+  countryCode: string;
+  isFree: boolean;
+  isLegitimate: boolean;
+  officialUrl: string;
+  accessModel: StreamingAccessModel;
+  availabilityType: StreamingAvailabilityType;
+  verificationStatus: StreamingVerificationStatus;
+  lastVerifiedAt: string;
+  source: string;
+  notes?: string;
+}
+
+export interface StreamingAvailabilityReport {
+  id: string;
+  userId: string;
+  animeId: number;
+  animeTitle: string;
+  countryCode: string;
+  providerId?: string;
+  providerName?: string;
+  reason: string;
+  details: string;
+  status: 'open' | 'reviewed';
+  createdAt: Date | null;
+}
+
+// ==========================================
+// Build 08B: Three-Admin System, Dashboard & Legal Compliance
+// ==========================================
+
+export type AdminSeatId = 'owner' | 'platform_admin' | 'content_admin';
+export type AdminRole = 'owner' | 'platform_admin' | 'content_admin';
+export type AdminSeatStatus = 'active' | 'restricted' | 'revoked';
+
+export type AdminPermission =
+  | 'user_management'
+  | 'account_moderation'
+  | 'user_reports'
+  | 'content_moderation'
+  | 'community_management'
+  | 'copyright_complaints'
+  | 'user_feedback'
+  | 'announcements'
+  | 'platform_statistics'
+  | 'operational_monitoring'
+  | 'catalogue_management'
+  | 'metadata_corrections'
+  | 'featured_content'
+  | 'seasonal_displays'
+  | 'anime_news'
+  | 'recommendations'
+  | 'where_to_watch'
+  | 'country_availability'
+  | 'streaming_verification'
+  | 'legal_compliance'
+  | 'security_incidents'
+  | 'admin_management'
+  | 'audit_logs'
+  | 'system_health';
+
+export interface AdminAccountRecord {
+  uid: string;
+  seatId: AdminSeatId;
+  role: AdminRole;
+  displayLabel: string;
+  email: string;
+  permissions: AdminPermission[];
+  status: AdminSeatStatus;
+  restrictionReason?: string;
+  assignedByUid: string;
+  assignedAt: Date | null;
+  updatedAt: Date | null;
+  lastLoginAt?: Date | null;
+}
+
+export interface AdminSeatSummary {
+  seatId: AdminSeatId;
+  title: string;
+  description: string;
+  occupied: boolean;
+  uid: string;
+  email: string;
+  displayLabel: string;
+  role: AdminRole;
+  permissions: AdminPermission[];
+  status: AdminSeatStatus;
+  restrictionReason?: string;
+  updatedAt: Date | null;
+  lastLoginAt?: Date | null;
+}
+
+export type ModerationDecisionStatus =
+  | 'pending'
+  | 'under_review'
+  | 'action_taken'
+  | 'dismissed'
+  | 'escalated';
+
+export type ModerationContentStatus = 'active' | 'removed_by_moderator' | 'restored';
+
+export interface AdminReportRecord {
+  id: string;
+  reporterId: string;
+  targetType: ReportTargetType;
+  targetId: string;
+  postId: string;
+  communityId?: string;
+  conversationId?: string;
+  targetAuthorId: string;
+  reason: ReportReason;
+  details: string;
+  status: 'open' | ModerationDecisionStatus;
+  reviewNotes?: string;
+  reviewedByUid?: string;
+  reviewedAt?: Date | null;
+  createdAt: Date | null;
+}
+
+export interface ModerationDecisionRecord {
+  id: string;
+  targetType: ReportTargetType | 'user';
+  targetId: string;
+  action: 'remove' | 'restore' | 'dismiss' | 'escalate' | 'suspend' | 'ban' | 'restore_account';
+  reason: string;
+  evidenceSummary: string;
+  actorUid: string;
+  actorRole: AdminRole;
+  createdAt: Date | null;
+}
+
+export interface CopyrightComplaint {
+  id: string;
+  reporterUid: string;
+  claimantName: string;
+  claimantEmail: string;
+  rightsHolderOrganization: string;
+  workTitle: string;
+  targetType: 'post' | 'comment' | 'community' | 'collection' | 'news' | 'streaming_link' | 'other';
+  targetReference: string;
+  description: string;
+  goodFaithConfirmed: boolean;
+  accuracyConfirmed: boolean;
+  status: ModerationDecisionStatus;
+  resolutionNotes?: string;
+  handledByUid?: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export interface AccountDeletionRequest {
+  id: string;
+  userId: string;
+  username: string;
+  email: string;
+  reason: string;
+  acknowledgedIrreversible: boolean;
+  status: 'pending' | 'under_review' | 'completed' | 'declined';
+  reviewNotes?: string;
+  reviewedByUid?: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export interface UserFeedbackRecord {
+  id: string;
+  userId: string;
+  category: 'bug' | 'feature_request' | 'accessibility' | 'safety' | 'streaming' | 'general';
+  subject: string;
+  message: string;
+  pageContext: string;
+  status: 'open' | 'reviewed' | 'resolved';
+  adminNotes?: string;
+  reviewedByUid?: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export interface PlatformAnnouncement {
+  id: string;
+  title: string;
+  body: string;
+  kind: 'general' | 'maintenance' | 'safety' | 'feature';
+  audience: 'all_users' | 'selected_users';
+  targetUserIds: string[];
+  isActive: boolean;
+  sendInAppNotification: boolean;
+  createdByUid: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+  archivedAt?: Date | null;
+}
+
+export interface CatalogueOverrideRecord {
+  id: string; // String(animeId)
+  animeId: number;
+  animeTitle: string;
+  overrideTitle?: string;
+  overrideSynopsis?: string;
+  editorialNote?: string;
+  isFeatured: boolean;
+  isTrendingOverride: boolean;
+  isSeasonalHighlight: boolean;
+  recommendationPinned: boolean;
+  isHiddenFromCatalogue: boolean;
+  metadataIssueFlag: boolean;
+  updatedByUid: string;
+  updatedAt: Date | null;
+}
+
+export interface AdminNewsArticle extends AnimeNewsArticle {
+  status: 'published' | 'draft' | 'archived';
+  isFeatured: boolean;
+  createdByUid: string;
+  updatedAt: Date | null;
+}
+
+export interface AdminAuditLogEntry {
+  id: string;
+  actorUid: string;
+  actorRole: AdminRole | 'system' | 'anonymous';
+  actorSeatId: AdminSeatId | 'system' | 'none';
+  actionType: string;
+  targetCollection: string;
+  targetId: string;
+  summary: string;
+  source: 'cloud_function' | 'admin_console';
+  createdAt: Date | null;
+}
+
+export interface AdminLoginEvent {
+  id: string;
+  actorUid: string;
+  emailMasked: string;
+  seatId: AdminSeatId | 'unknown';
+  outcome: 'login_success' | 'login_denied' | 'login_failed' | 'logout' | 'reauth_success' | 'reauth_failed';
+  reason: string;
+  createdAt: Date | null;
+}
+
+export interface SecurityIncidentRecord {
+  id: string;
+  title: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  status: 'investigating' | 'contained' | 'resolved';
+  summary: string;
+  remediationSteps: string;
+  regulatorsNotified: boolean;
+  reportedByUid: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export interface LegalDocumentOverride {
+  id: 'privacy-policy' | 'terms' | 'cookie-policy' | 'refund-policy' | 'community-guidelines';
+  title: string;
+  customSummary: string;
+  guidelinesList: string[];
+  lastUpdatedLabel: string;
+  updatedByUid: string;
+  updatedAt: Date | null;
+}
+
+export type LegalPageSlug =
+  | 'privacy-policy'
+  | 'terms'
+  | 'cookie-policy'
+  | 'refund-policy'
+  | 'community-guidelines';
+
+export type AppRouteView =
+  | { kind: 'destination'; destination: NavDestinationId }
+  | { kind: 'legal'; slug: LegalPageSlug }
+  | { kind: 'admin-login' }
+  | { kind: 'admin-dashboard' };
 

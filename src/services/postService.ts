@@ -110,7 +110,11 @@ export async function fetchPostById(
     if (!snap.exists()) {
       return null;
     }
-    return mapDocToPost(snap.id, snap.data());
+    const data = snap.data();
+    if (data.moderationStatus === 'removed_by_moderator') {
+      return null;
+    }
+    return mapDocToPost(snap.id, data);
   } catch (error) {
     handleFirestoreError(error, OperationType.GET, path);
   }
@@ -132,7 +136,9 @@ export function subscribeToCommunityPosts(
   return onSnapshot(
     q,
     (snapshot) => {
-      const posts = snapshot.docs.map((d) => mapDocToPost(d.id, d.data()));
+      const posts = snapshot.docs
+        .filter((d) => d.data().moderationStatus !== 'removed_by_moderator')
+        .map((d) => mapDocToPost(d.id, d.data()));
       const lastCursor =
         snapshot.docs.length > 0
           ? snapshot.docs[snapshot.docs.length - 1]
@@ -171,7 +177,9 @@ export async function fetchMoreCommunityPosts(
       limit(pageSize)
     );
     const snapshot = await getDocs(q);
-    const posts = snapshot.docs.map((d) => mapDocToPost(d.id, d.data()));
+    const posts = snapshot.docs
+      .filter((d) => d.data().moderationStatus !== 'removed_by_moderator')
+      .map((d) => mapDocToPost(d.id, d.data()));
     const lastCursor =
       snapshot.docs.length > 0
         ? snapshot.docs[snapshot.docs.length - 1]
@@ -214,7 +222,9 @@ export async function fetchFollowingPosts(
           limit(pageSize)
         );
     const snapshot = await getDocs(q);
-    const posts = snapshot.docs.map((d) => mapDocToPost(d.id, d.data()));
+    const posts = snapshot.docs
+      .filter((d) => d.data().moderationStatus !== 'removed_by_moderator')
+      .map((d) => mapDocToPost(d.id, d.data()));
     const lastCursor =
       snapshot.docs.length > 0
         ? snapshot.docs[snapshot.docs.length - 1]
@@ -250,7 +260,9 @@ export async function fetchPostsByAuthor(
           limit(pageSize)
         );
     const snapshot = await getDocs(q);
-    const posts = snapshot.docs.map((d) => mapDocToPost(d.id, d.data()));
+    const posts = snapshot.docs
+      .filter((d) => d.data().moderationStatus !== 'removed_by_moderator')
+      .map((d) => mapDocToPost(d.id, d.data()));
     const lastCursor =
       snapshot.docs.length > 0
         ? snapshot.docs[snapshot.docs.length - 1]

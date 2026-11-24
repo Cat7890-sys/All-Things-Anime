@@ -5,8 +5,10 @@ import {
   mapAuthErrorToMessage,
 } from '../../services/authService';
 import { validateLoginForm } from '../../services/validation';
+import { buildAppHref } from '../../services/routingService';
 import type {
   AuthViewMode,
+  LegalPageSlug,
   LoginAccountInput,
   ValidationErrors,
 } from '../../types';
@@ -14,11 +16,13 @@ import type {
 interface LoginFormProps {
   onSwitchMode: (mode: AuthViewMode) => void;
   onLoginSuccess?: () => void;
+  onNavigateLegal?: (slug: LegalPageSlug) => void;
 }
 
 export const LoginForm: React.FC<LoginFormProps> = ({
   onSwitchMode,
   onLoginSuccess,
+  onNavigateLegal,
 }) => {
   const [form, setForm] = useState<LoginAccountInput>({
     email: '',
@@ -31,6 +35,16 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   >({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const openLegal = (slug: LegalPageSlug) => {
+    if (onNavigateLegal) {
+      onNavigateLegal(slug);
+      return;
+    }
+    const href = buildAppHref({ kind: 'legal', slug }, import.meta.env.BASE_URL);
+    window.history.pushState({}, '', href);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -180,6 +194,26 @@ export const LoginForm: React.FC<LoginFormProps> = ({
         >
           Create an independent ATA account
         </button>
+      </p>
+
+      <p className="text-center text-[11px] text-[#52576B] dark:text-[#A7A9B8]">
+        Signing in is governed by our{' '}
+        <button
+          type="button"
+          onClick={() => openLegal('privacy-policy')}
+          className="font-semibold text-[#090B14] dark:text-white hover:text-[#EF3038] underline underline-offset-2"
+        >
+          Privacy Policy
+        </button>{' '}
+        and{' '}
+        <button
+          type="button"
+          onClick={() => openLegal('terms')}
+          className="font-semibold text-[#090B14] dark:text-white hover:text-[#EF3038] underline underline-offset-2"
+        >
+          Terms &amp; Conditions
+        </button>
+        .
       </p>
     </form>
   );

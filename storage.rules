@@ -7,6 +7,12 @@ service firebase.storage {
       allow read, write: if false;
     }
 
+    function isAdminClaim() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.ataAdminRole in ['owner', 'platform_admin', 'content_admin'];
+    }
+
     // Post images: public read, verified-owner upload up to 5 MB for allowed image MIME types
     match /posts/{userId}/{postId}/{fileName} {
       allow read: if true;
@@ -16,9 +22,9 @@ service firebase.storage {
         && request.resource != null
         && request.resource.size <= 5 * 1024 * 1024
         && request.resource.contentType.matches('image/(jpeg|png|webp|gif)');
-      allow delete: if request.auth != null
+      allow delete: if (request.auth != null
         && request.auth.uid == userId
-        && request.auth.token.email_verified == true;
+        && request.auth.token.email_verified == true) || isAdminClaim();
     }
 
     // Community cover & avatar images: public read, verified uploader up to 5 MB for allowed image MIME types
@@ -30,9 +36,9 @@ service firebase.storage {
         && request.resource != null
         && request.resource.size <= 5 * 1024 * 1024
         && request.resource.contentType.matches('image/(jpeg|png|webp|gif)');
-      allow delete: if request.auth != null
+      allow delete: if (request.auth != null
         && request.auth.uid == userId
-        && request.auth.token.email_verified == true;
+        && request.auth.token.email_verified == true) || isAdminClaim();
     }
 
     // Private group conversation avatar images: authenticated read, verified uploader up to 5 MB
@@ -44,9 +50,9 @@ service firebase.storage {
         && request.resource != null
         && request.resource.size <= 5 * 1024 * 1024
         && request.resource.contentType.matches('image/(jpeg|png|webp|gif)');
-      allow delete: if request.auth != null
+      allow delete: if (request.auth != null
         && request.auth.uid == userId
-        && request.auth.token.email_verified == true;
+        && request.auth.token.email_verified == true) || isAdminClaim();
     }
   }
 }
