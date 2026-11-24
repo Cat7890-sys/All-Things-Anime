@@ -16,14 +16,20 @@ import {
   SlidersHorizontal,
   Sparkles,
   Trash2,
+  Trophy,
 } from 'lucide-react';
 import { AtaLoadingSpinner } from '../components/AtaLoadingSpinner';
+import { AchievementsShelf } from '../components/challenges/AchievementsShelf';
 import { PostCard } from '../components/social/PostCard';
 import { PostDetailModal } from '../components/social/PostDetailModal';
 import { PublicProfileModal } from '../components/social/PublicProfileModal';
 import { ReportModal } from '../components/social/ReportModal';
 import { UserAvatar } from '../components/UserAvatar';
 import { useAuth } from '../hooks/useAuth';
+import {
+  fetchUserAchievements,
+  fetchUserLeaderboardProfile,
+} from '../services/challenges/gamificationService';
 import {
   fetchOwnDeletionRequests,
   submitAccountDeletionRequest,
@@ -50,9 +56,11 @@ import type {
   AtaPublicProfile,
   AuthViewMode,
   BlockedUserRecord,
+  LeaderboardProfile,
   LegalPageSlug,
   UpdatePostInput,
   UpdateProfileInput,
+  UserAchievement,
   ValidationErrors,
 } from '../types';
 import { AuthPage } from './AuthPage';
@@ -133,21 +141,37 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const [deletionError, setDeletionError] = useState<string | null>(null);
   const [deletionSuccessId, setDeletionSuccessId] = useState<string | null>(null);
 
+  // Build 09 Achievements & Event Stats
+  const [userAchievements, setUserAchievements] = useState<UserAchievement[]>([]);
+  const [leaderboardStats, setLeaderboardStats] =
+    useState<LeaderboardProfile | null>(null);
+
   const loadSocialProfileData = useCallback(async (uid: string) => {
     setIsLoadingOwnPosts(true);
     setIsLoadingBlocked(true);
     setOwnPostsError(null);
     try {
-      const [pubProf, postsRes, blockedList, ownDeletionReqs] = await Promise.all([
+      const [
+        pubProf,
+        postsRes,
+        blockedList,
+        ownDeletionReqs,
+        achievementsRes,
+        lbStatsRes,
+      ] = await Promise.all([
         getPublicProfile(uid),
         fetchPostsByAuthor(uid, 15),
         fetchBlockedUsers(uid),
         fetchOwnDeletionRequests(uid),
+        fetchUserAchievements(uid).catch(() => []),
+        fetchUserLeaderboardProfile(uid).catch(() => null),
       ]);
       setPublicSocialProfile(pubProf);
       setOwnPosts(postsRes.posts);
       setBlockedUsers(blockedList);
       setDeletionRequests(ownDeletionReqs);
+      setUserAchievements(achievementsRes);
+      setLeaderboardStats(lbStatsRes);
 
       if (pubProf) {
         setEditForm((prev) => ({
@@ -598,6 +622,33 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             </span>
           </div>
         </div>
+      </section>
+
+      {/* Challenges, Watch Parties & Achievements */}
+      <section
+        aria-labelledby="ata-profile-achievements-heading"
+        className="bg-white dark:bg-[#171923] border border-[#D4D7E2] dark:border-[#303342] rounded-2xl p-6 space-y-4"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#D4D7E2] dark:border-[#303342] pb-3.5">
+          <div className="flex items-center gap-2">
+            <Trophy className="h-4 w-4 text-[#EF3038]" aria-hidden="true" />
+            <h2
+              id="ata-profile-achievements-heading"
+              className="font-display-space font-bold text-xl text-[#090B14] dark:text-white"
+            >
+              Challenges, Watch Parties &amp; Badges
+            </h2>
+          </div>
+          <span className="text-xs text-[#52576B] dark:text-[#A7A9B8]">
+            {userAchievements.length} badge{userAchievements.length === 1 ? '' : 's'} unlocked
+          </span>
+        </div>
+
+        <AchievementsShelf
+          achievements={userAchievements}
+          stats={leaderboardStats}
+          compact
+        />
       </section>
 
       {/* Owner-Only Profile Editor */}

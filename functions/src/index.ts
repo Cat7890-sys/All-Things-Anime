@@ -20,5 +20,14 @@ export {
   adminManageSeatAndPermissions,
   adminModerateUser,
   adminModerateContent,
+  adminModerateEvent,
   adminPublishAnnouncement,
 } from './admin/adminCallables';
+
+export {
+  syncChallengeProgressAndRewards,
+  syncWatchPartyRsvpRewards,
+  sendEventInvites,
+  onChallengeCreated,
+  onWatchPartyUpdated,
+} from './challenges/challengeWatchPartyHandlers';

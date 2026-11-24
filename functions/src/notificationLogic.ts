@@ -29,7 +29,17 @@ export type NotificationType =
   | 'group_removed'
   | 'group_admin_promote'
   | 'group_update'
-  | 'system_notice';
+  | 'system_notice'
+  | 'challenge_invite'
+  | 'challenge_reminder'
+  | 'challenge_completed'
+  | 'watch_party_invite'
+  | 'watch_party_joined'
+  | 'watch_party_reminder'
+  | 'watch_party_cancelled'
+  | 'watch_party_updated'
+  | 'community_challenge_created'
+  | 'achievement_unlocked';
 
 export type NotificationTargetType =
   | 'post'
@@ -39,6 +49,8 @@ export type NotificationTargetType =
   | 'conversation'
   | 'message_request'
   | 'group'
+  | 'challenge'
+  | 'watch_party'
   | 'system';
 
 export interface NotificationDispatchInput {

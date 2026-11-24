@@ -6,11 +6,16 @@ import {
   Film,
   Mail,
   ShieldAlert,
+  Trophy,
   UserCheck,
   UserPlus,
   X,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import {
+  fetchUserAchievements,
+  fetchUserLeaderboardProfile,
+} from '../../services/challenges/gamificationService';
 import { fetchPostsByAuthor } from '../../services/postService';
 import {
   blockUser,
@@ -21,9 +26,16 @@ import {
   unfollowUser,
 } from '../../services/socialGraphService';
 import { getPublicProfile } from '../../services/userProfileService';
-import type { AtaPost, AtaPublicProfile, AuthViewMode } from '../../types';
+import type {
+  AtaPost,
+  AtaPublicProfile,
+  AuthViewMode,
+  LeaderboardProfile,
+  UserAchievement,
+} from '../../types';
 import { formatRelativeTimestamp } from '../../utils/time';
 import { AtaLoadingSpinner } from '../AtaLoadingSpinner';
+import { AchievementsShelf } from '../challenges/AchievementsShelf';
 import { UserAvatar } from '../UserAvatar';
 import { SpoilerGate } from './SpoilerGate';
 
@@ -52,6 +64,9 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
     null
   );
   const [recentPosts, setRecentPosts] = useState<AtaPost[]>([]);
+  const [userAchievements, setUserAchievements] = useState<UserAchievement[]>([]);
+  const [leaderboardStats, setLeaderboardStats] =
+    useState<LeaderboardProfile | null>(null);
   const [isFollowing, setIsFollowing] = useState(false);
   const [blockedByMe, setBlockedByMe] = useState(false);
   const [blockedByThem, setBlockedByThem] = useState(false);
@@ -72,15 +87,19 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
 
     async function loadProfileView(uid: string) {
       try {
-        const [prof, postsResult] = await Promise.all([
+        const [prof, postsResult, achievementsRes, lbStatsRes] = await Promise.all([
           getPublicProfile(uid),
           fetchPostsByAuthor(uid, 10),
+          fetchUserAchievements(uid).catch(() => []),
+          fetchUserLeaderboardProfile(uid).catch(() => null),
         ]);
 
         if (!active) return;
 
         setPublicProfile(prof);
         setRecentPosts(postsResult.posts);
+        setUserAchievements(achievementsRes);
+        setLeaderboardStats(lbStatsRes);
 
         if (firebaseUser && firebaseUser.uid !== uid) {
           const [followingStatus, blockStatus] = await Promise.all([
@@ -448,6 +467,26 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
                     : 'No public bio shared yet.'}
                 </p>
               </div>
+
+              {/* Challenges, Watch Parties & Badges */}
+              {!blockedByMe && !blockedByThem && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2 border-b border-[#D4D7E2] dark:border-[#303342] pb-2">
+                    <h3 className="font-display-space font-bold text-base text-[#090B14] dark:text-white inline-flex items-center gap-1.5">
+                      <Trophy className="h-4 w-4 text-[#EF3038]" aria-hidden="true" />
+                      <span>Challenges &amp; Achievements</span>
+                    </h3>
+                    <span className="text-[11px] text-[#52576B] dark:text-[#A7A9B8]">
+                      {userAchievements.length} unlocked
+                    </span>
+                  </div>
+                  <AchievementsShelf
+                    achievements={userAchievements}
+                    stats={leaderboardStats}
+                    compact
+                  />
+                </div>
+              )}
 
               {/* Recent Posts or Block Notice */}
               <div className="space-y-3">

@@ -13,6 +13,7 @@ import {
   MessageSquare,
   Settings,
   ShieldCheck,
+  Trophy,
   UserPlus,
   Users,
   WifiOff,
@@ -69,6 +70,7 @@ import { PostDetailModal } from '../social/PostDetailModal';
 import { PublicProfileModal } from '../social/PublicProfileModal';
 import { ReportModal } from '../social/ReportModal';
 import { CommunityAvatarBadge } from './CommunityCard';
+import { CommunityEventsTab } from './CommunityEventsTab';
 import { CommunityFormModal } from './CommunityFormModal';
 import { CommunityManageTab } from './CommunityManageTab';
 import { CommunityMembersTab } from './CommunityMembersTab';
@@ -87,7 +89,7 @@ interface CommunityDetailViewProps {
   onStartDirectMessage?: (targetUserId: string) => void;
 }
 
-type CommunityDetailTab = 'discussions' | 'rules' | 'members' | 'manage';
+type CommunityDetailTab = 'discussions' | 'events' | 'rules' | 'members' | 'manage';
 
 interface ReportModalState {
   targetType: ReportTargetType;
@@ -989,6 +991,21 @@ export const CommunityDetailView: React.FC<CommunityDetailViewProps> = ({
         <button
           type="button"
           role="tab"
+          aria-selected={activeTab === 'events'}
+          onClick={() => setActiveTab('events')}
+          className={`inline-flex items-center gap-1.5 px-4 py-2 min-h-[42px] text-xs font-semibold rounded-xl border transition-colors ${
+            activeTab === 'events'
+              ? 'bg-[#EF3038] text-white border-[#B92335]'
+              : 'bg-white dark:bg-[#171923] text-[#090B14] dark:text-[#A7A9B8] border-[#D4D7E2] dark:border-[#303342] hover:border-[#EF3038]/60'
+          }`}
+        >
+          <Trophy className="h-3.5 w-3.5" aria-hidden="true" />
+          <span>Challenges &amp; Parties</span>
+        </button>
+
+        <button
+          type="button"
+          role="tab"
           aria-selected={activeTab === 'rules'}
           onClick={() => setActiveTab('rules')}
           className={`inline-flex items-center gap-1.5 px-4 py-2 min-h-[42px] text-xs font-semibold rounded-xl border transition-colors ${
@@ -1193,6 +1210,18 @@ export const CommunityDetailView: React.FC<CommunityDetailViewProps> = ({
             </>
           )}
         </div>
+      )}
+
+      {activeTab === 'events' && (
+        <CommunityEventsTab
+          community={community}
+          currentProfile={profile}
+          isMember={isMember}
+          isModerator={isModerator}
+          canReadContent={canReadContent}
+          blockedUserIds={blockedUserIds}
+          onOpenUserProfile={(uid) => setProfileUserId(uid)}
+        />
       )}
 
       {activeTab === 'rules' && (

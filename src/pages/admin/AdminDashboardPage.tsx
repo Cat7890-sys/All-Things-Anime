@@ -20,6 +20,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Trash2,
+  Trophy,
   Tv,
   Users,
 } from 'lucide-react';
@@ -38,6 +39,7 @@ import {
   deleteAdminStreamingAvailability,
   deleteAdminStreamingProvider,
   deleteCatalogueOverride,
+  fetchAdminChallengesAndParties,
   fetchAdminOverviewStats,
   listAdminAuditLogs,
   listAdminLoginEvents,
@@ -61,6 +63,7 @@ import {
   manageAdminSeatViaCallable,
   markStreamingReportReviewed,
   moderateContentViaCallableOrDirect,
+  moderateEventViaAdmin,
   moderateUserViaCallable,
   publishOrUpdateAnnouncement,
   reauthenticateAdminPassword,
@@ -98,6 +101,7 @@ import type {
   AdminSeatId,
   AdminSeatStatus,
   AdminSeatSummary,
+  AnimeChallenge,
   AnimeStreamingAvailability,
   AtaCommunity,
   AtaPost,
@@ -114,6 +118,7 @@ import type {
   StreamingProvider,
   UserCollection,
   UserFeedbackRecord,
+  WatchParty,
 } from '../../types';
 
 interface AdminDashboardPageProps {
@@ -177,6 +182,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     Array<AtaCommunity & { moderationStatus?: string }>
   >([]);
   const [collections, setCollections] = useState<UserCollection[]>([]);
+  const [adminChallenges, setAdminChallenges] = useState<AnimeChallenge[]>([]);
+  const [adminWatchParties, setAdminWatchParties] = useState<WatchParty[]>([]);
   const [decisions, setDecisions] = useState<ModerationDecisionRecord[]>([]);
   const [modReasonInput, setModReasonInput] = useState('');
   const [isLoadingModeration, setIsLoadingModeration] = useState(false);
@@ -345,7 +352,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const loadModerationModule = useCallback(async () => {
     setIsLoadingModeration(true);
     try {
-      const [repRes, copyRes, postsRes, commRes, colRes, decRes] =
+      const [repRes, copyRes, postsRes, commRes, colRes, decRes, eventsRes] =
         await Promise.all([
           listReportsForAdmin(),
           listCopyrightComplaintsForAdmin(),
@@ -353,6 +360,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           listCommunitiesForAdmin(),
           listCollectionsForAdmin(),
           listModerationDecisionsForAdmin(),
+          fetchAdminChallengesAndParties().catch(() => ({
+            challenges: [],
+            watchParties: [],
+          })),
         ]);
       setReports(repRes);
       setCopyrightComplaints(copyRes);
@@ -360,6 +371,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       setCommunities(commRes);
       setCollections(colRes);
       setDecisions(decRes);
+      setAdminChallenges(eventsRes.challenges);
+      setAdminWatchParties(eventsRes.watchParties);
     } catch (err) {
       notifyError(err, 'Unable to load moderation queues.');
     } finally {
@@ -788,6 +801,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       { label: 'Posts', value: overviewStats.totalPosts },
                       { label: 'Communities', value: overviewStats.totalCommunities },
                       { label: 'Collections', value: overviewStats.totalCollections },
+                      { label: 'Anime Challenges', value: overviewStats.totalChallenges },
+                      { label: 'Watch Parties', value: overviewStats.totalWatchParties },
+                      { label: 'Challenge Joins', value: overviewStats.totalChallengeParticipations },
                       { label: 'Admin News', value: overviewStats.totalAdminNews },
                       { label: 'Safety Reports', value: overviewStats.totalReports },
                       { label: 'Copyright Notices', value: overviewStats.totalCopyrightComplaints },
@@ -1407,6 +1423,243 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                               </button>
                             </div>
                           ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Challenges & Watch Parties Moderation */}
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                      <div className="space-y-2.5">
+                        <h3 className="font-display-space font-bold text-sm text-white flex items-center gap-2">
+                          <Trophy className="h-4 w-4 text-[#EF3038]" aria-hidden="true" />
+                          <span>Anime Challenges ({adminChallenges.length})</span>
+                        </h3>
+                        <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                          {adminChallenges.length === 0 ? (
+                            <p className="text-xs text-[#A7A9B8]">No challenges created yet.</p>
+                          ) : (
+                            adminChallenges.map((ch) => (
+                              <div
+                                key={ch.id}
+                                className="rounded-xl bg-[#090B14] border border-[#303342] p-3 text-xs space-y-2"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="font-bold text-white truncate">
+                                      {ch.title} {ch.isFeatured ? '· Featured' : ''}
+                                    </p>
+                                    <p className="text-[11px] text-[#A7A9B8]">
+                                      @{ch.creatorUsername} · {ch.participantCount} joined · Mod:{' '}
+                                      <span className="text-[#EF3038]">{ch.moderationStatus}</span> · Status: {ch.status}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {hasAdminPermission(admin, 'featured_content') && (
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        try {
+                                          await moderateEventViaAdmin(admin, {
+                                            eventType: 'challenge',
+                                            eventId: ch.id,
+                                            action: ch.isFeatured ? 'unfeature' : 'feature',
+                                            reason: modReasonInput.trim() || 'Featured spotlight update.',
+                                          });
+                                          notifySuccess(`Updated featured state for "${ch.title}".`);
+                                          void loadModerationModule();
+                                        } catch (err) {
+                                          notifyError(err);
+                                        }
+                                      }}
+                                      className="px-2.5 py-1 rounded-lg font-semibold bg-[#171923] border border-[#303342] hover:border-[#EF3038]"
+                                    >
+                                      {ch.isFeatured ? 'Unfeature' : 'Feature'}
+                                    </button>
+                                  )}
+                                  {hasAdminPermission(admin, 'content_moderation') && (
+                                    <>
+                                      {ch.moderationStatus === 'active' ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={async () => {
+                                              try {
+                                                await moderateEventViaAdmin(admin, {
+                                                  eventType: 'challenge',
+                                                  eventId: ch.id,
+                                                  action: 'suspend',
+                                                  reason:
+                                                    modReasonInput.trim() ||
+                                                    'Challenge suspended pending review.',
+                                                });
+                                                notifySuccess(`Suspended challenge "${ch.title}".`);
+                                                void loadModerationModule();
+                                              } catch (err) {
+                                                notifyError(err);
+                                              }
+                                            }}
+                                            className="px-2.5 py-1 rounded-lg font-semibold bg-amber-500/15 text-amber-200 border border-amber-500/40"
+                                          >
+                                            Suspend
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={async () => {
+                                              try {
+                                                await moderateEventViaAdmin(admin, {
+                                                  eventType: 'challenge',
+                                                  eventId: ch.id,
+                                                  action: 'remove',
+                                                  reason:
+                                                    modReasonInput.trim() ||
+                                                    'Challenge removed by administrator.',
+                                                });
+                                                notifySuccess(`Removed challenge "${ch.title}".`);
+                                                void loadModerationModule();
+                                              } catch (err) {
+                                                notifyError(err);
+                                              }
+                                            }}
+                                            className="px-2.5 py-1 rounded-lg font-semibold bg-[#EF3038] text-white"
+                                          >
+                                            Hide / Remove
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={async () => {
+                                            try {
+                                              await moderateEventViaAdmin(admin, {
+                                                eventType: 'challenge',
+                                                eventId: ch.id,
+                                                action: 'restore',
+                                                reason:
+                                                  modReasonInput.trim() ||
+                                                  'Challenge restored by administrator.',
+                                              });
+                                              notifySuccess(`Restored challenge "${ch.title}".`);
+                                              void loadModerationModule();
+                                            } catch (err) {
+                                              notifyError(err);
+                                            }
+                                          }}
+                                          className="px-2.5 py-1 rounded-lg font-semibold bg-emerald-500/15 text-emerald-200 border border-emerald-500/40"
+                                        >
+                                          Restore
+                                        </button>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2.5">
+                        <h3 className="font-display-space font-bold text-sm text-white flex items-center gap-2">
+                          <Tv className="h-4 w-4 text-[#EF3038]" aria-hidden="true" />
+                          <span>Watch Parties ({adminWatchParties.length})</span>
+                        </h3>
+                        <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                          {adminWatchParties.length === 0 ? (
+                            <p className="text-xs text-[#A7A9B8]">No watch parties scheduled yet.</p>
+                          ) : (
+                            adminWatchParties.map((wp) => (
+                              <div
+                                key={wp.id}
+                                className="rounded-xl bg-[#090B14] border border-[#303342] p-3 text-xs space-y-2"
+                              >
+                                <div className="min-w-0">
+                                  <p className="font-bold text-white truncate">
+                                    {wp.title} · {wp.animeTitle}
+                                  </p>
+                                  <p className="text-[11px] text-[#A7A9B8]">
+                                    Host @{wp.creatorUsername} · {wp.participantCount} joined · Mod:{' '}
+                                    <span className="text-[#EF3038]">{wp.moderationStatus}</span> · Status: {wp.status}
+                                  </p>
+                                </div>
+                                {hasAdminPermission(admin, 'content_moderation') && (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {wp.moderationStatus === 'active' ? (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={async () => {
+                                            try {
+                                              await moderateEventViaAdmin(admin, {
+                                                eventType: 'watch_party',
+                                                eventId: wp.id,
+                                                action: 'suspend',
+                                                reason:
+                                                  modReasonInput.trim() ||
+                                                  'Watch party suspended and cancelled.',
+                                              });
+                                              notifySuccess(`Suspended watch party "${wp.title}".`);
+                                              void loadModerationModule();
+                                            } catch (err) {
+                                              notifyError(err);
+                                            }
+                                          }}
+                                          className="px-2.5 py-1 rounded-lg font-semibold bg-amber-500/15 text-amber-200 border border-amber-500/40"
+                                        >
+                                          Suspend &amp; Cancel
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={async () => {
+                                            try {
+                                              await moderateEventViaAdmin(admin, {
+                                                eventType: 'watch_party',
+                                                eventId: wp.id,
+                                                action: 'remove',
+                                                reason:
+                                                  modReasonInput.trim() ||
+                                                  'Watch party removed by administrator.',
+                                              });
+                                              notifySuccess(`Removed watch party "${wp.title}".`);
+                                              void loadModerationModule();
+                                            } catch (err) {
+                                              notifyError(err);
+                                            }
+                                          }}
+                                          className="px-2.5 py-1 rounded-lg font-semibold bg-[#EF3038] text-white"
+                                        >
+                                          Hide / Remove
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={async () => {
+                                          try {
+                                            await moderateEventViaAdmin(admin, {
+                                              eventType: 'watch_party',
+                                              eventId: wp.id,
+                                              action: 'restore',
+                                              reason:
+                                                modReasonInput.trim() ||
+                                                'Watch party restored by administrator.',
+                                            });
+                                            notifySuccess(`Restored watch party "${wp.title}".`);
+                                            void loadModerationModule();
+                                          } catch (err) {
+                                            notifyError(err);
+                                          }
+                                        }}
+                                        className="px-2.5 py-1 rounded-lg font-semibold bg-emerald-500/15 text-emerald-200 border border-emerald-500/40"
+                                      >
+                                        Restore
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            ))
+                          )}
                         </div>
                       </div>
                     </div>

@@ -1803,6 +1803,107 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "animeId", "animeTitle", "isFeatured", "isTrendingOverride", "isSeasonalHighlight", "recommendationPinned", "isHiddenFromCatalogue", "metadataIssueFlag", "updatedByUid", "updatedAt"]
+    },
+    "AnimeChallenge": {
+      "title": "AnimeChallenge",
+      "description": "Public or community-scoped anime watching challenge.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "title": { "type": "string", "minLength": 4, "maxLength": 100 },
+        "description": { "type": "string", "minLength": 15, "maxLength": 1200 },
+        "category": { "type": "string", "enum": ["Seasonal Watch", "Genre Marathon", "Classic Essentials", "Studio Spotlight", "Movie Night", "Community Special"] },
+        "difficulty": { "type": "string", "enum": ["casual", "standard", "hardcore"] },
+        "durationType": { "type": "string", "enum": ["weekly", "monthly", "seasonal", "custom"] },
+        "startDate": { "type": "string", "minLength": 10, "maxLength": 10 },
+        "endDate": { "type": "string", "minLength": 10, "maxLength": 10 },
+        "visibility": { "type": "string", "enum": ["public", "community"] },
+        "status": { "type": "string", "enum": ["upcoming", "active", "completed", "archived"] },
+        "participantCount": { "type": "integer", "minimum": 0 },
+        "completedCount": { "type": "integer", "minimum": 0 },
+        "creatorId": { "type": "string", "minLength": 1, "maxLength": 128 }
+      },
+      "required": ["id", "title", "description", "category", "difficulty", "durationType", "startDate", "endDate", "visibility", "status", "creatorId"]
+    },
+    "ChallengeParticipation": {
+      "title": "ChallengeParticipation",
+      "description": "User participation and progress record keyed by {challengeId}__{userId}.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 3, "maxLength": 260 },
+        "challengeId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "progressPercent": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "status": { "type": "string", "enum": ["active", "completed"] },
+        "pointsAwarded": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["id", "challengeId", "userId", "progressPercent", "status", "pointsAwarded"]
+    },
+    "WatchParty": {
+      "title": "WatchParty",
+      "description": "Option A independent-watching scheduled group watch party with discussion.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "title": { "type": "string", "minLength": 4, "maxLength": 100 },
+        "animeId": { "type": "integer", "minimum": 1 },
+        "animeTitle": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "scheduledDate": { "type": "string", "minLength": 10, "maxLength": 10 },
+        "startTime": { "type": "string", "minLength": 5, "maxLength": 5 },
+        "timezone": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "visibility": { "type": "string", "enum": ["public", "private", "community"] },
+        "status": { "type": "string", "enum": ["scheduled", "live", "completed", "cancelled"] },
+        "creatorId": { "type": "string", "minLength": 1, "maxLength": 128 }
+      },
+      "required": ["id", "title", "animeId", "animeTitle", "scheduledDate", "startTime", "timezone", "visibility", "status", "creatorId"]
+    },
+    "WatchPartyParticipant": {
+      "title": "WatchPartyParticipant",
+      "description": "User RSVP and completion state for a scheduled Watch Party.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 3, "maxLength": 260 },
+        "partyId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "rsvpStatus": { "type": "string", "enum": ["joined", "attending", "completed"] }
+      },
+      "required": ["id", "partyId", "userId", "rsvpStatus"]
+    },
+    "WatchPartyMessage": {
+      "title": "WatchPartyMessage",
+      "description": "Discussion comment inside a scheduled Watch Party thread.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "partyId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "authorId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "content": { "type": "string", "minLength": 1, "maxLength": 600 }
+      },
+      "required": ["id", "partyId", "authorId", "content"]
+    },
+    "LeaderboardProfile": {
+      "title": "LeaderboardProfile",
+      "description": "Server-validated public-safe participation stats and leaderboard points.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "totalPoints": { "type": "integer", "minimum": 0 },
+        "challengesCompleted": { "type": "integer", "minimum": 0 },
+        "watchPartiesAttended": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["userId", "totalPoints", "challengesCompleted", "watchPartiesAttended"]
+    },
+    "UserAchievement": {
+      "title": "UserAchievement",
+      "description": "Server-verified achievement badge unlock keyed by {userId}__{achievementId}.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 3, "maxLength": 260 },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "achievementId": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "title": { "type": "string", "minLength": 2, "maxLength": 120 }
+      },
+      "required": ["id", "userId", "achievementId", "title"]
     }
   },
   "firestore": {
@@ -2055,6 +2156,34 @@
     "/securityIncidents/{incidentId}": {
       "schema": { "$ref": "#/entities/PlatformAnnouncement" },
       "description": "Security incident containment & POPIA Section 22 response register."
+    },
+    "/animeChallenges/{challengeId}": {
+      "schema": { "$ref": "#/entities/AnimeChallenge" },
+      "description": "Public and community-scoped anime watch challenges."
+    },
+    "/challengeParticipants/{participantId}": {
+      "schema": { "$ref": "#/entities/ChallengeParticipation" },
+      "description": "Per-user challenge participation and tracker-linked progress."
+    },
+    "/watchParties/{partyId}": {
+      "schema": { "$ref": "#/entities/WatchParty" },
+      "description": "Scheduled Option A independent-watching group watch parties."
+    },
+    "/watchParties/{partyId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/WatchPartyMessage" },
+      "description": "Moderated watch party discussion board messages."
+    },
+    "/watchPartyParticipants/{participantId}": {
+      "schema": { "$ref": "#/entities/WatchPartyParticipant" },
+      "description": "Watch party RSVP, attendance, and completion records."
+    },
+    "/leaderboardProfiles/{userId}": {
+      "schema": { "$ref": "#/entities/LeaderboardProfile" },
+      "description": "Server-computed public leaderboard scores and participation totals."
+    },
+    "/userAchievements/{achievementDocId}": {
+      "schema": { "$ref": "#/entities/UserAchievement" },
+      "description": "Server-verified achievement unlocks keyed by {userId}__{achievementId}."
     }
   }
 }

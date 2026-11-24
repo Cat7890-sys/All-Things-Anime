@@ -4,7 +4,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { ShieldAlert } from 'lucide-react';
+import { AlertTriangle, ShieldAlert } from 'lucide-react';
 import { AtaLoadingSpinner } from './components/AtaLoadingSpinner';
 import { AnnouncementBanner } from './components/layout/AnnouncementBanner';
 import { SiteFooter } from './components/layout/SiteFooter';
@@ -21,6 +21,7 @@ import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
 import { AdminLoginPage } from './pages/admin/AdminLoginPage';
 import { AnimeTrackerPage } from './pages/AnimeTrackerPage';
 import { CalendarPage } from './pages/CalendarPage';
+import { ChallengesHubPage } from './pages/ChallengesHubPage';
 import { CollectionsPage } from './pages/CollectionsPage';
 import { ComingSoonPage } from './pages/ComingSoonPage';
 import { CommunitiesPage } from './pages/CommunitiesPage';
@@ -55,7 +56,7 @@ import type {
 } from './types';
 
 export default function App() {
-  const { firebaseUser, profile, isLoadingAuth } = useAuth();
+  const { firebaseUser, profile, isLoadingAuth, profileError } = useAuth();
   const { isOnboardingOpen, setIsOnboardingOpen } = usePreferences();
 
   const [routeView, setRouteView] = useState<AppRouteView>(() =>
@@ -73,12 +74,18 @@ export default function App() {
   const [pendingCommunityTarget, setPendingCommunityTarget] = useState<{
     communityId: string;
     postId?: string;
-    tab?: 'discussions' | 'rules' | 'members' | 'manage';
+    tab?: 'discussions' | 'events' | 'rules' | 'members' | 'manage';
   } | null>(null);
   const [pendingMessagesTarget, setPendingMessagesTarget] = useState<{
     conversationId?: string;
     tab?: 'chats' | 'requests' | 'groups';
   } | null>(null);
+  const [pendingChallengeId, setPendingChallengeId] = useState<string | null>(
+    null
+  );
+  const [pendingWatchPartyId, setPendingWatchPartyId] = useState<string | null>(
+    null
+  );
   const [deepLinkedProfileId, setDeepLinkedProfileId] = useState<string | null>(
     null
   );
@@ -379,6 +386,13 @@ export default function App() {
             : null
         );
         handleSelectDestination('messages');
+        return;
+      }
+
+      if (destination === 'challenges') {
+        setPendingChallengeId(params?.challengeId || null);
+        setPendingWatchPartyId(params?.watchPartyId || null);
+        handleSelectDestination('challenges');
       }
     },
     [firebaseUser?.uid, handleSelectDestination]
@@ -446,9 +460,30 @@ export default function App() {
   const isAccountRestricted =
     profile?.accountStatus === 'suspended' || profile?.accountStatus === 'banned';
 
+  const isQuotaExceeded = Boolean(
+    profileError && profileError.toLowerCase().includes('quota exceeded')
+  );
+
   const topBannerNode = (
     <>
       <AnnouncementBanner />
+      {isQuotaExceeded && (
+        <div
+          role="alert"
+          className="rounded-2xl bg-amber-500/10 border border-amber-500/60 p-4 mb-4 flex items-start gap-3 text-xs sm:text-sm text-amber-950 dark:text-amber-100"
+        >
+          <AlertTriangle
+            className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5"
+            aria-hidden="true"
+          />
+          <div>
+            <p className="font-bold">Firestore Daily Free Quota Limit Reached</p>
+            <p className="text-xs opacity-90 mt-0.5">
+              Cloud Firestore daily free read/write limits have been reached for this project. Database operations will automatically resume when the quota resets tomorrow, or you can upgrade your plan in the Firebase Console.
+            </p>
+          </div>
+        </div>
+      )}
       {isAccountRestricted && (
         <div
           role="alert"
@@ -588,6 +623,27 @@ export default function App() {
             currentUserId={firebaseUser?.uid}
             onOpenAuth={() => handleOpenAuth('login')}
             onNavigateDestination={handleSelectDestination}
+            onOpenChallenge={(challengeId) => {
+              setPendingWatchPartyId(null);
+              setPendingChallengeId(challengeId);
+              handleSelectDestination('challenges');
+            }}
+            onOpenWatchParty={(partyId) => {
+              setPendingChallengeId(null);
+              setPendingWatchPartyId(partyId);
+              handleSelectDestination('challenges');
+            }}
+          />
+        ) : activeDestination === 'challenges' ? (
+          <ChallengesHubPage
+            onOpenAuth={handleOpenAuth}
+            onOpenUserProfile={(targetUid) => setDeepLinkedProfileId(targetUid)}
+            initialChallengeId={pendingChallengeId}
+            initialWatchPartyId={pendingWatchPartyId}
+            onClearDeepLink={() => {
+              setPendingChallengeId(null);
+              setPendingWatchPartyId(null);
+            }}
           />
         ) : activeDestination === 'news' ? (
           <NewsCenterPage

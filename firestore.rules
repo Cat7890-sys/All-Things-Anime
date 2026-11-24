@@ -1061,7 +1061,7 @@ service cloud.firestore {
         && data.id is string
         && data.id == reportId
         && isValidId(data.reporterId)
-        && data.targetType in ['post', 'comment', 'community', 'message', 'conversation', 'profile', 'collection']
+        && data.targetType in ['post', 'comment', 'community', 'message', 'conversation', 'profile', 'collection', 'challenge', 'watch_party', 'watch_party_message']
         && isValidConversationId(data.targetId)
         && isValidConversationId(data.postId)
         && (!('communityId' in data) || (data.communityId is string && data.communityId.size() <= 128))
@@ -3441,5 +3441,790 @@ service cloud.firestore {
         && incoming().updatedAt == request.time;
       allow delete: if false;
     }
+
+    // ==========================================
+    // Build 09: Community Anime Challenges & Watch Parties (Option A)
+    // ==========================================
+
+    function isValidAnimeChallenge(data, challengeId) {
+      return data.keys().hasAll([
+          'id',
+          'title',
+          'description',
+          'coverImageUrl',
+          'category',
+          'difficulty',
+          'durationType',
+          'startDate',
+          'endDate',
+          'animeTargets',
+          'requirementsText',
+          'participantLimit',
+          'participantCount',
+          'completedCount',
+          'visibility',
+          'communityId',
+          'communityName',
+          'communityVisibility',
+          'creatorId',
+          'creatorUsername',
+          'creatorDisplayName',
+          'status',
+          'isFeatured',
+          'moderationStatus',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'title',
+          'description',
+          'coverImageUrl',
+          'category',
+          'difficulty',
+          'durationType',
+          'startDate',
+          'endDate',
+          'animeTargets',
+          'requirementsText',
+          'participantLimit',
+          'participantCount',
+          'completedCount',
+          'visibility',
+          'communityId',
+          'communityName',
+          'communityVisibility',
+          'creatorId',
+          'creatorUsername',
+          'creatorDisplayName',
+          'status',
+          'isFeatured',
+          'moderationStatus',
+          'moderationReason',
+          'moderatedAt',
+          'moderatedBy',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.id is string
+        && data.id == challengeId
+        && data.title is string
+        && data.title.size() >= 4
+        && data.title.size() <= 100
+        && data.description is string
+        && data.description.size() >= 15
+        && data.description.size() <= 1200
+        && isValidOptionalHttpsUrl(data.coverImageUrl, 600)
+        && data.category in ['Seasonal Watch', 'Genre Marathon', 'Classic Essentials', 'Studio Spotlight', 'Movie Night', 'Community Special']
+        && data.difficulty in ['casual', 'standard', 'hardcore']
+        && data.durationType in ['weekly', 'monthly', 'seasonal', 'custom']
+        && data.startDate is string
+        && data.startDate.size() == 10
+        && data.endDate is string
+        && data.endDate.size() == 10
+        && data.endDate >= data.startDate
+        && data.animeTargets is list
+        && data.animeTargets.size() >= 1
+        && data.animeTargets.size() <= 25
+        && data.requirementsText is string
+        && data.requirementsText.size() >= 5
+        && data.requirementsText.size() <= 600
+        && (data.participantLimit == null || (data.participantLimit is int && data.participantLimit >= 2 && data.participantLimit <= 5000))
+        && data.participantCount is int
+        && data.participantCount >= 0
+        && data.completedCount is int
+        && data.completedCount >= 0
+        && data.visibility in ['public', 'community']
+        && data.communityId is string
+        && data.communityId.size() <= 128
+        && data.communityName is string
+        && data.communityName.size() <= 80
+        && data.communityVisibility in ['public', 'private', 'none']
+        && isValidId(data.creatorId)
+        && data.creatorUsername is string
+        && data.creatorUsername.size() >= 1
+        && data.creatorUsername.size() <= 40
+        && data.creatorDisplayName is string
+        && data.creatorDisplayName.size() >= 1
+        && data.creatorDisplayName.size() <= 60
+        && data.status in ['upcoming', 'active', 'completed', 'archived']
+        && data.isFeatured is bool
+        && data.moderationStatus in ['active', 'removed_by_moderator', 'suspended']
+        && (!('moderationReason' in data) || (data.moderationReason is string && data.moderationReason.size() <= 400))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidChallengeParticipant(data, participantId) {
+      return data.keys().hasAll([
+          'id',
+          'challengeId',
+          'userId',
+          'username',
+          'displayName',
+          'avatarUrl',
+          'communityId',
+          'completedAnimeIds',
+          'episodeProgressMap',
+          'totalAnimeCount',
+          'progressPercent',
+          'status',
+          'pointsAwarded',
+          'trackerSynced',
+          'joinedAt',
+          'completedAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'challengeId',
+          'userId',
+          'username',
+          'displayName',
+          'avatarUrl',
+          'communityId',
+          'completedAnimeIds',
+          'episodeProgressMap',
+          'totalAnimeCount',
+          'progressPercent',
+          'status',
+          'pointsAwarded',
+          'trackerSynced',
+          'joinedAt',
+          'completedAt',
+          'updatedAt'
+        ])
+        && data.id is string
+        && data.id == participantId
+        && isValidId(data.challengeId)
+        && isValidId(data.userId)
+        && participantId == data.challengeId + '__' + data.userId
+        && data.username is string
+        && data.username.size() <= 40
+        && data.displayName is string
+        && data.displayName.size() <= 60
+        && isValidOptionalHttpsUrl(data.avatarUrl, 500)
+        && data.communityId is string
+        && data.communityId.size() <= 128
+        && data.completedAnimeIds is list
+        && data.completedAnimeIds.size() <= 25
+        && data.episodeProgressMap is map
+        && data.episodeProgressMap.size() <= 25
+        && data.totalAnimeCount is int
+        && data.totalAnimeCount >= 1
+        && data.totalAnimeCount <= 25
+        && data.progressPercent is int
+        && data.progressPercent >= 0
+        && data.progressPercent <= 100
+        && data.status in ['active', 'completed']
+        && data.pointsAwarded is int
+        && data.pointsAwarded >= 0
+        && data.trackerSynced is bool
+        && data.joinedAt is timestamp
+        && (data.completedAt == null || data.completedAt is timestamp)
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidWatchParty(data, partyId) {
+      return data.keys().hasAll([
+          'id',
+          'title',
+          'description',
+          'animeId',
+          'animeTitle',
+          'animeCoverUrl',
+          'episodeNumber',
+          'scheduledDate',
+          'startTime',
+          'timezone',
+          'scheduledStartAtMs',
+          'estimatedDurationMinutes',
+          'participantLimit',
+          'participantCount',
+          'attendingCount',
+          'completedCount',
+          'visibility',
+          'communityId',
+          'communityName',
+          'communityVisibility',
+          'invitedUserIds',
+          'discussionEnabled',
+          'registrationClosed',
+          'creatorId',
+          'creatorUsername',
+          'creatorDisplayName',
+          'status',
+          'moderationStatus',
+          'independentWatchNotice',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'title',
+          'description',
+          'animeId',
+          'animeTitle',
+          'animeCoverUrl',
+          'episodeNumber',
+          'scheduledDate',
+          'startTime',
+          'timezone',
+          'scheduledStartAtMs',
+          'estimatedDurationMinutes',
+          'participantLimit',
+          'participantCount',
+          'attendingCount',
+          'completedCount',
+          'visibility',
+          'communityId',
+          'communityName',
+          'communityVisibility',
+          'invitedUserIds',
+          'discussionEnabled',
+          'registrationClosed',
+          'creatorId',
+          'creatorUsername',
+          'creatorDisplayName',
+          'status',
+          'moderationStatus',
+          'moderationReason',
+          'moderatedAt',
+          'moderatedBy',
+          'independentWatchNotice',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.id is string
+        && data.id == partyId
+        && data.title is string
+        && data.title.size() >= 4
+        && data.title.size() <= 100
+        && data.description is string
+        && data.description.size() >= 10
+        && data.description.size() <= 1000
+        && data.animeId is int
+        && data.animeId >= 1
+        && data.animeTitle is string
+        && data.animeTitle.size() >= 1
+        && data.animeTitle.size() <= 200
+        && isValidOptionalHttpsUrl(data.animeCoverUrl, 600)
+        && (data.episodeNumber == null || (data.episodeNumber is int && data.episodeNumber >= 1 && data.episodeNumber <= 5000))
+        && data.scheduledDate is string
+        && data.scheduledDate.size() == 10
+        && data.startTime is string
+        && data.startTime.size() == 5
+        && data.timezone is string
+        && data.timezone.size() >= 2
+        && data.timezone.size() <= 80
+        && data.scheduledStartAtMs is int
+        && data.scheduledStartAtMs >= 0
+        && data.estimatedDurationMinutes is int
+        && data.estimatedDurationMinutes >= 10
+        && data.estimatedDurationMinutes <= 480
+        && (data.participantLimit == null || (data.participantLimit is int && data.participantLimit >= 2 && data.participantLimit <= 2000))
+        && data.participantCount is int
+        && data.participantCount >= 0
+        && data.attendingCount is int
+        && data.attendingCount >= 0
+        && data.completedCount is int
+        && data.completedCount >= 0
+        && data.visibility in ['public', 'private', 'community']
+        && data.communityId is string
+        && data.communityId.size() <= 128
+        && data.communityName is string
+        && data.communityName.size() <= 80
+        && data.communityVisibility in ['public', 'private', 'none']
+        && data.invitedUserIds is list
+        && data.invitedUserIds.size() <= 50
+        && data.discussionEnabled is bool
+        && data.registrationClosed is bool
+        && isValidId(data.creatorId)
+        && data.creatorUsername is string
+        && data.creatorUsername.size() <= 40
+        && data.creatorDisplayName is string
+        && data.creatorDisplayName.size() <= 60
+        && data.status in ['scheduled', 'live', 'completed', 'cancelled']
+        && data.moderationStatus in ['active', 'removed_by_moderator', 'suspended']
+        && (!('moderationReason' in data) || (data.moderationReason is string && data.moderationReason.size() <= 400))
+        && data.independentWatchNotice is string
+        && data.independentWatchNotice.size() >= 10
+        && data.independentWatchNotice.size() <= 400
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidWatchPartyParticipant(data, participantId) {
+      return data.keys().hasAll([
+          'id',
+          'partyId',
+          'userId',
+          'username',
+          'displayName',
+          'avatarUrl',
+          'rsvpStatus',
+          'reminderSet',
+          'joinedAt',
+          'attendedAt',
+          'completedAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'partyId',
+          'userId',
+          'username',
+          'displayName',
+          'avatarUrl',
+          'rsvpStatus',
+          'reminderSet',
+          'joinedAt',
+          'attendedAt',
+          'completedAt',
+          'updatedAt'
+        ])
+        && data.id is string
+        && data.id == participantId
+        && isValidId(data.partyId)
+        && isValidId(data.userId)
+        && participantId == data.partyId + '__' + data.userId
+        && data.username is string
+        && data.username.size() <= 40
+        && data.displayName is string
+        && data.displayName.size() <= 60
+        && isValidOptionalHttpsUrl(data.avatarUrl, 500)
+        && data.rsvpStatus in ['joined', 'attending', 'completed']
+        && data.reminderSet is bool
+        && data.joinedAt is timestamp
+        && (data.attendedAt == null || data.attendedAt is timestamp)
+        && (data.completedAt == null || data.completedAt is timestamp)
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidWatchPartyMessage(data, partyId, messageId) {
+      return data.keys().hasAll([
+          'id',
+          'partyId',
+          'authorId',
+          'authorUsername',
+          'authorDisplayName',
+          'authorAvatarUrl',
+          'content',
+          'hasSpoiler',
+          'isSystem',
+          'moderationStatus',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id',
+          'partyId',
+          'authorId',
+          'authorUsername',
+          'authorDisplayName',
+          'authorAvatarUrl',
+          'content',
+          'hasSpoiler',
+          'isSystem',
+          'moderationStatus',
+          'moderationReason',
+          'moderatedAt',
+          'moderatedBy',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.id is string
+        && data.id == messageId
+        && data.partyId is string
+        && data.partyId == partyId
+        && isValidId(data.authorId)
+        && data.authorUsername is string
+        && data.authorUsername.size() <= 40
+        && data.authorDisplayName is string
+        && data.authorDisplayName.size() <= 60
+        && isValidOptionalHttpsUrl(data.authorAvatarUrl, 500)
+        && data.content is string
+        && data.content.size() >= 1
+        && data.content.size() <= 600
+        && data.hasSpoiler is bool
+        && data.isSystem is bool
+        && data.moderationStatus in ['active', 'removed_by_moderator']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function canReadChallengeDoc(data) {
+      return (data.visibility == 'public' && data.moderationStatus == 'active')
+        || (data.visibility == 'community' && data.communityVisibility == 'public' && data.moderationStatus == 'active')
+        || (isSignedIn() && data.visibility == 'community' && data.communityId != '' && isCommunityMember(data.communityId, request.auth.uid))
+        || (isSignedIn() && data.creatorId == request.auth.uid)
+        || isAdminDocActive();
+    }
+
+    function canReadWatchPartyDoc(data) {
+      return (data.visibility == 'public' && data.moderationStatus == 'active')
+        || (data.visibility == 'community' && data.communityVisibility == 'public' && data.moderationStatus == 'active')
+        || (isSignedIn() && data.visibility == 'community' && data.communityId != '' && isCommunityMember(data.communityId, request.auth.uid))
+        || (isSignedIn() && data.visibility == 'private' && (data.creatorId == request.auth.uid || request.auth.uid in data.invitedUserIds || exists(/databases/$(database)/documents/watchPartyParticipants/$(data.id + '__' + request.auth.uid))))
+        || (isSignedIn() && data.creatorId == request.auth.uid)
+        || isAdminDocActive();
+    }
+
+    match /animeChallenges/{challengeId} {
+      allow get: if isValidId(challengeId)
+        && resource != null
+        && canReadChallengeDoc(resource.data);
+
+      allow list: if (resource.data.visibility == 'public' && resource.data.moderationStatus == 'active')
+        || (resource.data.visibility == 'community' && resource.data.communityVisibility == 'public' && resource.data.moderationStatus == 'active')
+        || (isSignedIn() && resource.data.creatorId == request.auth.uid)
+        || (isSignedIn() && resource.data.visibility == 'community' && resource.data.communityId != '' && isCommunityMember(resource.data.communityId, request.auth.uid))
+        || isAdminDocActive();
+
+      allow create: if isValidId(challengeId)
+        && isEmailVerified()
+        && isValidAnimeChallenge(incoming(), challengeId)
+        && incoming().creatorId == request.auth.uid
+        && incoming().participantCount == 0
+        && incoming().completedCount == 0
+        && incoming().isFeatured == false
+        && incoming().moderationStatus == 'active'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          (incoming().visibility == 'public' && incoming().communityId == '' && incoming().communityVisibility == 'none')
+          || (
+            incoming().visibility == 'community'
+            && isValidId(incoming().communityId)
+            && isCommunityActive(incoming().communityId)
+            && isCommunityModerator(incoming().communityId, request.auth.uid)
+          )
+        );
+
+      allow update: if isValidId(challengeId)
+        && resource != null
+        && isEmailVerified()
+        && isValidAnimeChallenge(incoming(), challengeId)
+        && incoming().id == existing().id
+        && incoming().creatorId == existing().creatorId
+        && incoming().visibility == existing().visibility
+        && incoming().communityId == existing().communityId
+        && incoming().createdAt == existing().createdAt
+        && (
+          // Creator or Community Moderator edits/archives challenge
+          (
+            (existing().creatorId == request.auth.uid || (existing().communityId != '' && isCommunityModerator(existing().communityId, request.auth.uid)))
+            && incoming().isFeatured == existing().isFeatured
+            && incoming().moderationStatus == existing().moderationStatus
+            && incoming().participantCount == existing().participantCount
+            && incoming().completedCount == existing().completedCount
+            && incoming().updatedAt == request.time
+            && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'coverImageUrl', 'category', 'difficulty', 'durationType', 'startDate', 'endDate', 'animeTargets', 'requirementsText', 'participantLimit', 'status', 'updatedAt'])
+          )
+          ||
+          // Atomic participantCount +/- 1 when user joins or leaves own participation doc
+          (
+            incoming().updatedAt == existing().updatedAt
+            && incoming().diff(existing()).affectedKeys().hasOnly(['participantCount'])
+            && (
+              (
+                existing().moderationStatus == 'active'
+                && existing().status != 'archived'
+                && !exists(/databases/$(database)/documents/challengeParticipants/$(challengeId + '__' + request.auth.uid))
+                && existsAfter(/databases/$(database)/documents/challengeParticipants/$(challengeId + '__' + request.auth.uid))
+                && incoming().participantCount == existing().participantCount + 1
+                && (existing().participantLimit == null || existing().participantCount < existing().participantLimit)
+              )
+              ||
+              (
+                exists(/databases/$(database)/documents/challengeParticipants/$(challengeId + '__' + request.auth.uid))
+                && !existsAfter(/databases/$(database)/documents/challengeParticipants/$(challengeId + '__' + request.auth.uid))
+                && existing().participantCount >= 1
+                && incoming().participantCount == existing().participantCount - 1
+              )
+            )
+          )
+          ||
+          // Platform admin moderation or featuring
+          (
+            (hasAdminPermission('content_moderation') || hasAdminPermission('featured_content'))
+            && incoming().updatedAt == request.time
+            && incoming().diff(existing()).affectedKeys().hasOnly(['moderationStatus', 'moderationReason', 'status', 'isFeatured', 'moderatedAt', 'moderatedBy', 'updatedAt'])
+          )
+        );
+
+      allow delete: if isValidId(challengeId)
+        && isEmailVerified()
+        && (
+          existing().creatorId == request.auth.uid
+          || (existing().communityId != '' && isCommunityModerator(existing().communityId, request.auth.uid))
+          || hasAdminPermission('content_moderation')
+        );
+    }
+
+    match /challengeParticipants/{participantId} {
+      allow get: if isValidPairId(participantId)
+        && resource != null
+        && (
+          (isSignedIn() && existing().userId == request.auth.uid)
+          || (
+            exists(/databases/$(database)/documents/animeChallenges/$(existing().challengeId))
+            && canReadChallengeDoc(get(/databases/$(database)/documents/animeChallenges/$(existing().challengeId)).data)
+          )
+          || isAdminDocActive()
+        );
+
+      allow list: if (isSignedIn() && resource.data.userId == request.auth.uid)
+        || (
+          exists(/databases/$(database)/documents/animeChallenges/$(resource.data.challengeId))
+          && (
+            get(/databases/$(database)/documents/animeChallenges/$(resource.data.challengeId)).data.visibility == 'public'
+            || get(/databases/$(database)/documents/animeChallenges/$(resource.data.challengeId)).data.communityVisibility == 'public'
+            || (isSignedIn() && resource.data.communityId != '' && isCommunityMember(resource.data.communityId, request.auth.uid))
+          )
+        )
+        || isAdminDocActive();
+
+      allow create: if isValidPairId(participantId)
+        && isEmailVerified()
+        && isValidChallengeParticipant(incoming(), participantId)
+        && incoming().userId == request.auth.uid
+        && incoming().pointsAwarded == 0
+        && incoming().joinedAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/animeChallenges/$(incoming().challengeId))
+        && canReadChallengeDoc(get(/databases/$(database)/documents/animeChallenges/$(incoming().challengeId)).data);
+
+      allow update: if isValidPairId(participantId)
+        && resource != null
+        && isEmailVerified()
+        && isValidChallengeParticipant(incoming(), participantId)
+        && isOwner(existing().userId)
+        && incoming().id == existing().id
+        && incoming().challengeId == existing().challengeId
+        && incoming().userId == existing().userId
+        && incoming().communityId == existing().communityId
+        && incoming().joinedAt == existing().joinedAt
+        && incoming().pointsAwarded == existing().pointsAwarded
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['completedAnimeIds', 'episodeProgressMap', 'progressPercent', 'status', 'trackerSynced', 'completedAt', 'updatedAt']);
+
+      allow delete: if isValidPairId(participantId)
+        && resource != null
+        && isEmailVerified()
+        && (
+          isOwner(existing().userId)
+          || (existing().communityId != '' && isCommunityModerator(existing().communityId, request.auth.uid))
+          || hasAdminPermission('content_moderation')
+        );
+    }
+
+    match /watchParties/{partyId} {
+      allow get: if isValidId(partyId)
+        && resource != null
+        && canReadWatchPartyDoc(resource.data);
+
+      allow list: if (resource.data.visibility == 'public' && resource.data.moderationStatus == 'active')
+        || (resource.data.visibility == 'community' && resource.data.communityVisibility == 'public' && resource.data.moderationStatus == 'active')
+        || (isSignedIn() && resource.data.creatorId == request.auth.uid)
+        || (isSignedIn() && resource.data.visibility == 'private' && request.auth.uid in resource.data.invitedUserIds)
+        || (isSignedIn() && resource.data.visibility == 'community' && resource.data.communityId != '' && isCommunityMember(resource.data.communityId, request.auth.uid))
+        || isAdminDocActive();
+
+      allow create: if isValidId(partyId)
+        && isEmailVerified()
+        && isValidWatchParty(incoming(), partyId)
+        && incoming().creatorId == request.auth.uid
+        && incoming().participantCount == 0
+        && incoming().attendingCount == 0
+        && incoming().completedCount == 0
+        && incoming().moderationStatus == 'active'
+        && incoming().status == 'scheduled'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          (incoming().visibility in ['public', 'private'] && incoming().communityId == '' && incoming().communityVisibility == 'none')
+          || (
+            incoming().visibility == 'community'
+            && isValidId(incoming().communityId)
+            && isCommunityActive(incoming().communityId)
+            && isCommunityMember(incoming().communityId, request.auth.uid)
+          )
+        );
+
+      allow update: if isValidId(partyId)
+        && resource != null
+        && isEmailVerified()
+        && isValidWatchParty(incoming(), partyId)
+        && incoming().id == existing().id
+        && incoming().creatorId == existing().creatorId
+        && incoming().animeId == existing().animeId
+        && incoming().visibility == existing().visibility
+        && incoming().communityId == existing().communityId
+        && incoming().createdAt == existing().createdAt
+        && (
+          // Host or community mod edits, cancels, updates invites, or toggles registration
+          (
+            (existing().creatorId == request.auth.uid || (existing().communityId != '' && isCommunityModerator(existing().communityId, request.auth.uid)))
+            && incoming().moderationStatus == existing().moderationStatus
+            && incoming().updatedAt == request.time
+            && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'episodeNumber', 'scheduledDate', 'startTime', 'timezone', 'scheduledStartAtMs', 'estimatedDurationMinutes', 'participantLimit', 'invitedUserIds', 'discussionEnabled', 'registrationClosed', 'status', 'participantCount', 'updatedAt'])
+          )
+          ||
+          // Atomic self join / leave sync
+          (
+            incoming().updatedAt == existing().updatedAt
+            && incoming().diff(existing()).affectedKeys().hasOnly(['participantCount', 'attendingCount', 'completedCount'])
+            && (
+              (
+                existing().moderationStatus == 'active'
+                && existing().status != 'cancelled'
+                && !existing().registrationClosed
+                && !exists(/databases/$(database)/documents/watchPartyParticipants/$(partyId + '__' + request.auth.uid))
+                && existsAfter(/databases/$(database)/documents/watchPartyParticipants/$(partyId + '__' + request.auth.uid))
+                && incoming().participantCount == existing().participantCount + 1
+                && (existing().participantLimit == null || existing().participantCount < existing().participantLimit)
+              )
+              ||
+              (
+                exists(/databases/$(database)/documents/watchPartyParticipants/$(partyId + '__' + request.auth.uid))
+                && !existsAfter(/databases/$(database)/documents/watchPartyParticipants/$(partyId + '__' + request.auth.uid))
+                && existing().participantCount >= 1
+                && incoming().participantCount == existing().participantCount - 1
+              )
+              ||
+              (
+                exists(/databases/$(database)/documents/watchPartyParticipants/$(partyId + '__' + request.auth.uid))
+                && existsAfter(/databases/$(database)/documents/watchPartyParticipants/$(partyId + '__' + request.auth.uid))
+                && incoming().participantCount == existing().participantCount
+              )
+            )
+          )
+          ||
+          // Admin moderation
+          (
+            hasAdminPermission('content_moderation')
+            && incoming().updatedAt == request.time
+            && incoming().diff(existing()).affectedKeys().hasOnly(['moderationStatus', 'moderationReason', 'status', 'moderatedAt', 'moderatedBy', 'updatedAt'])
+          )
+        );
+
+      allow delete: if isValidId(partyId)
+        && isEmailVerified()
+        && (
+          existing().creatorId == request.auth.uid
+          || (existing().communityId != '' && isCommunityModerator(existing().communityId, request.auth.uid))
+          || hasAdminPermission('content_moderation')
+        );
+
+      match /messages/{messageId} {
+        allow get, list: if isValidId(partyId)
+          && exists(/databases/$(database)/documents/watchParties/$(partyId))
+          && canReadWatchPartyDoc(get(/databases/$(database)/documents/watchParties/$(partyId)).data);
+
+        allow create: if isValidId(partyId)
+          && isValidId(messageId)
+          && isEmailVerified()
+          && isValidWatchPartyMessage(incoming(), partyId, messageId)
+          && incoming().authorId == request.auth.uid
+          && incoming().moderationStatus == 'active'
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/watchParties/$(partyId))
+          && get(/databases/$(database)/documents/watchParties/$(partyId)).data.moderationStatus == 'active'
+          && get(/databases/$(database)/documents/watchParties/$(partyId)).data.discussionEnabled == true
+          && !isBlockedBetween(get(/databases/$(database)/documents/watchParties/$(partyId)).data.creatorId, request.auth.uid)
+          && canReadWatchPartyDoc(get(/databases/$(database)/documents/watchParties/$(partyId)).data);
+
+        allow update: if isValidId(partyId)
+          && isValidId(messageId)
+          && isEmailVerified()
+          && hasAdminPermission('content_moderation');
+
+        allow delete: if isValidId(partyId)
+          && isValidId(messageId)
+          && isEmailVerified()
+          && (
+            existing().authorId == request.auth.uid
+            || get(/databases/$(database)/documents/watchParties/$(partyId)).data.creatorId == request.auth.uid
+            || (
+              get(/databases/$(database)/documents/watchParties/$(partyId)).data.communityId != ''
+              && isCommunityModerator(get(/databases/$(database)/documents/watchParties/$(partyId)).data.communityId, request.auth.uid)
+            )
+            || hasAdminPermission('content_moderation')
+          );
+      }
+    }
+
+    match /watchPartyParticipants/{participantId} {
+      allow get: if isValidPairId(participantId)
+        && resource != null
+        && (
+          (isSignedIn() && existing().userId == request.auth.uid)
+          || (
+            exists(/databases/$(database)/documents/watchParties/$(existing().partyId))
+            && canReadWatchPartyDoc(get(/databases/$(database)/documents/watchParties/$(existing().partyId)).data)
+          )
+          || isAdminDocActive()
+        );
+
+      allow list: if (isSignedIn() && resource.data.userId == request.auth.uid)
+        || (
+          exists(/databases/$(database)/documents/watchParties/$(resource.data.partyId))
+          && canReadWatchPartyDoc(get(/databases/$(database)/documents/watchParties/$(resource.data.partyId)).data)
+        )
+        || isAdminDocActive();
+
+      allow create: if isValidPairId(participantId)
+        && isEmailVerified()
+        && isValidWatchPartyParticipant(incoming(), participantId)
+        && incoming().userId == request.auth.uid
+        && incoming().joinedAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/watchParties/$(incoming().partyId))
+        && canReadWatchPartyDoc(get(/databases/$(database)/documents/watchParties/$(incoming().partyId)).data);
+
+      allow update: if isValidPairId(participantId)
+        && resource != null
+        && isEmailVerified()
+        && isValidWatchPartyParticipant(incoming(), participantId)
+        && isOwner(existing().userId)
+        && incoming().id == existing().id
+        && incoming().partyId == existing().partyId
+        && incoming().userId == existing().userId
+        && incoming().joinedAt == existing().joinedAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['rsvpStatus', 'reminderSet', 'attendedAt', 'completedAt', 'updatedAt']);
+
+      allow delete: if isValidPairId(participantId)
+        && resource != null
+        && isEmailVerified()
+        && (
+          isOwner(existing().userId)
+          || (
+            exists(/databases/$(database)/documents/watchParties/$(existing().partyId))
+            && (
+              get(/databases/$(database)/documents/watchParties/$(existing().partyId)).data.creatorId == request.auth.uid
+              || (
+                get(/databases/$(database)/documents/watchParties/$(existing().partyId)).data.communityId != ''
+                && isCommunityModerator(get(/databases/$(database)/documents/watchParties/$(existing().partyId)).data.communityId, request.auth.uid)
+              )
+            )
+          )
+          || hasAdminPermission('content_moderation')
+        );
+    }
+
+    // Server-authoritative public-safe Leaderboard Profiles & Achievements (no client score spoofing)
+    match /leaderboardProfiles/{userId} {
+      allow get, list: if isValidId(userId) || resource != null;
+      allow create, update, delete: if false;
+    }
+
+    match /userAchievements/{achievementDocId} {
+      allow get, list: if resource != null;
+      allow create, update, delete: if false;
+    }
   }
 }
+

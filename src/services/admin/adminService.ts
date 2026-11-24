@@ -29,6 +29,7 @@ import type {
   AdminSeatId,
   AdminSeatStatus,
   AdminSeatSummary,
+  AnimeChallenge,
   AnimeStreamingAvailability,
   AtaCommunity,
   AtaPost,
@@ -44,13 +45,16 @@ import type {
   StreamingProvider,
   UserCollection,
   UserFeedbackRecord,
+  WatchParty,
 } from '../../types';
+import { mapDocToChallenge } from '../challenges/challengeService';
 import {
   isApprovedOfficialStreamingUrl,
   isEligibleVerifiedFreeAvailability,
   isEligibleVerifiedFreeProvider,
 } from '../companion/streamingDirectory';
 import { auth, db, firebaseProjectMeta, functions, isStorageConfigured } from '../firebase';
+import { mapDocToWatchParty } from '../watchParties/watchPartyService';
 import {
   validateAdminNewsInput,
   validateAnnouncementInput,
@@ -320,6 +324,9 @@ export interface AdminOverviewStats {
   totalPosts: number;
   totalCommunities: number;
   totalCollections: number;
+  totalChallenges: number;
+  totalWatchParties: number;
+  totalChallengeParticipations: number;
   totalReports: number;
   totalCopyrightComplaints: number;
   totalDeletionRequests: number;
@@ -343,6 +350,9 @@ export async function fetchAdminOverviewStats(): Promise<AdminOverviewStats> {
     totalPosts,
     totalCommunities,
     totalCollections,
+    totalChallenges,
+    totalWatchParties,
+    totalChallengeParticipations,
     totalReports,
     totalCopyrightComplaints,
     totalDeletionRequests,
@@ -354,6 +364,9 @@ export async function fetchAdminOverviewStats(): Promise<AdminOverviewStats> {
     safeCount('posts'),
     safeCount('communities'),
     safeCount('userCollections'),
+    safeCount('animeChallenges'),
+    safeCount('watchParties'),
+    safeCount('challengeParticipants'),
     safeCount('reports'),
     safeCount('copyrightComplaints'),
     safeCount('accountDeletionRequests'),
@@ -367,6 +380,9 @@ export async function fetchAdminOverviewStats(): Promise<AdminOverviewStats> {
     totalPosts,
     totalCommunities,
     totalCollections,
+    totalChallenges,
+    totalWatchParties,
+    totalChallengeParticipations,
     totalReports,
     totalCopyrightComplaints,
     totalDeletionRequests,
@@ -781,6 +797,122 @@ export async function moderateContentViaCallableOrDirect(
     targetCollection: params.contentCollection || params.kind,
     targetId: params.targetId,
     summary: `Moderated ${params.kind} ${params.targetId} (${params.action}).`,
+  });
+}
+
+export async function fetchAdminChallengesAndParties(maxCount = 50): Promise<{
+  challenges: AnimeChallenge[];
+  watchParties: WatchParty[];
+}> {
+  const [chSnap, wpSnap] = await Promise.all([
+    getDocs(
+      query(
+        collection(db, 'animeChallenges'),
+        orderBy('updatedAt', 'desc'),
+        limit(maxCount)
+      )
+    ),
+    getDocs(
+      query(
+        collection(db, 'watchParties'),
+        orderBy('updatedAt', 'desc'),
+        limit(maxCount)
+      )
+    ),
+  ]);
+
+  return {
+    challenges: chSnap.docs.map((d) =>
+      mapDocToChallenge(d.id, d.data() as Record<string, unknown>)
+    ),
+    watchParties: wpSnap.docs.map((d) =>
+      mapDocToWatchParty(d.id, d.data() as Record<string, unknown>)
+    ),
+  };
+}
+
+export async function moderateEventViaAdmin(
+  admin: AdminAccountRecord,
+  params: {
+    eventType: 'challenge' | 'watch_party';
+    eventId: string;
+    action: 'remove' | 'suspend' | 'restore' | 'feature' | 'unfeature';
+    reason?: string;
+  }
+): Promise<void> {
+  const cleanReason = (params.reason || '').trim().slice(0, 400);
+  try {
+    const callable = httpsCallable(functions, 'adminModerateEvent');
+    await callable({
+      eventType: params.eventType,
+      eventId: params.eventId,
+      action: params.action,
+      reason: cleanReason,
+    });
+    return;
+  } catch (err) {
+    if (!isFunctionsUnavailableError(err)) {
+      throw err;
+    }
+  }
+
+  // Fallback direct Firestore update permitted by firestore.rules for active admins
+  const colName =
+    params.eventType === 'watch_party' ? 'watchParties' : 'animeChallenges';
+  const ref = doc(db, colName, params.eventId);
+  const updates: Record<string, unknown> = {
+    updatedAt: serverTimestamp(),
+  };
+
+  if (params.action === 'remove') {
+    updates.moderationStatus = 'removed_by_moderator';
+    updates.moderationReason = cleanReason || 'Removed by administrator';
+    updates.moderatedAt = serverTimestamp();
+    updates.moderatedBy = admin.uid;
+  } else if (params.action === 'suspend') {
+    updates.moderationStatus = 'suspended';
+    updates.moderationReason = cleanReason || 'Suspended by administrator';
+    updates.status = params.eventType === 'watch_party' ? 'cancelled' : 'archived';
+    updates.moderatedAt = serverTimestamp();
+    updates.moderatedBy = admin.uid;
+  } else if (params.action === 'restore') {
+    updates.moderationStatus = 'active';
+    updates.moderationReason = '';
+    updates.status = params.eventType === 'watch_party' ? 'scheduled' : 'active';
+    updates.moderatedAt = serverTimestamp();
+    updates.moderatedBy = admin.uid;
+  } else if (
+    params.eventType === 'challenge' &&
+    (params.action === 'feature' || params.action === 'unfeature')
+  ) {
+    updates.isFeatured = params.action === 'feature';
+  } else {
+    throw new Error('Unsupported event moderation action.');
+  }
+
+  await updateDoc(ref, updates);
+
+  const decisionRef = doc(collection(db, 'moderationDecisions'));
+  await setDoc(decisionRef, {
+    id: decisionRef.id,
+    targetType: params.eventType,
+    targetId: params.eventId,
+    action:
+      params.action === 'feature' || params.action === 'unfeature'
+        ? 'restore'
+        : params.action,
+    reason: cleanReason || `Admin ${params.action} on ${params.eventType}.`,
+    evidenceSummary: `Admin console direct ${params.action} on ${colName}/${params.eventId}.`,
+    actorUid: admin.uid,
+    actorRole: admin.role,
+    createdAt: serverTimestamp(),
+  });
+
+  await recordConsoleAuditLog(admin, {
+    actionType: `event_${params.eventType}_${params.action}`,
+    targetCollection: colName,
+    targetId: params.eventId,
+    summary: `Executed ${params.action} on ${params.eventType} ${params.eventId}.`,
   });
 }
 

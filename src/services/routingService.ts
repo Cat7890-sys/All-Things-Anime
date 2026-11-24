@@ -12,6 +12,7 @@ const VALID_NAV_DESTINATIONS: readonly NavDestinationId[] = [
   'collections',
   'personalisation',
   'calendar',
+  'challenges',
   'news',
   'journey',
 ];

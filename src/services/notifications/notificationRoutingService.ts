@@ -4,15 +4,17 @@ export interface NotificationRouteParams {
   postId?: string;
   commentId?: string;
   communityId?: string;
-  communityTab?: 'discussions' | 'rules' | 'members' | 'manage';
+  communityTab?: 'discussions' | 'events' | 'rules' | 'members' | 'manage';
   conversationId?: string;
   requestId?: string;
   messagesTab?: 'chats' | 'requests' | 'groups';
   profileId?: string;
+  challengeId?: string;
+  watchPartyId?: string;
 }
 
 export interface NotificationRouteTarget {
-  destination: 'home' | 'communities' | 'messages' | 'profile';
+  destination: 'home' | 'communities' | 'messages' | 'profile' | 'challenges';
   params?: NotificationRouteParams;
 }
 
@@ -52,8 +54,57 @@ export function getNotificationRouteInfo(
   const metaPostId = cleanParam(metadata?.postId);
   const metaCommentId = cleanParam(metadata?.commentId);
   const metaRequestId = cleanParam(metadata?.requestId);
+  const metaChallengeId = cleanParam(metadata?.challengeId);
+  const metaPartyId = cleanParam(metadata?.partyId);
   const metaTab = cleanParam(metadata?.tab);
   const cleanTargetId = cleanParam(targetId);
+
+  // 0. Challenges & Watch Parties (Build 09)
+  if (
+    targetType === 'challenge' ||
+    type === 'challenge_invite' ||
+    type === 'challenge_reminder' ||
+    type === 'challenge_completed' ||
+    type === 'community_challenge_created'
+  ) {
+    const challengeId =
+      metaChallengeId ||
+      cleanParam(metadata?.eventId) ||
+      (pathSegments[0] === 'challenges' ? cleanParam(pathSegments[1]) : undefined) ||
+      cleanTargetId;
+    return {
+      destination: 'challenges',
+      params: challengeId ? { challengeId } : undefined,
+    };
+  }
+
+  if (
+    targetType === 'watch_party' ||
+    type === 'watch_party_invite' ||
+    type === 'watch_party_joined' ||
+    type === 'watch_party_reminder' ||
+    type === 'watch_party_cancelled' ||
+    type === 'watch_party_updated' ||
+    pathSegments[0] === 'watch-parties'
+  ) {
+    const watchPartyId =
+      metaPartyId ||
+      cleanParam(metadata?.eventId) ||
+      (pathSegments[0] === 'watch-parties' ? cleanParam(pathSegments[1]) : undefined) ||
+      cleanTargetId;
+    return {
+      destination: 'challenges',
+      params: watchPartyId ? { watchPartyId } : undefined,
+    };
+  }
+
+  if (pathSegments[0] === 'challenges') {
+    const itemId = cleanParam(pathSegments[1]);
+    return {
+      destination: 'challenges',
+      params: itemId ? { challengeId: itemId } : undefined,
+    };
+  }
 
   // 1. Removed from group: open Groups view cleanly without selecting inaccessible thread
   if (type === 'group_removed') {
@@ -98,7 +149,11 @@ export function getNotificationRouteInfo(
         ? cleanTargetId
         : undefined);
     const communityTab =
-      metaTab === 'manage' || queryTab === 'manage' ? 'manage' : undefined;
+      metaTab === 'manage' || queryTab === 'manage'
+        ? 'manage'
+        : metaTab === 'events' || queryTab === 'events'
+          ? 'events'
+          : undefined;
 
     if (!communityId) {
       return { destination: 'communities' };
@@ -141,7 +196,7 @@ export function getNotificationRouteInfo(
     };
   }
 
-  // 5. Profiles (followers, profile deep links)
+  // 5. Profiles (followers, profile deep links, achievements)
   if (targetType === 'profile' || pathSegments[0] === 'profile') {
     const pathProfileId =
       pathSegments[0] === 'profile' ? cleanParam(pathSegments[1]) : undefined;

@@ -40,7 +40,7 @@ interface CommunitiesPageProps {
   initialCommunityTarget?: {
     communityId: string;
     postId?: string;
-    tab?: 'discussions' | 'rules' | 'members' | 'manage';
+    tab?: 'discussions' | 'events' | 'rules' | 'members' | 'manage';
   } | null;
   onConsumeCommunityTarget?: () => void;
   onOpenAuth?: (mode: AuthViewMode) => void;
@@ -90,7 +90,7 @@ export const CommunitiesPage: React.FC<CommunitiesPageProps> = ({
     useState<AtaCommunity | null>(null);
   const [deepLinkPostId, setDeepLinkPostId] = useState<string | null>(null);
   const [deepLinkTab, setDeepLinkTab] = useState<
-    'discussions' | 'rules' | 'members' | 'manage' | null
+    'discussions' | 'events' | 'rules' | 'members' | 'manage' | null
   >(null);
   const [deepLinkNotice, setDeepLinkNotice] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);

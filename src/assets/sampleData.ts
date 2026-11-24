@@ -100,6 +100,13 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     isImplemented: true,
   },
   {
+    id: 'challenges',
+    label: 'Challenges & Parties',
+    shortLabel: 'Events',
+    description: 'Community anime challenges, independent watch parties, leaderboards, and achievements.',
+    isImplemented: true,
+  },
+  {
     id: 'news',
     label: 'News Centre',
     shortLabel: 'News',

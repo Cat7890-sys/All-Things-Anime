@@ -117,13 +117,17 @@ export const ReportModal: React.FC<ReportModalProps> = ({
   onClose,
 }) => {
   const reasonOptions =
-    targetType === 'community'
+    targetType === 'community' ||
+    targetType === 'challenge' ||
+    targetType === 'watch_party'
       ? COMMUNITY_REPORT_REASONS
       : targetType === 'profile' || targetType === 'collection'
         ? PROFILE_COLLECTION_REASONS
         : POST_REPORT_REASONS;
   const defaultReason: ReportReason =
-    targetType === 'community'
+    targetType === 'community' ||
+    targetType === 'challenge' ||
+    targetType === 'watch_party'
       ? 'rule_violation'
       : targetType === 'profile' || targetType === 'collection'
         ? 'impersonation'
@@ -192,20 +196,30 @@ export const ReportModal: React.FC<ReportModalProps> = ({
               >
                 {targetType === 'community'
                   ? 'Report Community'
-                  : targetType === 'profile'
-                    ? 'Report Member Profile'
-                    : targetType === 'collection'
-                      ? 'Report Collection'
-                      : targetType === 'post'
-                        ? 'Report Post'
-                        : 'Report Comment'}
+                  : targetType === 'challenge'
+                    ? 'Report Anime Challenge'
+                    : targetType === 'watch_party'
+                      ? 'Report Watch Party'
+                      : targetType === 'watch_party_message'
+                        ? 'Report Discussion Message'
+                        : targetType === 'profile'
+                          ? 'Report Member Profile'
+                          : targetType === 'collection'
+                            ? 'Report Collection'
+                            : targetType === 'post'
+                              ? 'Report Post'
+                              : 'Report Comment'}
               </h2>
               <p className="text-xs text-[#52576B] dark:text-[#A7A9B8]">
                 {targetType === 'community'
                   ? `Community: ${targetAuthorUsername}`
-                  : targetType === 'profile'
-                    ? `Account: @${targetAuthorUsername}`
-                    : `Content by @${targetAuthorUsername}`}
+                  : targetType === 'challenge'
+                    ? `Challenge by @${targetAuthorUsername}`
+                    : targetType === 'watch_party'
+                      ? `Watch Party by @${targetAuthorUsername}`
+                      : targetType === 'profile'
+                        ? `Account: @${targetAuthorUsername}`
+                        : `Content by @${targetAuthorUsername}`}
               </p>
             </div>
           </div>

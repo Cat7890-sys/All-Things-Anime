@@ -1,14 +1,22 @@
 import type {
+  ChallengeCategory,
+  ChallengeDifficulty,
+  ChallengeDurationType,
   CommunityCategory,
+  CreateChallengeInput,
   CreateCommunityInput,
   CreatePostInput,
   CreateReportInput,
+  CreateWatchPartyInput,
   LoginAccountInput,
   RegisterAccountInput,
+  UpdateChallengeInput,
   UpdateCommunityInput,
   UpdatePostInput,
   UpdateProfileInput,
+  UpdateWatchPartyInput,
   ValidationErrors,
+  WatchPartyVisibility,
 } from '../types';
 
 export const USERNAME_REGEX = /^[a-zA-Z0-9_]{3,20}$/;
@@ -1170,4 +1178,296 @@ export function validateSecurityIncidentInput(input: {
   }
   return null;
 }
+
+// ==========================================
+// Build 09: Anime Challenges & Watch Parties (Option A)
+// ==========================================
+
+export const CHALLENGE_CATEGORIES: ChallengeCategory[] = [
+  'Seasonal Watch',
+  'Genre Marathon',
+  'Classic Essentials',
+  'Studio Spotlight',
+  'Movie Night',
+  'Community Special',
+];
+
+export const CHALLENGE_DIFFICULTIES: ChallengeDifficulty[] = [
+  'casual',
+  'standard',
+  'hardcore',
+];
+
+export const CHALLENGE_DURATIONS: ChallengeDurationType[] = [
+  'weekly',
+  'monthly',
+  'seasonal',
+  'custom',
+];
+
+export const WATCH_PARTY_VISIBILITIES: WatchPartyVisibility[] = [
+  'public',
+  'community',
+  'private',
+];
+
+export const INDEPENDENT_WATCH_NOTICE =
+  'Independent Watching Event (ATA Schedule & Discussion): ATA does not host, stream, or sync video playback. Each participant watches independently through their own legitimate source at the scheduled time.';
+
+const ISO_DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const HH_MM_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+export function isValidIsoDateOnly(value: string): boolean {
+  if (!ISO_DATE_ONLY_REGEX.test((value || '').trim())) return false;
+  const parsed = new Date(`${value.trim()}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return false;
+  return parsed.toISOString().slice(0, 10) === value.trim();
+}
+
+export function isValidIanaTimezone(tz: string): boolean {
+  const candidate = (tz || '').trim();
+  if (!candidate || candidate.length > 80) return false;
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: candidate });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Converts a YYYY-MM-DD + HH:MM wall-clock time in an IANA timezone to UTC milliseconds.
+ * Falls back to UTC when timezone is unavailable.
+ */
+export function computeScheduledStartUtcMs(
+  scheduledDate: string,
+  startTime: string,
+  timezone: string
+): number {
+  if (!isValidIsoDateOnly(scheduledDate) || !HH_MM_REGEX.test(startTime.trim())) {
+    return 0;
+  }
+  const [y, m, d] = scheduledDate.split('-').map(Number);
+  const [hh, mm] = startTime.trim().split(':').map(Number);
+  const targetUtcApprox = Date.UTC(y, m - 1, d, hh, mm, 0, 0);
+
+  if (!isValidIanaTimezone(timezone)) {
+    return targetUtcApprox;
+  }
+
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    });
+    const parts = formatter.formatToParts(new Date(targetUtcApprox));
+    const lookup = (type: string) =>
+      Number(parts.find((p) => p.type === type)?.value ?? 0);
+    const tzYear = lookup('year');
+    const tzMonth = lookup('month');
+    const tzDay = lookup('day');
+    const tzHour = lookup('hour');
+    const tzMinute = lookup('minute');
+    const tzSecond = lookup('second');
+    const renderedUtc = Date.UTC(
+      tzYear,
+      tzMonth - 1,
+      tzDay,
+      tzHour,
+      tzMinute,
+      tzSecond,
+      0
+    );
+    const offsetMs = renderedUtc - targetUtcApprox;
+    return targetUtcApprox - offsetMs;
+  } catch {
+    return targetUtcApprox;
+  }
+}
+
+export function validateChallengeForm(
+  input: CreateChallengeInput | UpdateChallengeInput
+): string | null {
+  const title = (input.title || '').trim();
+  if (title.length < 4 || title.length > 100) {
+    return 'Challenge title must be between 4 and 100 characters.';
+  }
+  const description = (input.description || '').trim();
+  if (description.length < 15 || description.length > 1200) {
+    return 'Challenge description must be between 15 and 1200 characters.';
+  }
+  const coverErr = validateOptionalHttpsUrl(input.coverImageUrl, 600, 'Cover image URL');
+  if (coverErr) return coverErr;
+
+  if (!CHALLENGE_CATEGORIES.includes(input.category)) {
+    return 'Please select a valid challenge category.';
+  }
+  if (!CHALLENGE_DIFFICULTIES.includes(input.difficulty)) {
+    return 'Please select a valid difficulty level.';
+  }
+  if (!CHALLENGE_DURATIONS.includes(input.durationType)) {
+    return 'Please select a valid challenge duration.';
+  }
+  if (!isValidIsoDateOnly(input.startDate)) {
+    return 'Start date must be a valid YYYY-MM-DD date.';
+  }
+  if (!isValidIsoDateOnly(input.endDate)) {
+    return 'End date must be a valid YYYY-MM-DD date.';
+  }
+  if (input.endDate < input.startDate) {
+    return 'End date must be on or after the start date.';
+  }
+  if (!Array.isArray(input.animeTargets) || input.animeTargets.length === 0) {
+    return 'Select at least 1 anime title for the challenge.';
+  }
+  if (input.animeTargets.length > 25) {
+    return 'Challenges can include up to 25 anime titles.';
+  }
+  const requirements = (input.requirementsText || '').trim();
+  if (requirements.length < 5 || requirements.length > 600) {
+    return 'Participation requirements must be between 5 and 600 characters.';
+  }
+  if (input.participantLimit !== null && input.participantLimit !== undefined) {
+    if (
+      !Number.isInteger(input.participantLimit) ||
+      input.participantLimit < 2 ||
+      input.participantLimit > 5000
+    ) {
+      return 'Participant limit must be between 2 and 5000, or left unlimited.';
+    }
+  }
+  if ('visibility' in input) {
+    if (input.visibility !== 'public' && input.visibility !== 'community') {
+      return 'Visibility must be public or community.';
+    }
+    if (input.visibility === 'community' && !(input.communityId || '').trim()) {
+      return 'A community must be selected for community challenges.';
+    }
+  }
+  return null;
+}
+
+export function validateWatchPartyForm(
+  input: CreateWatchPartyInput | UpdateWatchPartyInput
+): string | null {
+  const title = (input.title || '').trim();
+  if (title.length < 4 || title.length > 100) {
+    return 'Watch party title must be between 4 and 100 characters.';
+  }
+  const description = (input.description || '').trim();
+  if (description.length < 10 || description.length > 1000) {
+    return 'Watch party description must be between 10 and 1000 characters.';
+  }
+  if ('animeId' in input) {
+    if (!Number.isInteger(input.animeId) || input.animeId <= 0) {
+      return 'Please select a valid anime from AniList.';
+    }
+    if (!(input.animeTitle || '').trim()) {
+      return 'Anime title is required.';
+    }
+  }
+  if (input.episodeNumber !== null && input.episodeNumber !== undefined) {
+    if (!Number.isInteger(input.episodeNumber) || input.episodeNumber < 1 || input.episodeNumber > 5000) {
+      return 'Episode number must be a positive whole number.';
+    }
+  }
+  if (!isValidIsoDateOnly(input.scheduledDate)) {
+    return 'Scheduled date must be a valid YYYY-MM-DD date.';
+  }
+  if (!HH_MM_REGEX.test((input.startTime || '').trim())) {
+    return 'Start time must use 24-hour HH:MM format.';
+  }
+  if (!isValidIanaTimezone(input.timezone)) {
+    return 'Select a valid IANA timezone (e.g. Africa/Johannesburg or UTC).';
+  }
+  if (
+    !Number.isInteger(input.estimatedDurationMinutes) ||
+    input.estimatedDurationMinutes < 10 ||
+    input.estimatedDurationMinutes > 480
+  ) {
+    return 'Estimated duration must be between 10 and 480 minutes.';
+  }
+  if (input.participantLimit !== null && input.participantLimit !== undefined) {
+    if (
+      !Number.isInteger(input.participantLimit) ||
+      input.participantLimit < 2 ||
+      input.participantLimit > 2000
+    ) {
+      return 'Participant limit must be between 2 and 2000, or left unlimited.';
+    }
+  }
+  if ('visibility' in input) {
+    if (!WATCH_PARTY_VISIBILITIES.includes(input.visibility)) {
+      return 'Watch party visibility must be public, community, or private.';
+    }
+    if (input.visibility === 'community' && !(input.communityId || '').trim()) {
+      return 'A community must be selected for community watch parties.';
+    }
+    if (
+      Array.isArray(input.invitedUserIds) &&
+      input.invitedUserIds.length > 50
+    ) {
+      return 'Private invitations support up to 50 invited users.';
+    }
+  }
+  if (
+    'independentWatchNoticeAcknowledged' in input &&
+    !input.independentWatchNoticeAcknowledged
+  ) {
+    return 'You must acknowledge the independent legal watching notice to schedule a watch party.';
+  }
+  return null;
+}
+
+export function validateWatchPartyMessage(content: string): string | null {
+  const trimmed = (content || '').trim();
+  if (!trimmed) {
+    return 'Message cannot be empty.';
+  }
+  if (trimmed.length > 600) {
+    return 'Discussion messages must be 600 characters or fewer.';
+  }
+  return null;
+}
+
+export function calculateChallengeProgress(
+  completedAnimeIds: number[],
+  targetAnimeIds: number[]
+): {
+  validCompletedIds: number[];
+  totalCount: number;
+  progressPercent: number;
+  isCompleted: boolean;
+} {
+  const targetSet = new Set(targetAnimeIds.filter((id) => Number.isInteger(id) && id > 0));
+  const uniqueCompleted = Array.from(
+    new Set(completedAnimeIds.filter((id) => targetSet.has(id)))
+  );
+  const totalCount = targetSet.size;
+  if (totalCount === 0) {
+    return {
+      validCompletedIds: [],
+      totalCount: 0,
+      progressPercent: 0,
+      isCompleted: false,
+    };
+  }
+  const progressPercent = Math.min(
+    100,
+    Math.round((uniqueCompleted.length / totalCount) * 100)
+  );
+  return {
+    validCompletedIds: uniqueCompleted,
+    totalCount,
+    progressPercent,
+    isCompleted: uniqueCompleted.length === totalCount,
+  };
+}
+
 

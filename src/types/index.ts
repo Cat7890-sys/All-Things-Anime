@@ -11,6 +11,7 @@ export type NavDestinationId =
   | 'personalisation'
   | 'calendar'
   | 'news'
+  | 'challenges'
   | 'journey';
 
 export interface NavDestination {
@@ -260,7 +261,10 @@ export type ReportTargetType =
   | 'message'
   | 'conversation'
   | 'profile'
-  | 'collection';
+  | 'collection'
+  | 'challenge'
+  | 'watch_party'
+  | 'watch_party_message';
 
 export type ReportReason =
   | 'spam'
@@ -573,7 +577,17 @@ export type NotificationType =
   | 'group_removed'
   | 'group_admin_promote'
   | 'group_update'
-  | 'system_notice';
+  | 'system_notice'
+  | 'challenge_invite'
+  | 'challenge_reminder'
+  | 'challenge_completed'
+  | 'watch_party_invite'
+  | 'watch_party_joined'
+  | 'watch_party_reminder'
+  | 'watch_party_cancelled'
+  | 'watch_party_updated'
+  | 'community_challenge_created'
+  | 'achievement_unlocked';
 
 export interface AtaNotification {
   id: string;
@@ -594,6 +608,8 @@ export interface AtaNotification {
     | 'conversation'
     | 'message_request'
     | 'group'
+    | 'challenge'
+    | 'watch_party'
     | 'system';
   targetId?: string;
   route?: string;
@@ -1223,4 +1239,267 @@ export type AppRouteView =
   | { kind: 'legal'; slug: LegalPageSlug }
   | { kind: 'admin-login' }
   | { kind: 'admin-dashboard' };
+
+// ==========================================
+// Build 09: Community Anime Challenges & Watch Parties (Option A)
+// ==========================================
+
+export type ChallengeCategory =
+  | 'Seasonal Watch'
+  | 'Genre Marathon'
+  | 'Classic Essentials'
+  | 'Studio Spotlight'
+  | 'Movie Night'
+  | 'Community Special';
+
+export type ChallengeDifficulty = 'casual' | 'standard' | 'hardcore';
+export type ChallengeDurationType = 'weekly' | 'monthly' | 'seasonal' | 'custom';
+export type ChallengeLifecycleStatus = 'upcoming' | 'active' | 'completed' | 'archived';
+export type ChallengeVisibility = 'public' | 'community';
+
+export interface ChallengeAnimeTarget {
+  animeId: number;
+  title: string;
+  coverImage: string;
+  totalEpisodes: number | null;
+  format?: string;
+}
+
+export interface AnimeChallenge {
+  id: string;
+  title: string;
+  description: string;
+  coverImageUrl: string;
+  category: ChallengeCategory;
+  difficulty: ChallengeDifficulty;
+  durationType: ChallengeDurationType;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  animeTargets: ChallengeAnimeTarget[];
+  requirementsText: string;
+  participantLimit: number | null;
+  participantCount: number;
+  completedCount: number;
+  visibility: ChallengeVisibility;
+  communityId: string;
+  communityName: string;
+  communityVisibility: 'public' | 'private' | 'none';
+  creatorId: string;
+  creatorUsername: string;
+  creatorDisplayName: string;
+  status: ChallengeLifecycleStatus;
+  isFeatured: boolean;
+  moderationStatus: 'active' | 'removed_by_moderator' | 'suspended';
+  moderationReason?: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export interface ChallengeParticipation {
+  id: string; // {challengeId}__{userId}
+  challengeId: string;
+  userId: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+  communityId: string;
+  completedAnimeIds: number[];
+  episodeProgressMap: Record<string, number>;
+  totalAnimeCount: number;
+  progressPercent: number;
+  status: 'active' | 'completed';
+  pointsAwarded: number;
+  trackerSynced: boolean;
+  joinedAt: Date | null;
+  completedAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export interface CreateChallengeInput {
+  title: string;
+  description: string;
+  coverImageUrl?: string;
+  category: ChallengeCategory;
+  difficulty: ChallengeDifficulty;
+  durationType: ChallengeDurationType;
+  startDate: string;
+  endDate: string;
+  animeTargets: ChallengeAnimeTarget[];
+  requirementsText: string;
+  participantLimit: number | null;
+  visibility: ChallengeVisibility;
+  communityId?: string;
+  communityName?: string;
+  communityVisibility?: 'public' | 'private' | 'none';
+}
+
+export interface UpdateChallengeInput {
+  title: string;
+  description: string;
+  coverImageUrl?: string;
+  category: ChallengeCategory;
+  difficulty: ChallengeDifficulty;
+  durationType: ChallengeDurationType;
+  startDate: string;
+  endDate: string;
+  animeTargets: ChallengeAnimeTarget[];
+  requirementsText: string;
+  participantLimit: number | null;
+  status?: ChallengeLifecycleStatus;
+}
+
+export type WatchPartyVisibility = 'public' | 'private' | 'community';
+export type WatchPartyStatus = 'scheduled' | 'live' | 'completed' | 'cancelled';
+export type WatchPartyRsvpStatus = 'joined' | 'attending' | 'completed';
+
+export interface WatchParty {
+  id: string;
+  title: string;
+  description: string;
+  animeId: number;
+  animeTitle: string;
+  animeCoverUrl: string;
+  episodeNumber: number | null;
+  scheduledDate: string; // YYYY-MM-DD
+  startTime: string; // HH:MM
+  timezone: string; // IANA timezone string e.g. Africa/Johannesburg
+  scheduledStartAtMs: number;
+  estimatedDurationMinutes: number;
+  participantLimit: number | null;
+  participantCount: number;
+  attendingCount: number;
+  completedCount: number;
+  visibility: WatchPartyVisibility;
+  communityId: string;
+  communityName: string;
+  communityVisibility: 'public' | 'private' | 'none';
+  invitedUserIds: string[];
+  discussionEnabled: boolean;
+  registrationClosed: boolean;
+  creatorId: string;
+  creatorUsername: string;
+  creatorDisplayName: string;
+  status: WatchPartyStatus;
+  moderationStatus: 'active' | 'removed_by_moderator' | 'suspended';
+  moderationReason?: string;
+  independentWatchNotice: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export interface WatchPartyParticipant {
+  id: string; // {partyId}__{userId}
+  partyId: string;
+  userId: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+  rsvpStatus: WatchPartyRsvpStatus;
+  reminderSet: boolean;
+  joinedAt: Date | null;
+  attendedAt: Date | null;
+  completedAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export interface WatchPartyMessage {
+  id: string;
+  partyId: string;
+  authorId: string;
+  authorUsername: string;
+  authorDisplayName: string;
+  authorAvatarUrl: string;
+  content: string;
+  hasSpoiler: boolean;
+  isSystem: boolean;
+  moderationStatus: 'active' | 'removed_by_moderator';
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
+export interface CreateWatchPartyInput {
+  title: string;
+  description: string;
+  animeId: number;
+  animeTitle: string;
+  animeCoverUrl: string;
+  episodeNumber: number | null;
+  scheduledDate: string;
+  startTime: string;
+  timezone: string;
+  estimatedDurationMinutes: number;
+  participantLimit: number | null;
+  visibility: WatchPartyVisibility;
+  communityId?: string;
+  communityName?: string;
+  communityVisibility?: 'public' | 'private' | 'none';
+  invitedUserIds?: string[];
+  discussionEnabled: boolean;
+  independentWatchNoticeAcknowledged?: boolean;
+}
+
+export interface UpdateWatchPartyInput {
+  title: string;
+  description: string;
+  episodeNumber: number | null;
+  scheduledDate: string;
+  startTime: string;
+  timezone: string;
+  estimatedDurationMinutes: number;
+  participantLimit: number | null;
+  discussionEnabled: boolean;
+  registrationClosed?: boolean;
+}
+
+export type AchievementId =
+  | 'first_challenge_joined'
+  | 'first_challenge_completed'
+  | 'challenge_champion'
+  | 'community_participant'
+  | 'watch_party_attendee'
+  | 'watch_party_host'
+  | 'consistent_participant';
+
+export interface AchievementDefinition {
+  id: AchievementId;
+  title: string;
+  description: string;
+  criteriaLabel: string;
+  accentTone: 'crimson' | 'emerald' | 'amber' | 'indigo' | 'sky';
+}
+
+export interface UserAchievement {
+  id: string; // {userId}__{achievementId}
+  userId: string;
+  achievementId: AchievementId;
+  title: string;
+  description: string;
+  sourceEventId: string;
+  unlockedAt: Date | null;
+}
+
+export interface LeaderboardProfile {
+  userId: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+  totalPoints: number;
+  challengePoints: number;
+  watchPartyPoints: number;
+  challengesJoined: number;
+  challengesCompleted: number;
+  watchPartiesAttended: number;
+  watchPartiesHosted: number;
+  updatedAt: Date | null;
+}
+
+export interface CommunityLeaderboardEntry {
+  communityId: string;
+  communityName: string;
+  totalChallenges: number;
+  totalParticipants: number;
+  totalCompletions: number;
+  totalScore: number;
+}
+
 

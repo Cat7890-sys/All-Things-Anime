@@ -546,3 +546,85 @@ export const adminPublishAnnouncement = onCall(async (request) => {
     rethrowHttpsError(err);
   }
 });
+
+export const adminModerateEvent = onCall(async (request) => {
+  try {
+    const data = (request.data || {}) as Record<string, unknown>;
+    const eventType = data.eventType === 'watch_party' ? 'watch_party' : 'challenge';
+    const action = String(data.action || '');
+    const requiredPerm =
+      action === 'feature' || action === 'unfeature'
+        ? 'featured_content'
+        : 'content_moderation';
+
+    const actor = await verifyCallerIsActiveAdmin(db, request.auth, requiredPerm);
+    const eventId = String(data.eventId || '').trim();
+    const reason = sanitizeAuditSummary(String(data.reason || '').trim());
+    if (!eventId) {
+      throw new HttpsError('invalid-argument', 'eventId is required.');
+    }
+
+    const col = eventType === 'watch_party' ? 'watchParties' : 'animeChallenges';
+    const docRef = db.collection(col).doc(eventId);
+    const snap = await docRef.get();
+    if (!snap.exists) {
+      throw new HttpsError('not-found', 'Target event does not exist.');
+    }
+
+    const now = FieldValue.serverTimestamp();
+    const updates: Record<string, unknown> = { updatedAt: now };
+
+    if (action === 'remove') {
+      updates.moderationStatus = 'removed_by_moderator';
+      updates.moderationReason = reason || 'Removed by administrator';
+    } else if (action === 'suspend') {
+      updates.moderationStatus = 'suspended';
+      updates.moderationReason = reason || 'Suspended by administrator';
+      if (eventType === 'watch_party') {
+        updates.status = 'cancelled';
+      } else {
+        updates.status = 'archived';
+      }
+    } else if (action === 'restore') {
+      updates.moderationStatus = 'active';
+      updates.moderationReason = '';
+      if (eventType === 'watch_party') {
+        updates.status = 'scheduled';
+      } else {
+        updates.status = 'active';
+      }
+    } else if (eventType === 'challenge' && (action === 'feature' || action === 'unfeature')) {
+      updates.isFeatured = action === 'feature';
+    } else {
+      throw new HttpsError('invalid-argument', 'Unsupported event moderation action.');
+    }
+
+    await docRef.set(updates, { merge: true });
+
+    await db.collection('moderationDecisions').doc().set({
+      targetType: eventType,
+      targetId: eventId,
+      action: action === 'feature' || action === 'unfeature' ? 'restore' : action,
+      reason: reason || `Admin ${action} on ${eventType}`,
+      evidenceSummary: `Admin ${actor.role} executed ${action} on ${col}/${eventId}.`,
+      actorUid: actor.uid,
+      actorRole: actor.role,
+      createdAt: now,
+    });
+
+    await writeImmutableAuditLog(db, {
+      actorUid: actor.uid,
+      actorRole: actor.role,
+      actorSeatId: actor.seatId,
+      actionType: `event_${eventType}_${action}`,
+      targetCollection: col,
+      targetId: eventId,
+      summary: `${eventType} ${eventId}: ${action}. ${reason}`,
+    });
+
+    return { ok: true, eventType, eventId, action };
+  } catch (err) {
+    rethrowHttpsError(err);
+  }
+});
+

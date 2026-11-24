@@ -217,7 +217,76 @@ assert.deepEqual(
   { destination: 'home' }
 );
 
-// 6. Category preferences and quiet hours checks
+// 6. Build 09 Challenge & Watch Party notification routing
+assert.deepEqual(
+  getNotificationRouteInfo(
+    makeNotification({
+      type: 'challenge_invite',
+      category: 'social',
+      targetType: 'challenge',
+      targetId: 'ch_456',
+      route: '/challenges?challengeId=ch_456',
+      metadata: { challengeId: 'ch_456' },
+    })
+  ),
+  {
+    destination: 'challenges',
+    params: { challengeId: 'ch_456' },
+  }
+);
+
+assert.deepEqual(
+  getNotificationRouteInfo(
+    makeNotification({
+      type: 'watch_party_invite',
+      category: 'social',
+      targetType: 'watch_party',
+      targetId: 'wp_789',
+      route: '/challenges?watchPartyId=wp_789',
+      metadata: { watchPartyId: 'wp_789' },
+    })
+  ),
+  {
+    destination: 'challenges',
+    params: { watchPartyId: 'wp_789' },
+  }
+);
+
+assert.deepEqual(
+  getNotificationRouteInfo(
+    makeNotification({
+      type: 'community_challenge_created',
+      category: 'communities',
+      targetType: 'community',
+      targetId: 'comm_42',
+      route: '/challenges?challengeId=ch_456',
+      metadata: { communityId: 'comm_42', challengeId: 'ch_456' },
+    })
+  ),
+  {
+    destination: 'challenges',
+    params: { challengeId: 'ch_456' },
+  }
+);
+
+assert.deepEqual(
+  getNotificationRouteInfo(
+    makeNotification({
+      type: 'achievement_unlocked',
+      category: 'social',
+      targetType: 'profile',
+      targetId: 'user_recipient',
+      route: '/profile/user_recipient',
+      metadata: { achievementId: 'challenge_champion' },
+    })
+  ),
+  {
+    destination: 'profile',
+    params: { profileId: 'user_recipient' },
+  }
+);
+
+// 7. Category preferences and quiet hours checks
 const baseSettings: AtaNotificationSettings = {
   userId: 'user_recipient',
   enabled: true,
