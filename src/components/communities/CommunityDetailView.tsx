@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DocumentData, QueryDocumentSnapshot } from 'firebase/firestore';
 import {
   AlertCircle,
@@ -145,6 +145,7 @@ export const CommunityDetailView: React.FC<CommunityDetailViewProps> = ({
   const [isLoadingMorePosts, setIsLoadingMorePosts] = useState(false);
   const [postsError, setPostsError] = useState<string | null>(null);
   const [likedPostMap, setLikedPostMap] = useState<Record<string, boolean>>({});
+  const requestedLikeIdsRef = useRef<Set<string>>(new Set());
   const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set());
 
   // Members & Requests State
@@ -176,6 +177,7 @@ export const CommunityDetailView: React.FC<CommunityDetailViewProps> = ({
     setCursor(null);
     setHasMorePosts(false);
     setLikedPostMap({});
+    requestedLikeIdsRef.current.clear();
     setBannerError(null);
     setConfirmLeave(false);
     setShowRequestNoteBox(false);
@@ -335,13 +337,18 @@ export const CommunityDetailView: React.FC<CommunityDetailViewProps> = ({
     return combined;
   }, [posts, extraPosts, blockedUserIds]);
 
+  useEffect(() => {
+    requestedLikeIdsRef.current.clear();
+  }, [firebaseUser?.uid, community.id]);
+
   // Hydrate likes for displayed community posts
   useEffect(() => {
     if (!firebaseUser || mergedPosts.length === 0) return;
     const missing = mergedPosts
       .map((p) => p.id)
-      .filter((id) => !(id in likedPostMap));
+      .filter((id) => !requestedLikeIdsRef.current.has(id));
     if (missing.length === 0) return;
+    missing.forEach((id) => requestedLikeIdsRef.current.add(id));
 
     let active = true;
     void getUserLikedPostMap(missing, firebaseUser.uid, community.id).then(
@@ -354,7 +361,7 @@ export const CommunityDetailView: React.FC<CommunityDetailViewProps> = ({
     return () => {
       active = false;
     };
-  }, [firebaseUser, mergedPosts, likedPostMap, community.id]);
+  }, [firebaseUser, mergedPosts, community.id]);
 
   const handleJoinPublic = async () => {
     setBannerError(null);

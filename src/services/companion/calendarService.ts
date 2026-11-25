@@ -2,7 +2,7 @@ import {
   collection,
   deleteDoc,
   doc,
-  getDocs,
+  limit,
   onSnapshot,
   query,
   serverTimestamp,
@@ -13,7 +13,10 @@ import {
 import type { WatchReminder } from '../../types';
 import type { NormalizedAnime } from '../catalogue/anilistTypes';
 import { db, handleFirestoreError, OperationType } from '../firebase';
+import { subscribeShared } from '../sharedSubscriptionManager';
 import { ANILIST_GRAPHQL_ENDPOINT, normalizeAniListMedia } from '../catalogue/anilistService';
+
+const REMINDERS_QUERY_LIMIT = 200;
 
 export interface AiringScheduleItem {
   id: number;
@@ -116,35 +119,60 @@ export function subscribeToUserReminders(
   }
 
   const colRef = collection(db, 'userReminders', userId, 'items');
-  return onSnapshot(
-    query(colRef),
-    (snapshot) => {
-      const list: WatchReminder[] = [];
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        list.push({
-          id: docSnap.id,
-          userId: typeof data.userId === 'string' ? data.userId : userId,
-          animeId: typeof data.animeId === 'string' ? data.animeId : '',
-          animeTitle: typeof data.animeTitle === 'string' ? data.animeTitle : '',
-          animeCoverUrl: typeof data.animeCoverUrl === 'string' ? data.animeCoverUrl : '',
-          episodeNumber: typeof data.episodeNumber === 'number' ? data.episodeNumber : 1,
-          airingAt: typeof data.airingAt === 'number' ? data.airingAt : 0,
-          offsetMinutes: typeof data.offsetMinutes === 'number' ? data.offsetMinutes : 0,
-          isNotified: Boolean(data.isNotified),
-          createdAt: toDateOrNull(data.createdAt),
-        });
-      });
-      list.sort((a, b) => a.airingAt - b.airingAt);
-      onReminders(list);
-    },
-    (error) => {
-      try {
-        handleFirestoreError(error, OperationType.GET, `userReminders/${userId}/items`);
-      } catch (err) {
-        onError?.(err instanceof Error ? err.message : 'Failed to load reminders.');
-      }
-    }
+  const q = query(colRef, limit(REMINDERS_QUERY_LIMIT));
+  return subscribeShared<WatchReminder[]>(
+    `userReminders:${userId}`,
+    'calendarService',
+    (emitData, emitError) =>
+      onSnapshot(
+        q,
+        (snapshot) => {
+          const list: WatchReminder[] = [];
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            list.push({
+              id: docSnap.id,
+              userId: typeof data.userId === 'string' ? data.userId : userId,
+              animeId: typeof data.animeId === 'string' ? data.animeId : '',
+              animeTitle:
+                typeof data.animeTitle === 'string' ? data.animeTitle : '',
+              animeCoverUrl:
+                typeof data.animeCoverUrl === 'string'
+                  ? data.animeCoverUrl
+                  : '',
+              episodeNumber:
+                typeof data.episodeNumber === 'number'
+                  ? data.episodeNumber
+                  : 1,
+              airingAt: typeof data.airingAt === 'number' ? data.airingAt : 0,
+              offsetMinutes:
+                typeof data.offsetMinutes === 'number'
+                  ? data.offsetMinutes
+                  : 0,
+              isNotified: Boolean(data.isNotified),
+              createdAt: toDateOrNull(data.createdAt),
+            });
+          });
+          list.sort((a, b) => a.airingAt - b.airingAt);
+          emitData(list);
+        },
+        (error) => {
+          try {
+            handleFirestoreError(
+              error,
+              OperationType.GET,
+              `userReminders/${userId}/items`
+            );
+          } catch (err) {
+            emitError(
+              err instanceof Error ? err.message : 'Failed to load reminders.'
+            );
+          }
+        }
+      ),
+    onReminders,
+    onError,
+    { uid: userId }
   );
 }
 

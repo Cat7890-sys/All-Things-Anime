@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Ban,
   Bell,
@@ -22,6 +22,7 @@ import { searchPublicProfilesByUsernamePrefix } from '../../services/userService
 import {
   cancelWatchParty,
   deleteWatchPartyMessage,
+  fetchOlderWatchPartyMessages,
   fetchWatchPartyParticipants,
   inviteUsersToWatchParty,
   joinWatchParty,
@@ -70,6 +71,10 @@ export const WatchPartyDetailModal: React.FC<WatchPartyDetailModalProps> = ({
   >(initialParticipation);
   const [participants, setParticipants] = useState<WatchPartyParticipant[]>([]);
   const [messages, setMessages] = useState<WatchPartyMessage[]>([]);
+  const [olderMessages, setOlderMessages] = useState<WatchPartyMessage[]>([]);
+  const [hasMoreOlder, setHasMoreOlder] = useState(false);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const hasLoadedOlderRef = useRef(false);
   const [messageInput, setMessageInput] = useState('');
   const [hasSpoiler, setHasSpoiler] = useState(false);
   const [revealedSpoilers, setRevealedSpoilers] = useState<Set<string>>(
@@ -102,12 +107,20 @@ export const WatchPartyDetailModal: React.FC<WatchPartyDetailModalProps> = ({
   useEffect(() => {
     if (!party) return;
     let active = true;
+    setOlderMessages([]);
+    setHasMoreOlder(false);
+    hasLoadedOlderRef.current = false;
     fetchWatchPartyParticipants(party.id).then((list) => {
       if (active) setParticipants(list);
     });
     const unsub = subscribeToWatchPartyMessages(
       party.id,
-      (list) => setMessages(list),
+      (list) => {
+        setMessages(list);
+        if (!hasLoadedOlderRef.current) {
+          setHasMoreOlder(list.length >= 100);
+        }
+      },
       (msg) => setError(msg)
     );
     return () => {
@@ -166,9 +179,38 @@ export const WatchPartyDetailModal: React.FC<WatchPartyDetailModalProps> = ({
       }).format(new Date(party.scheduledStartAtMs))
     : `${party.scheduledDate} ${party.startTime} ${party.timezone}`;
 
-  const visibleMessages = messages.filter(
+  const mergedMessages = useMemo(() => {
+    if (olderMessages.length === 0) return messages;
+    const liveIds = new Set(messages.map((m) => m.id));
+    return [...olderMessages.filter((m) => !liveIds.has(m.id)), ...messages];
+  }, [olderMessages, messages]);
+
+  const visibleMessages = mergedMessages.filter(
     (m) => !blockedUserIds || !blockedUserIds.has(m.authorId)
   );
+
+  const handleLoadOlderMessages = async () => {
+    if (!party || isLoadingOlder) return;
+    const oldestTimestamp = mergedMessages.find((m) => m.createdAt !== null)?.createdAt;
+    if (!oldestTimestamp) {
+      setHasMoreOlder(false);
+      return;
+    }
+    setIsLoadingOlder(true);
+    setError(null);
+    try {
+      const res = await fetchOlderWatchPartyMessages(party.id, oldestTimestamp, 50);
+      hasLoadedOlderRef.current = true;
+      setOlderMessages((prev) => [...res.messages, ...prev]);
+      setHasMoreOlder(res.hasMore);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Unable to load older comments.'
+      );
+    } finally {
+      setIsLoadingOlder(false);
+    }
+  };
 
   const handleJoin = async () => {
     if (!currentProfile) return;
@@ -653,6 +695,18 @@ export const WatchPartyDetailModal: React.FC<WatchPartyDetailModalProps> = ({
           </div>
 
           <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+            {hasMoreOlder && (
+              <div className="flex justify-center pb-1">
+                <button
+                  type="button"
+                  onClick={() => void handleLoadOlderMessages()}
+                  disabled={isLoadingOlder}
+                  className="px-3 py-1.5 rounded-lg border border-[#D4D7E2] dark:border-[#303342] text-[11px] font-semibold text-[#52576B] dark:text-[#A7A9B8] hover:border-[#EF3038] hover:text-[#EF3038] disabled:opacity-50"
+                >
+                  {isLoadingOlder ? 'Loading older comments...' : 'Load older comments'}
+                </button>
+              </div>
+            )}
             {visibleMessages.length === 0 ? (
               <p className="text-xs text-[#52576B] dark:text-[#A7A9B8] py-2">
                 No comments yet. Share your reactions while watching independently!
@@ -703,9 +757,21 @@ export const WatchPartyDetailModal: React.FC<WatchPartyDetailModalProps> = ({
                         {canDeleteMsg && (
                           <button
                             type="button"
-                            onClick={() =>
-                              deleteWatchPartyMessage(party.id, msg.id)
-                            }
+                            onClick={() => {
+                              void deleteWatchPartyMessage(party.id, msg.id)
+                                .then(() => {
+                                  setOlderMessages((prev) =>
+                                    prev.filter((m) => m.id !== msg.id)
+                                  );
+                                })
+                                .catch((err) => {
+                                  setError(
+                                    err instanceof Error
+                                      ? err.message
+                                      : 'Unable to delete message.'
+                                  );
+                                });
+                            }}
                             aria-label="Delete message"
                             className="text-[#52576B] dark:text-[#A7A9B8] hover:text-[#EF3038]"
                           >

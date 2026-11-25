@@ -202,23 +202,28 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
   useEffect(() => {
     if (profile) {
-      setEditForm({
+      setEditForm((prev) => ({
+        ...prev,
         displayName: profile.displayName,
         bio: profile.bio,
         avatarUrl: profile.avatarUrl,
-      });
+      }));
     } else if (firebaseUser) {
-      setEditForm({
+      setEditForm((prev) => ({
+        ...prev,
         displayName: firebaseUser.displayName || '',
         bio: '',
         avatarUrl: '',
-      });
+      }));
     }
+  }, [profile, firebaseUser]);
 
-    if (firebaseUser) {
-      void loadSocialProfileData(firebaseUser.uid);
+  const currentUid = firebaseUser?.uid ?? null;
+  useEffect(() => {
+    if (currentUid) {
+      void loadSocialProfileData(currentUid);
     }
-  }, [profile, firebaseUser, loadSocialProfileData]);
+  }, [currentUid, loadSocialProfileData]);
 
   if (isLoadingAuth) {
     return (

@@ -7,6 +7,7 @@ import {
 } from 'firebase/firestore';
 import type { AtaUserPresence } from '../../types';
 import { auth, db } from '../firebase';
+import { subscribeShared } from '../sharedSubscriptionManager';
 import { PRESENCE_ACTIVE_WINDOW_MS } from '../validation';
 import { mapDocToUserPresence } from './messagingUtils';
 
@@ -36,26 +37,37 @@ export async function publishOwnPresence(
 
 export function subscribeToUserPresence(
   targetUid: string,
-  onPresence: (presence: AtaUserPresence | null) => void
+  onPresence: (presence: AtaUserPresence | null) => void,
+  viewerUid?: string
 ): Unsubscribe {
   if (!targetUid) {
     onPresence(null);
     return () => {};
   }
 
-  return onSnapshot(
-    doc(db, 'userPresence', targetUid),
-    (snapshot) => {
-      onPresence(
-        snapshot.exists()
-          ? mapDocToUserPresence(targetUid, snapshot.data())
-          : null
-      );
-    },
-    () => {
-      // Blocked or hidden visibility fails closed safely without crashing UI
-      onPresence(null);
-    }
+  const effectiveUid = viewerUid || auth.currentUser?.uid || undefined;
+
+  return subscribeShared<AtaUserPresence | null>(
+    `userPresence:${targetUid}:${effectiveUid || 'anon'}`,
+    'messaging:presence',
+    (emitData) =>
+      onSnapshot(
+        doc(db, 'userPresence', targetUid),
+        (snapshot) => {
+          emitData(
+            snapshot.exists()
+              ? mapDocToUserPresence(targetUid, snapshot.data())
+              : null
+          );
+        },
+        () => {
+          // Blocked or hidden visibility fails closed safely without crashing UI
+          emitData(null);
+        }
+      ),
+    onPresence,
+    undefined,
+    effectiveUid ? { uid: effectiveUid } : undefined
   );
 }
 

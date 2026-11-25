@@ -18,6 +18,7 @@ import type {
   AtaUserAccount,
 } from '../../types';
 import { db, handleFirestoreError, OperationType } from '../firebase';
+import { subscribeShared } from '../sharedSubscriptionManager';
 import { checkBlockBetween, checkFollowStatus } from '../socialGraphService';
 import { getPublicProfile } from '../userProfileService';
 import {
@@ -144,32 +145,46 @@ export function subscribeToIncomingRequests(
   onRequests: (requests: AtaMessageRequest[]) => void,
   onError: (message: string) => void
 ): Unsubscribe {
-  const q = query(
-    collection(db, 'messageRequests'),
-    where('recipientId', '==', uid),
-    where('status', '==', 'pending'),
-    orderBy('updatedAt', 'desc'),
-    limit(40)
-  );
+  if (!uid) {
+    onRequests([]);
+    return () => {};
+  }
 
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      onRequests(
-        snapshot.docs.map((d) => mapDocToMessageRequest(d.id, d.data()))
+  return subscribeShared<AtaMessageRequest[]>(
+    `messageRequests:incoming:${uid}`,
+    'messaging:incomingRequests',
+    (emitData, emitError) => {
+      const q = query(
+        collection(db, 'messageRequests'),
+        where('recipientId', '==', uid),
+        where('status', '==', 'pending'),
+        orderBy('updatedAt', 'desc'),
+        limit(40)
+      );
+
+      return onSnapshot(
+        q,
+        (snapshot) => {
+          emitData(
+            snapshot.docs.map((d) => mapDocToMessageRequest(d.id, d.data()))
+          );
+        },
+        (error) => {
+          try {
+            handleFirestoreError(error, OperationType.LIST, 'messageRequests');
+          } catch (err) {
+            emitError(
+              err instanceof Error
+                ? err.message
+                : 'Unable to load incoming message requests.'
+            );
+          }
+        }
       );
     },
-    (error) => {
-      try {
-        handleFirestoreError(error, OperationType.LIST, 'messageRequests');
-      } catch (err) {
-        onError(
-          err instanceof Error
-            ? err.message
-            : 'Unable to load incoming message requests.'
-        );
-      }
-    }
+    onRequests,
+    onError,
+    { uid }
   );
 }
 
@@ -178,32 +193,46 @@ export function subscribeToOutgoingRequests(
   onRequests: (requests: AtaMessageRequest[]) => void,
   onError: (message: string) => void
 ): Unsubscribe {
-  const q = query(
-    collection(db, 'messageRequests'),
-    where('senderId', '==', uid),
-    where('status', '==', 'pending'),
-    orderBy('updatedAt', 'desc'),
-    limit(40)
-  );
+  if (!uid) {
+    onRequests([]);
+    return () => {};
+  }
 
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      onRequests(
-        snapshot.docs.map((d) => mapDocToMessageRequest(d.id, d.data()))
+  return subscribeShared<AtaMessageRequest[]>(
+    `messageRequests:outgoing:${uid}`,
+    'messaging:outgoingRequests',
+    (emitData, emitError) => {
+      const q = query(
+        collection(db, 'messageRequests'),
+        where('senderId', '==', uid),
+        where('status', '==', 'pending'),
+        orderBy('updatedAt', 'desc'),
+        limit(40)
+      );
+
+      return onSnapshot(
+        q,
+        (snapshot) => {
+          emitData(
+            snapshot.docs.map((d) => mapDocToMessageRequest(d.id, d.data()))
+          );
+        },
+        (error) => {
+          try {
+            handleFirestoreError(error, OperationType.LIST, 'messageRequests');
+          } catch (err) {
+            emitError(
+              err instanceof Error
+                ? err.message
+                : 'Unable to load outgoing message requests.'
+            );
+          }
+        }
       );
     },
-    (error) => {
-      try {
-        handleFirestoreError(error, OperationType.LIST, 'messageRequests');
-      } catch (err) {
-        onError(
-          err instanceof Error
-            ? err.message
-            : 'Unable to load outgoing message requests.'
-        );
-      }
-    }
+    onRequests,
+    onError,
+    { uid }
   );
 }
 

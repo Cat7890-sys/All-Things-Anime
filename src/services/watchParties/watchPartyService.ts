@@ -30,12 +30,21 @@ import type {
 import { upsertWatchReminder } from '../companion/calendarService';
 import { auth, db, functions, handleFirestoreError, OperationType } from '../firebase';
 import {
+  getOrFetch,
+  invalidateCacheKey,
+  invalidateCachePrefix,
+  setCacheValue,
+} from '../memoryCache';
+import { subscribeShared } from '../sharedSubscriptionManager';
+import {
   computeScheduledStartUtcMs,
   INDEPENDENT_WATCH_NOTICE,
   validateWatchPartyForm,
   validateWatchPartyMessage,
 } from '../validation';
 import { deriveWatchPartyLifecycleStatus } from '../challenges/gamificationRules';
+
+const WATCH_PARTIES_CACHE_TTL_MS = 2 * 60_000;
 
 function toDateOrNull(value: unknown): Date | null {
   if (value instanceof Timestamp) return value.toDate();
@@ -163,91 +172,118 @@ export async function fetchVisibleWatchParties(
   currentUserId?: string,
   communityId?: string
 ): Promise<WatchParty[]> {
-  try {
-    if (communityId) {
-      const q = query(
-        collection(db, 'watchParties'),
-        where('communityId', '==', communityId),
-        orderBy('scheduledStartAtMs', 'asc'),
-        limit(40)
-      );
-      const snap = await getDocs(q);
-      return snap.docs
-        .map((d) => mapDocToWatchParty(d.id, d.data()))
-        .filter((p) => p.moderationStatus === 'active');
-    }
-
-    const queries = [
-      getDocs(
-        query(
-          collection(db, 'watchParties'),
-          where('visibility', '==', 'public'),
-          where('moderationStatus', '==', 'active'),
-          orderBy('scheduledStartAtMs', 'asc'),
-          limit(50)
-        )
-      ),
-      getDocs(
-        query(
-          collection(db, 'watchParties'),
-          where('visibility', '==', 'community'),
-          where('communityVisibility', '==', 'public'),
-          where('moderationStatus', '==', 'active'),
-          limit(30)
-        )
-      ).catch(() => null),
-    ];
-
-    if (currentUserId) {
-      queries.push(
-        getDocs(
-          query(
+  const cacheKey = `watchParties:list:${communityId || 'all'}:${
+    communityId ? 'shared' : currentUserId || 'anon'
+  }`;
+  return getOrFetch(
+    cacheKey,
+    async () => {
+      try {
+        if (communityId) {
+          const q = query(
             collection(db, 'watchParties'),
-            where('creatorId', '==', currentUserId),
-            limit(30)
-          )
-        ).catch(() => null),
-        getDocs(
-          query(
-            collection(db, 'watchParties'),
-            where('invitedUserIds', 'array-contains', currentUserId),
-            limit(25)
-          )
-        ).catch(() => null)
-      );
-    }
-
-    const snaps = await Promise.all(queries);
-    const merged = new Map<string, WatchParty>();
-    for (const snap of snaps) {
-      if (!snap) continue;
-      snap.docs.forEach((docSnap) => {
-        const mapped = mapDocToWatchParty(docSnap.id, docSnap.data());
-        if (mapped.moderationStatus === 'active') {
-          merged.set(mapped.id, mapped);
+            where('communityId', '==', communityId),
+            orderBy('scheduledStartAtMs', 'asc'),
+            limit(40)
+          );
+          const snap = await getDocs(q);
+          const list = snap.docs
+            .map((d) => mapDocToWatchParty(d.id, d.data()))
+            .filter((p) => p.moderationStatus === 'active');
+          for (const party of list) {
+            setCacheValue(`watchPartyById:${party.id}`, party, {
+              ttlMs: WATCH_PARTIES_CACHE_TTL_MS,
+            });
+          }
+          return list;
         }
-      });
-    }
 
-    return Array.from(merged.values()).sort(
-      (a, b) => a.scheduledStartAtMs - b.scheduledStartAtMs
-    );
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'watchParties');
-  }
+        const queries = [
+          getDocs(
+            query(
+              collection(db, 'watchParties'),
+              where('visibility', '==', 'public'),
+              where('moderationStatus', '==', 'active'),
+              orderBy('scheduledStartAtMs', 'asc'),
+              limit(50)
+            )
+          ),
+          getDocs(
+            query(
+              collection(db, 'watchParties'),
+              where('visibility', '==', 'community'),
+              where('communityVisibility', '==', 'public'),
+              where('moderationStatus', '==', 'active'),
+              limit(30)
+            )
+          ).catch(() => null),
+        ];
+
+        if (currentUserId) {
+          queries.push(
+            getDocs(
+              query(
+                collection(db, 'watchParties'),
+                where('creatorId', '==', currentUserId),
+                limit(30)
+              )
+            ).catch(() => null),
+            getDocs(
+              query(
+                collection(db, 'watchParties'),
+                where('invitedUserIds', 'array-contains', currentUserId),
+                limit(25)
+              )
+            ).catch(() => null)
+          );
+        }
+
+        const snaps = await Promise.all(queries);
+        const merged = new Map<string, WatchParty>();
+        for (const snap of snaps) {
+          if (!snap) continue;
+          snap.docs.forEach((docSnap) => {
+            const mapped = mapDocToWatchParty(docSnap.id, docSnap.data());
+            if (mapped.moderationStatus === 'active') {
+              merged.set(mapped.id, mapped);
+              setCacheValue(`watchPartyById:${mapped.id}`, mapped, {
+                ttlMs: WATCH_PARTIES_CACHE_TTL_MS,
+              });
+            }
+          });
+        }
+
+        return Array.from(merged.values()).sort(
+          (a, b) => a.scheduledStartAtMs - b.scheduledStartAtMs
+        );
+      } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'watchParties');
+      }
+    },
+    {
+      ttlMs: WATCH_PARTIES_CACHE_TTL_MS,
+      uid: communityId ? undefined : currentUserId,
+    }
+  );
 }
 
 export async function fetchWatchPartyById(
   partyId: string
 ): Promise<WatchParty | null> {
   if (!partyId) return null;
-  try {
-    const snap = await getDoc(doc(db, 'watchParties', partyId));
-    if (!snap.exists()) return null;
-    return mapDocToWatchParty(snap.id, snap.data());
-  } catch (error) {
-    handleFirestoreError(error, OperationType.GET, `watchParties/${partyId}`);
-  }
+  return getOrFetch(
+    `watchPartyById:${partyId}`,
+    async () => {
+      try {
+        const snap = await getDoc(doc(db, 'watchParties', partyId));
+        if (!snap.exists()) return null;
+        return mapDocToWatchParty(snap.id, snap.data());
+      } catch (error) {
+        handleFirestoreError(error, OperationType.GET, `watchParties/${partyId}`);
+      }
+    },
+    { ttlMs: WATCH_PARTIES_CACHE_TTL_MS }
+  );
 }
 
 export async function createWatchParty(
@@ -318,14 +354,19 @@ export async function createWatchParty(
 
   try {
     await setDoc(docRef, payload);
+    invalidateCachePrefix('watchParties:list:');
     if (invitedUserIds.length > 0) {
       void inviteUsersToWatchParty(docRef.id, invitedUserIds).catch(() => undefined);
     }
     const created = await getDoc(docRef);
-    return mapDocToWatchParty(
+    const mapped = mapDocToWatchParty(
       docRef.id,
       created.exists() ? created.data() : (payload as unknown as Record<string, unknown>)
     );
+    setCacheValue(`watchPartyById:${docRef.id}`, mapped, {
+      ttlMs: WATCH_PARTIES_CACHE_TTL_MS,
+    });
+    return mapped;
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, `watchParties/${docRef.id}`);
   }
@@ -359,6 +400,8 @@ export async function updateWatchParty(
       registrationClosed: Boolean(input.registrationClosed),
       updatedAt: serverTimestamp(),
     });
+    invalidateCacheKey(`watchPartyById:${partyId}`);
+    invalidateCachePrefix('watchParties:list:');
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `watchParties/${partyId}`);
   }
@@ -371,6 +414,8 @@ export async function cancelWatchParty(partyId: string): Promise<void> {
       registrationClosed: true,
       updatedAt: serverTimestamp(),
     });
+    invalidateCacheKey(`watchPartyById:${partyId}`);
+    invalidateCachePrefix('watchParties:list:');
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `watchParties/${partyId}`);
   }
@@ -382,6 +427,8 @@ export async function markWatchPartyCompletedByHost(partyId: string): Promise<vo
       status: 'completed',
       updatedAt: serverTimestamp(),
     });
+    invalidateCacheKey(`watchPartyById:${partyId}`);
+    invalidateCachePrefix('watchParties:list:');
     void httpsCallable(functions, 'syncWatchPartyRsvpRewards')({
       partyId,
     }).catch(() => undefined);
@@ -399,6 +446,8 @@ export async function toggleWatchPartyRegistration(
       registrationClosed,
       updatedAt: serverTimestamp(),
     });
+    invalidateCacheKey(`watchPartyById:${partyId}`);
+    invalidateCachePrefix('watchParties:list:');
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `watchParties/${partyId}`);
   }
@@ -473,6 +522,10 @@ export async function joinWatchParty(
     }
 
     const saved = await getDoc(partRef);
+    invalidateCacheKey(`watchPartyById:${party.id}`);
+    invalidateCachePrefix('watchParties:list:');
+    invalidateCacheKey(`watchPartyParts:user:${profile.uid}`);
+    invalidateCacheKey(`watchPartyParts:party:${party.id}`);
     return mapDocToWatchPartyParticipant(
       partId,
       saved.exists() ? saved.data() : (payload as unknown as Record<string, unknown>)
@@ -498,6 +551,10 @@ export async function leaveWatchParty(
       participantCount: Math.max(0, party.participantCount - 1),
     });
     await batch.commit();
+    invalidateCacheKey(`watchPartyById:${party.id}`);
+    invalidateCachePrefix('watchParties:list:');
+    invalidateCacheKey(`watchPartyParts:user:${userId}`);
+    invalidateCacheKey(`watchPartyParts:party:${party.id}`);
   } catch (error) {
     handleFirestoreError(
       error,
@@ -543,6 +600,11 @@ export async function updateWatchPartyRsvpStatus(params: {
     });
     await batch.commit();
 
+    invalidateCacheKey(`watchPartyById:${party.id}`);
+    invalidateCachePrefix('watchParties:list:');
+    invalidateCacheKey(`watchPartyParts:user:${participant.userId}`);
+    invalidateCacheKey(`watchPartyParts:party:${party.id}`);
+
     void httpsCallable(functions, 'syncWatchPartyRsvpRewards')({
       partyId: party.id,
     }).catch(() => undefined);
@@ -576,6 +638,10 @@ export async function removeWatchPartyParticipantByHost(
       updatedAt: serverTimestamp(),
     });
     await batch.commit();
+    invalidateCacheKey(`watchPartyById:${party.id}`);
+    invalidateCachePrefix('watchParties:list:');
+    invalidateCacheKey(`watchPartyParts:user:${targetUserId}`);
+    invalidateCacheKey(`watchPartyParts:party:${party.id}`);
   } catch (error) {
     handleFirestoreError(
       error,
@@ -597,26 +663,67 @@ export function subscribeToWatchPartyMessages(
 
   const q = query(
     collection(db, 'watchParties', partyId, 'messages'),
-    orderBy('createdAt', 'asc'),
+    orderBy('createdAt', 'desc'),
     limit(100)
   );
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      onMessages(
-        snapshot.docs
-          .map((d) => mapDocToWatchPartyMessage(d.id, d.data()))
-          .filter((m) => m.moderationStatus === 'active')
-      );
-    },
-    (error) => {
-      onError?.(
-        error instanceof Error
-          ? error.message
-          : 'Unable to load watch party discussion.'
-      );
-    }
+  return subscribeShared<WatchPartyMessage[]>(
+    `watchPartyMessages:${partyId}`,
+    'watchPartyService',
+    (emitData, emitError) =>
+      onSnapshot(
+        q,
+        (snapshot) => {
+          emitData(
+            snapshot.docs
+              .map((d) => mapDocToWatchPartyMessage(d.id, d.data()))
+              .reverse()
+              .filter((m) => m.moderationStatus === 'active')
+          );
+        },
+        (error) => {
+          emitError(
+            error instanceof Error
+              ? error.message
+              : 'Unable to load watch party discussion.'
+          );
+        }
+      ),
+    onMessages,
+    onError
   );
+}
+
+export async function fetchOlderWatchPartyMessages(
+  partyId: string,
+  beforeCreatedAt: Date,
+  pageSize = 50
+): Promise<{ messages: WatchPartyMessage[]; hasMore: boolean }> {
+  if (!partyId) {
+    return { messages: [], hasMore: false };
+  }
+  try {
+    const q = query(
+      collection(db, 'watchParties', partyId, 'messages'),
+      where('createdAt', '<', Timestamp.fromDate(beforeCreatedAt)),
+      orderBy('createdAt', 'desc'),
+      limit(pageSize)
+    );
+    const snapshot = await getDocs(q);
+    const messages = snapshot.docs
+      .map((d) => mapDocToWatchPartyMessage(d.id, d.data()))
+      .reverse()
+      .filter((m) => m.moderationStatus === 'active');
+    return {
+      messages,
+      hasMore: snapshot.docs.length === pageSize,
+    };
+  } catch (error) {
+    handleFirestoreError(
+      error,
+      OperationType.LIST,
+      `watchParties/${partyId}/messages`
+    );
+  }
 }
 
 export async function sendWatchPartyMessage(
@@ -680,36 +787,52 @@ export async function fetchUserWatchPartyParticipations(
   userId: string
 ): Promise<WatchPartyParticipant[]> {
   if (!userId) return [];
-  try {
-    const q = query(
-      collection(db, 'watchPartyParticipants'),
-      where('userId', '==', userId),
-      orderBy('updatedAt', 'desc'),
-      limit(50)
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => mapDocToWatchPartyParticipant(d.id, d.data()));
-  } catch {
-    return [];
-  }
+  return getOrFetch(
+    `watchPartyParts:user:${userId}`,
+    async () => {
+      try {
+        const q = query(
+          collection(db, 'watchPartyParticipants'),
+          where('userId', '==', userId),
+          orderBy('updatedAt', 'desc'),
+          limit(50)
+        );
+        const snap = await getDocs(q);
+        return snap.docs.map((d) =>
+          mapDocToWatchPartyParticipant(d.id, d.data())
+        );
+      } catch {
+        return [];
+      }
+    },
+    { ttlMs: WATCH_PARTIES_CACHE_TTL_MS, uid: userId }
+  );
 }
 
 export async function fetchWatchPartyParticipants(
   partyId: string
 ): Promise<WatchPartyParticipant[]> {
   if (!partyId) return [];
-  try {
-    const q = query(
-      collection(db, 'watchPartyParticipants'),
-      where('partyId', '==', partyId),
-      orderBy('joinedAt', 'asc'),
-      limit(60)
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => mapDocToWatchPartyParticipant(d.id, d.data()));
-  } catch {
-    return [];
-  }
+  return getOrFetch(
+    `watchPartyParts:party:${partyId}`,
+    async () => {
+      try {
+        const q = query(
+          collection(db, 'watchPartyParticipants'),
+          where('partyId', '==', partyId),
+          orderBy('joinedAt', 'asc'),
+          limit(60)
+        );
+        const snap = await getDocs(q);
+        return snap.docs.map((d) =>
+          mapDocToWatchPartyParticipant(d.id, d.data())
+        );
+      } catch {
+        return [];
+      }
+    },
+    { ttlMs: WATCH_PARTIES_CACHE_TTL_MS }
+  );
 }
 
 export async function inviteUsersToWatchParty(

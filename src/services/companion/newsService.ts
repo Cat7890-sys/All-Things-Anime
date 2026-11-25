@@ -18,6 +18,11 @@ import newsPremiereImg from '../../assets/images/news_seasonal_premiere_17955374
 import newsSoundtrackImg from '../../assets/images/news_soundtrack_symphony_1795537482648.jpg';
 import type { AdminNewsArticle, AnimeNewsArticle, NewsCategory } from '../../types';
 import { db, handleFirestoreError, OperationType } from '../firebase';
+import { getOrFetch } from '../memoryCache';
+import { subscribeShared } from '../sharedSubscriptionManager';
+
+const ADMIN_NEWS_CACHE_TTL_MS = 5 * 60_000;
+const NEWS_BOOKMARKS_QUERY_LIMIT = 200;
 
 export const FEATURED_ANIME_NEWS: AnimeNewsArticle[] = [
   {
@@ -83,36 +88,45 @@ export const FEATURED_ANIME_NEWS: AnimeNewsArticle[] = [
 ];
 
 export async function fetchPublishedAdminNews(): Promise<AdminNewsArticle[]> {
-  try {
-    const q = query(
-      collection(db, 'adminNews'),
-      where('status', '==', 'published'),
-      orderBy('updatedAt', 'desc'),
-      limit(30)
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => {
-      const data = d.data();
-      return {
-        id: d.id,
-        title: String(data.title || ''),
-        source: String(data.source || 'ATA News'),
-        sourceUrl: typeof data.sourceUrl === 'string' ? data.sourceUrl : '',
-        category: (data.category as NewsCategory) || 'Industry',
-        publishedAt: String(data.publishedAt || 'Published'),
-        summary: String(data.summary || ''),
-        imageUrl: typeof data.imageUrl === 'string' && data.imageUrl ? data.imageUrl : newsPremiereImg,
-        author: String(data.author || 'ATA Editorial'),
-        status: 'published',
-        isFeatured: Boolean(data.isFeatured),
-        createdByUid: String(data.createdByUid || ''),
-        updatedAt: toDateOrNull(data.updatedAt),
-        isSamplePreview: false,
-      };
-    });
-  } catch {
-    return [];
-  }
+  return getOrFetch(
+    'publishedAdminNews',
+    async () => {
+      try {
+        const q = query(
+          collection(db, 'adminNews'),
+          where('status', '==', 'published'),
+          orderBy('updatedAt', 'desc'),
+          limit(30)
+        );
+        const snap = await getDocs(q);
+        return snap.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            title: String(data.title || ''),
+            source: String(data.source || 'ATA News'),
+            sourceUrl: typeof data.sourceUrl === 'string' ? data.sourceUrl : '',
+            category: (data.category as NewsCategory) || 'Industry',
+            publishedAt: String(data.publishedAt || 'Published'),
+            summary: String(data.summary || ''),
+            imageUrl:
+              typeof data.imageUrl === 'string' && data.imageUrl
+                ? data.imageUrl
+                : newsPremiereImg,
+            author: String(data.author || 'ATA Editorial'),
+            status: 'published',
+            isFeatured: Boolean(data.isFeatured),
+            createdByUid: String(data.createdByUid || ''),
+            updatedAt: toDateOrNull(data.updatedAt),
+            isSamplePreview: false,
+          };
+        });
+      } catch {
+        return [];
+      }
+    },
+    { ttlMs: ADMIN_NEWS_CACHE_TTL_MS }
+  );
 }
 
 function toDateOrNull(value: unknown): Date | null {
@@ -134,22 +148,39 @@ export function subscribeToUserNewsBookmarks(
   }
 
   const colRef = collection(db, 'userNewsBookmarks', userId, 'items');
-  return onSnapshot(
-    query(colRef),
-    (snapshot) => {
-      const ids = new Set<string>();
-      snapshot.forEach((docSnap) => {
-        ids.add(docSnap.id);
-      });
-      onBookmarks(ids);
-    },
-    (error) => {
-      try {
-        handleFirestoreError(error, OperationType.GET, `userNewsBookmarks/${userId}/items`);
-      } catch (err) {
-        onError?.(err instanceof Error ? err.message : 'Failed to load news bookmarks.');
-      }
-    }
+  const q = query(colRef, limit(NEWS_BOOKMARKS_QUERY_LIMIT));
+  return subscribeShared<Set<string>>(
+    `userNewsBookmarks:${userId}`,
+    'newsService',
+    (emitData, emitError) =>
+      onSnapshot(
+        q,
+        (snapshot) => {
+          const ids = new Set<string>();
+          snapshot.forEach((docSnap) => {
+            ids.add(docSnap.id);
+          });
+          emitData(ids);
+        },
+        (error) => {
+          try {
+            handleFirestoreError(
+              error,
+              OperationType.GET,
+              `userNewsBookmarks/${userId}/items`
+            );
+          } catch (err) {
+            emitError(
+              err instanceof Error
+                ? err.message
+                : 'Failed to load news bookmarks.'
+            );
+          }
+        }
+      ),
+    onBookmarks,
+    onError,
+    { uid: userId }
   );
 }
 

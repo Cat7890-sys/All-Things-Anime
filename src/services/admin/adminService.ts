@@ -54,6 +54,7 @@ import {
   isEligibleVerifiedFreeProvider,
 } from '../companion/streamingDirectory';
 import { auth, db, firebaseProjectMeta, functions, isStorageConfigured } from '../firebase';
+import { invalidateCacheKey, invalidateCachePrefix } from '../memoryCache';
 import { mapDocToWatchParty } from '../watchParties/watchPartyService';
 import {
   validateAdminNewsInput,
@@ -743,6 +744,17 @@ export async function moderateContentViaCallableOrDirect(
       contentCollection: params.contentCollection,
       contentDocPath: params.contentDocPath,
     });
+    if (params.kind === 'collection') {
+      invalidateCacheKey(`collectionById:${params.targetId}`);
+      invalidateCachePrefix('publicCollections:');
+      invalidateCachePrefix('publicCollectionsByOwner:');
+      invalidateCachePrefix('userCollections:');
+    } else if (params.kind === 'community') {
+      invalidateCacheKey(`communityById:${params.targetId}`);
+      invalidateCachePrefix('communities:popular:');
+      invalidateCachePrefix('communities:recent:');
+      invalidateCachePrefix('communities:owned:');
+    }
     return;
   } catch (err) {
     if (!isFunctionsUnavailableError(err)) {
@@ -770,6 +782,10 @@ export async function moderateContentViaCallableOrDirect(
       visibility: params.action === 'remove' ? 'private' : 'public',
       updatedAt: serverTimestamp(),
     });
+    invalidateCacheKey(`collectionById:${params.targetId}`);
+    invalidateCachePrefix('publicCollections:');
+    invalidateCachePrefix('publicCollectionsByOwner:');
+    invalidateCachePrefix('userCollections:');
   } else {
     throw new Error(
       `Moderating ${params.kind} documents requires the adminModerateContent Cloud Function to be deployed. See /ADMIN_PROVISIONING.md.`
@@ -849,6 +865,13 @@ export async function moderateEventViaAdmin(
       action: params.action,
       reason: cleanReason,
     });
+    if (params.eventType === 'watch_party') {
+      invalidateCacheKey(`watchPartyById:${params.eventId}`);
+      invalidateCachePrefix('watchParties:list:');
+    } else {
+      invalidateCacheKey(`challengeById:${params.eventId}`);
+      invalidateCachePrefix('challenges:list:');
+    }
     return;
   } catch (err) {
     if (!isFunctionsUnavailableError(err)) {
@@ -891,6 +914,13 @@ export async function moderateEventViaAdmin(
   }
 
   await updateDoc(ref, updates);
+  if (params.eventType === 'watch_party') {
+    invalidateCacheKey(`watchPartyById:${params.eventId}`);
+    invalidateCachePrefix('watchParties:list:');
+  } else {
+    invalidateCacheKey(`challengeById:${params.eventId}`);
+    invalidateCachePrefix('challenges:list:');
+  }
 
   const decisionRef = doc(collection(db, 'moderationDecisions'));
   await setDoc(decisionRef, {
@@ -923,7 +953,7 @@ export async function moderateEventViaAdmin(
 export async function listCatalogueOverridesForAdmin(): Promise<
   CatalogueOverrideRecord[]
 > {
-  const snap = await getDocs(collection(db, 'catalogueOverrides'));
+  const snap = await getDocs(query(collection(db, 'catalogueOverrides'), limit(500)));
   return snap.docs.map((d) => {
     const data = d.data();
     return {
@@ -986,6 +1016,7 @@ export async function saveCatalogueOverride(
   }
 
   await setDoc(doc(db, 'catalogueOverrides', docId), payload);
+  invalidateCacheKey('catalogueOverrides:all');
   await recordConsoleAuditLog(admin, {
     actionType: 'catalogue_override_saved',
     targetCollection: 'catalogueOverrides',
@@ -1000,6 +1031,7 @@ export async function deleteCatalogueOverride(
 ): Promise<void> {
   const docId = String(animeId);
   await deleteDoc(doc(db, 'catalogueOverrides', docId));
+  invalidateCacheKey('catalogueOverrides:all');
   await recordConsoleAuditLog(admin, {
     actionType: 'catalogue_override_deleted',
     targetCollection: 'catalogueOverrides',
@@ -1061,6 +1093,7 @@ export async function saveAdminNewsArticle(
     createdByUid: admin.uid,
     updatedAt: serverTimestamp(),
   });
+  invalidateCacheKey('publishedAdminNews');
 
   await recordConsoleAuditLog(admin, {
     actionType: input.id ? 'admin_news_updated' : 'admin_news_created',
@@ -1077,6 +1110,7 @@ export async function deleteAdminNewsArticle(
   articleId: string
 ): Promise<void> {
   await deleteDoc(doc(db, 'adminNews', articleId));
+  invalidateCacheKey('publishedAdminNews');
   await recordConsoleAuditLog(admin, {
     actionType: 'admin_news_deleted',
     targetCollection: 'adminNews',
@@ -1090,7 +1124,7 @@ export async function deleteAdminNewsArticle(
 // ==========================================
 
 export async function listAdminStreamingProviders(): Promise<StreamingProvider[]> {
-  const snap = await getDocs(collection(db, 'streamingProviders'));
+  const snap = await getDocs(query(collection(db, 'streamingProviders'), limit(500)));
   return snap.docs.map((d) => {
     const data = d.data();
     return {
@@ -1174,7 +1208,7 @@ export async function deleteAdminStreamingProvider(
 export async function listAdminStreamingAvailability(): Promise<
   AnimeStreamingAvailability[]
 > {
-  const snap = await getDocs(collection(db, 'streamingAvailability'));
+  const snap = await getDocs(query(collection(db, 'streamingAvailability'), limit(500)));
   return snap.docs.map((d) => {
     const data = d.data();
     return {
@@ -1364,6 +1398,7 @@ export async function publishOrUpdateAnnouncement(
       { ok: boolean; id: string }
     >(functions, 'adminPublishAnnouncement');
     const res = await callable(input);
+    invalidateCachePrefix('announcements:');
     return res.data.id;
   } catch (callableErr) {
     if (!isFunctionsUnavailableError(callableErr)) {
@@ -1393,6 +1428,7 @@ export async function publishOrUpdateAnnouncement(
       },
       { merge: true }
     );
+    invalidateCachePrefix('announcements:');
 
     await recordConsoleAuditLog(admin, {
       actionType: input.isActive
@@ -1489,6 +1525,8 @@ export async function saveLegalDocumentOverride(
     updatedByUid: admin.uid,
     updatedAt: serverTimestamp(),
   } satisfies Omit<LegalDocumentOverride, 'updatedAt'> & { updatedAt: unknown });
+  invalidateCacheKey('legalDocs:all');
+  invalidateCacheKey(`legalDoc:${input.id}`);
 
   await recordConsoleAuditLog(admin, {
     actionType: 'legal_document_updated',
@@ -1590,7 +1628,7 @@ export async function saveSecurityIncident(
 }
 
 export async function listAdminSeatsForAdmin(): Promise<AdminSeatSummary[]> {
-  const snap = await getDocs(collection(db, 'adminSeats'));
+  const snap = await getDocs(query(collection(db, 'adminSeats'), limit(20)));
   const bySeat = new Map<string, Record<string, unknown>>();
   snap.forEach((d) => {
     bySeat.set(d.id, d.data());

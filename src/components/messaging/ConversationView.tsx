@@ -132,6 +132,9 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
     });
   }, []);
 
+  const lastMarkedMessageIdRef = useRef<string | null>(null);
+  const hasLoadedOlderRef = useRef(false);
+
   // Reset thread local pagination/reply state when switching conversations
   useEffect(() => {
     setOlderMessages([]);
@@ -140,6 +143,8 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
     setReplyTo(null);
     setMessagesError(null);
     setIsLoadingMessages(true);
+    lastMarkedMessageIdRef.current = null;
+    hasLoadedOlderRef.current = false;
     shouldAutoScrollRef.current = true;
   }, [conversation.id]);
 
@@ -150,7 +155,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
       MESSAGE_PAGE_SIZE,
       (res) => {
         setRecentMessages(res.messages);
-        if (olderMessages.length === 0) {
+        if (!hasLoadedOlderRef.current) {
           setOldestCursor(res.oldestCursor);
           setHasMoreOlder(res.hasMore);
         }
@@ -160,17 +165,22 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
       (errMsg) => {
         setMessagesError(errMsg);
         setIsLoadingMessages(false);
-      }
+      },
+      currentUserAccount.uid
     );
     return () => unsub();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversation.id]);
+  }, [conversation.id, currentUserAccount.uid]);
 
   // Members listener (roles & read cursors)
   useEffect(() => {
-    const unsub = subscribeToConversationMembers(conversation.id, setMembers);
+    const unsub = subscribeToConversationMembers(
+      conversation.id,
+      setMembers,
+      undefined,
+      currentUserAccount.uid
+    );
     return () => unsub();
-  }, [conversation.id]);
+  }, [conversation.id, currentUserAccount.uid]);
 
   // Typing indicators listener
   useEffect(() => {
@@ -191,7 +201,11 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
       return;
     }
 
-    const unsubPresence = subscribeToUserPresence(peerId, setPeerPresence);
+    const unsubPresence = subscribeToUserPresence(
+      peerId,
+      setPeerPresence,
+      currentUserAccount.uid
+    );
     let active = true;
     void checkBlockBetween(currentUserAccount.uid, peerId).then((res) => {
       if (!active) return;
@@ -205,27 +219,40 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
     };
   }, [isGroup, peerId, currentUserAccount.uid]);
 
-  // Mark conversation read on entry & incoming messages
+  // Mark conversation read on entry & incoming unread messages without triggering loops
   useEffect(() => {
-    if (isLoadingMessages) return;
+    if (isLoadingMessages || !ownMemberState) return;
     const latestMsg = allMessages[allMessages.length - 1];
-    const hasUnread = (ownMemberState?.unreadCount ?? 0) > 0;
-    const unreadIncoming =
-      latestMsg && latestMsg.senderId !== currentUserAccount.uid;
-    if (hasUnread || unreadIncoming || !ownMemberState?.lastReadAt) {
-      void markConversationRead(
-        conversation.id,
-        currentUserAccount.uid,
-        userSettings.readReceiptsEnabled
-      );
+    const hasUnread = (ownMemberState.unreadCount ?? 0) > 0;
+    const latestMsgMs = latestMsg?.createdAt ? latestMsg.createdAt.getTime() : 0;
+    const lastReadMs = ownMemberState.lastReadAt
+      ? ownMemberState.lastReadAt.getTime()
+      : 0;
+    const hasUnreadIncoming =
+      Boolean(latestMsg) &&
+      latestMsg.senderId !== currentUserAccount.uid &&
+      latestMsg.id !== lastMarkedMessageIdRef.current &&
+      (!ownMemberState.lastReadAt || latestMsgMs > lastReadMs);
+
+    if (!hasUnread && !hasUnreadIncoming) {
+      return;
     }
+
+    if (latestMsg) {
+      lastMarkedMessageIdRef.current = latestMsg.id;
+    }
+
+    void markConversationRead(
+      conversation.id,
+      currentUserAccount.uid,
+      userSettings.readReceiptsEnabled
+    );
   }, [
     allMessages,
     conversation.id,
     currentUserAccount.uid,
     isLoadingMessages,
-    ownMemberState?.lastReadAt,
-    ownMemberState?.unreadCount,
+    ownMemberState,
     userSettings.readReceiptsEnabled,
   ]);
 
@@ -254,6 +281,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
         oldestCursor,
         MESSAGE_PAGE_SIZE
       );
+      hasLoadedOlderRef.current = true;
       setOlderMessages((prev) => [...res.messages, ...prev]);
       setOldestCursor(res.oldestCursor);
       setHasMoreOlder(res.hasMore);

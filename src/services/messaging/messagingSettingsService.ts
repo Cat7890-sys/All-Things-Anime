@@ -12,6 +12,8 @@ import type {
   UpdateMessageSettingsInput,
 } from '../../types';
 import { db, handleFirestoreError, OperationType } from '../firebase';
+import { getOrFetch, setCacheValue } from '../memoryCache';
+import { subscribeShared } from '../sharedSubscriptionManager';
 import { getPublicProfile } from '../userProfileService';
 import { normalizeUsername, validateUsername } from '../validation';
 import {
@@ -20,8 +22,11 @@ import {
   requireVerifiedMessagingUser,
 } from './messagingUtils';
 
+const MESSAGE_SETTINGS_TTL_MS = 5 * 60 * 1000;
+
 export async function getMessageSettings(
-  uid: string
+  uid: string,
+  forceRefresh = false
 ): Promise<AtaMessageSettings> {
   if (!uid) {
     return {
@@ -31,12 +36,36 @@ export async function getMessageSettings(
     };
   }
   const path = `messageSettings/${uid}`;
-  try {
-    const snap = await getDoc(doc(db, 'messageSettings', uid));
-    return mapDocToMessageSettings(uid, snap.exists() ? snap.data() : undefined);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.GET, path);
+  const cacheKey = `messageSettings:${uid}`;
+  if (forceRefresh) {
+    try {
+      const snap = await getDoc(doc(db, 'messageSettings', uid));
+      const mapped = mapDocToMessageSettings(
+        uid,
+        snap.exists() ? snap.data() : undefined
+      );
+      setCacheValue(cacheKey, mapped, { ttlMs: MESSAGE_SETTINGS_TTL_MS, uid });
+      return mapped;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.GET, path);
+    }
   }
+
+  return getOrFetch(
+    cacheKey,
+    async () => {
+      try {
+        const snap = await getDoc(doc(db, 'messageSettings', uid));
+        return mapDocToMessageSettings(
+          uid,
+          snap.exists() ? snap.data() : undefined
+        );
+      } catch (error) {
+        handleFirestoreError(error, OperationType.GET, path);
+      }
+    },
+    { ttlMs: MESSAGE_SETTINGS_TTL_MS, uid }
+  );
 }
 
 export function subscribeToMessageSettings(
@@ -44,25 +73,49 @@ export function subscribeToMessageSettings(
   onSettings: (settings: AtaMessageSettings) => void,
   onError?: (message: string) => void
 ): Unsubscribe {
+  if (!uid) {
+    onSettings({
+      uid: '',
+      ...DEFAULT_MESSAGE_SETTINGS,
+      updatedAt: null,
+    });
+    return () => {};
+  }
+
   const path = `messageSettings/${uid}`;
-  return onSnapshot(
-    doc(db, 'messageSettings', uid),
-    (snapshot) => {
-      onSettings(
-        mapDocToMessageSettings(uid, snapshot.exists() ? snapshot.data() : undefined)
-      );
-    },
-    (error) => {
-      try {
-        handleFirestoreError(error, OperationType.GET, path);
-      } catch (err) {
-        onError?.(
-          err instanceof Error
-            ? err.message
-            : 'Unable to sync messaging privacy settings.'
-        );
-      }
-    }
+  const channelKey = `messageSettings:${uid}`;
+  return subscribeShared<AtaMessageSettings>(
+    channelKey,
+    'messaging:settings',
+    (emitData, emitError) =>
+      onSnapshot(
+        doc(db, 'messageSettings', uid),
+        (snapshot) => {
+          const mapped = mapDocToMessageSettings(
+            uid,
+            snapshot.exists() ? snapshot.data() : undefined
+          );
+          setCacheValue(channelKey, mapped, {
+            ttlMs: MESSAGE_SETTINGS_TTL_MS,
+            uid,
+          });
+          emitData(mapped);
+        },
+        (error) => {
+          try {
+            handleFirestoreError(error, OperationType.GET, path);
+          } catch (err) {
+            emitError(
+              err instanceof Error
+                ? err.message
+                : 'Unable to sync messaging privacy settings.'
+            );
+          }
+        }
+      ),
+    onSettings,
+    onError,
+    { uid }
   );
 }
 
@@ -97,7 +150,20 @@ export async function updateMessageSettings(
       updatedAt: now,
     });
 
-    return await getMessageSettings(uid);
+    const saved: AtaMessageSettings = {
+      uid,
+      allowRequests: Boolean(input.allowRequests),
+      requestPermission: input.requestPermission,
+      readReceiptsEnabled: Boolean(input.readReceiptsEnabled),
+      onlineStatusVisible: Boolean(input.onlineStatusVisible),
+      typingIndicatorsEnabled: Boolean(input.typingIndicatorsEnabled),
+      updatedAt: new Date(),
+    };
+    setCacheValue(`messageSettings:${uid}`, saved, {
+      ttlMs: MESSAGE_SETTINGS_TTL_MS,
+      uid,
+    });
+    return saved;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }

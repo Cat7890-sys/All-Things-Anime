@@ -22,6 +22,11 @@ import {
   storage,
 } from './firebase';
 import {
+  getCachedValue,
+  getOrFetch,
+  invalidateCacheKey,
+} from './memoryCache';
+import {
   validateAccentColor,
   validateFavouriteQuote,
   validateOptionalHttpsUrl,
@@ -77,78 +82,105 @@ function mapAccountStatus(raw: unknown): AtaUserAccount['accountStatus'] {
   return 'pending_verification';
 }
 
+const OWN_PROFILE_TTL_MS = 2 * 60_000;
+const PUBLIC_PROFILE_TTL_MS = 2 * 60_000;
+
 export async function getOwnAccountProfile(
-  uid: string
+  uid: string,
+  forceRefresh = false
 ): Promise<AtaUserAccount | null> {
-  const path = `users/${uid}`;
-  try {
-    const snap = await getDoc(doc(db, 'users', uid));
-    if (!snap.exists()) return null;
-    const data = snap.data();
-    return {
-      uid: String(data.uid),
-      username: String(data.username),
-      usernameLowercase: String(data.usernameLowercase),
-      displayName: String(data.displayName),
-      email: String(data.email),
-      bio: typeof data.bio === 'string' ? data.bio : '',
-      avatarUrl: typeof data.avatarUrl === 'string' ? data.avatarUrl : '',
-      emailVerified: Boolean(data.emailVerified),
-      accountStatus: mapAccountStatus(data.accountStatus),
-      suspensionReason:
-        typeof data.suspensionReason === 'string' ? data.suspensionReason : undefined,
-      suspendedUntil: toDateOrNull(data.suspendedUntil),
-      banReason: typeof data.banReason === 'string' ? data.banReason : undefined,
-      isVerifiedBadge: Boolean(data.isVerifiedBadge),
-      createdAt: toDateOrNull(data.createdAt),
-      updatedAt: toDateOrNull(data.updatedAt),
-    };
-  } catch (error) {
-    handleFirestoreError(error, OperationType.GET, path);
+  if (!uid) return null;
+  const cacheKey = `ownAccountProfile:${uid}`;
+  if (forceRefresh) {
+    invalidateCacheKey(cacheKey);
   }
+  const path = `users/${uid}`;
+  return getOrFetch(
+    cacheKey,
+    async () => {
+      try {
+        const snap = await getDoc(doc(db, 'users', uid));
+        if (!snap.exists()) return null;
+        const data = snap.data();
+        return {
+          uid: String(data.uid),
+          username: String(data.username),
+          usernameLowercase: String(data.usernameLowercase),
+          displayName: String(data.displayName),
+          email: String(data.email),
+          bio: typeof data.bio === 'string' ? data.bio : '',
+          avatarUrl: typeof data.avatarUrl === 'string' ? data.avatarUrl : '',
+          emailVerified: Boolean(data.emailVerified),
+          accountStatus: mapAccountStatus(data.accountStatus),
+          suspensionReason:
+            typeof data.suspensionReason === 'string' ? data.suspensionReason : undefined,
+          suspendedUntil: toDateOrNull(data.suspendedUntil),
+          banReason: typeof data.banReason === 'string' ? data.banReason : undefined,
+          isVerifiedBadge: Boolean(data.isVerifiedBadge),
+          createdAt: toDateOrNull(data.createdAt),
+          updatedAt: toDateOrNull(data.updatedAt),
+        };
+      } catch (error) {
+        handleFirestoreError(error, OperationType.GET, path);
+      }
+    },
+    { ttlMs: OWN_PROFILE_TTL_MS, uid }
+  );
 }
 
 export async function getPublicProfile(
-  uid: string
+  uid: string,
+  forceRefresh = false
 ): Promise<AtaPublicProfile | null> {
-  const path = `publicProfiles/${uid}`;
-  try {
-    const snap = await getDoc(doc(db, 'publicProfiles', uid));
-    if (!snap.exists()) return null;
-    const data = snap.data();
-    return {
-      uid: String(data.uid),
-      username: String(data.username),
-      usernameLowercase: String(data.usernameLowercase),
-      displayName: String(data.displayName),
-      bio: typeof data.bio === 'string' ? data.bio : '',
-      avatarUrl: typeof data.avatarUrl === 'string' ? data.avatarUrl : '',
-      bannerUrl: typeof data.bannerUrl === 'string' ? data.bannerUrl : '',
-      accentColor:
-        typeof data.accentColor === 'string' ? data.accentColor : 'red',
-      favouriteQuote:
-        typeof data.favouriteQuote === 'string' ? data.favouriteQuote : '',
-      favouriteAnimeTitles: Array.isArray(data.favouriteAnimeTitles)
-        ? (data.favouriteAnimeTitles as string[])
-        : [],
-      favouriteCharacters: Array.isArray(data.favouriteCharacters)
-        ? (data.favouriteCharacters as string[])
-        : [],
-      favouriteGenres: Array.isArray(data.favouriteGenres)
-        ? (data.favouriteGenres as string[])
-        : [],
-      showAnimeActivity: Boolean(data.showAnimeActivity),
-      animeActivitySummary: mapActivitySummary(data.animeActivitySummary),
-      followersCount:
-        typeof data.followersCount === 'number' ? data.followersCount : 0,
-      followingCount:
-        typeof data.followingCount === 'number' ? data.followingCount : 0,
-      createdAt: toDateOrNull(data.createdAt),
-      updatedAt: toDateOrNull(data.updatedAt),
-    };
-  } catch (error) {
-    handleFirestoreError(error, OperationType.GET, path);
+  if (!uid) return null;
+  const cacheKey = `publicProfile:${uid}`;
+  if (forceRefresh) {
+    invalidateCacheKey(cacheKey);
   }
+  const path = `publicProfiles/${uid}`;
+  return getOrFetch(
+    cacheKey,
+    async () => {
+      try {
+        const snap = await getDoc(doc(db, 'publicProfiles', uid));
+        if (!snap.exists()) return null;
+        const data = snap.data();
+        return {
+          uid: String(data.uid),
+          username: String(data.username),
+          usernameLowercase: String(data.usernameLowercase),
+          displayName: String(data.displayName),
+          bio: typeof data.bio === 'string' ? data.bio : '',
+          avatarUrl: typeof data.avatarUrl === 'string' ? data.avatarUrl : '',
+          bannerUrl: typeof data.bannerUrl === 'string' ? data.bannerUrl : '',
+          accentColor:
+            typeof data.accentColor === 'string' ? data.accentColor : 'red',
+          favouriteQuote:
+            typeof data.favouriteQuote === 'string' ? data.favouriteQuote : '',
+          favouriteAnimeTitles: Array.isArray(data.favouriteAnimeTitles)
+            ? (data.favouriteAnimeTitles as string[])
+            : [],
+          favouriteCharacters: Array.isArray(data.favouriteCharacters)
+            ? (data.favouriteCharacters as string[])
+            : [],
+          favouriteGenres: Array.isArray(data.favouriteGenres)
+            ? (data.favouriteGenres as string[])
+            : [],
+          showAnimeActivity: Boolean(data.showAnimeActivity),
+          animeActivitySummary: mapActivitySummary(data.animeActivitySummary),
+          followersCount:
+            typeof data.followersCount === 'number' ? data.followersCount : 0,
+          followingCount:
+            typeof data.followingCount === 'number' ? data.followingCount : 0,
+          createdAt: toDateOrNull(data.createdAt),
+          updatedAt: toDateOrNull(data.updatedAt),
+        };
+      } catch (error) {
+        handleFirestoreError(error, OperationType.GET, path);
+      }
+    },
+    { ttlMs: PUBLIC_PROFILE_TTL_MS }
+  );
 }
 
 export async function syncEmailVerificationToFirestore(
@@ -174,6 +206,7 @@ export async function syncEmailVerificationToFirestore(
       accountStatus: 'active',
       updatedAt: serverTimestamp(),
     });
+    invalidateCacheKey(`ownAccountProfile:${uid}`);
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -357,6 +390,10 @@ export async function updatePublicProfileShowcase(
         transaction.update(userRef, userUpdate);
       }
     });
+    invalidateCacheKey(`publicProfile:${uid}`);
+    if (shouldUpdateUserDoc) {
+      invalidateCacheKey(`ownAccountProfile:${uid}`);
+    }
   } catch (error) {
     if (
       error instanceof Error &&
@@ -396,13 +433,16 @@ export async function updateOwnProfile(
 
   const userPath = `users/${uid}`;
   try {
-    const existingSnap = await getDoc(doc(db, 'users', uid));
-    if (!existingSnap.exists()) {
-      throw new Error('Account profile document does not exist.');
-    }
+    const cachedOwn = getCachedValue<AtaUserAccount>(`ownAccountProfile:${uid}`);
+    if (!cachedOwn || cachedOwn.emailVerified !== true) {
+      const existingSnap = await getDoc(doc(db, 'users', uid));
+      if (!existingSnap.exists()) {
+        throw new Error('Account profile document does not exist.');
+      }
 
-    if (existingSnap.data().emailVerified !== true) {
-      await syncEmailVerificationToFirestore(uid);
+      if (existingSnap.data().emailVerified !== true) {
+        await syncEmailVerificationToFirestore(uid);
+      }
     }
 
     await runTransaction(db, async (transaction) => {
@@ -458,7 +498,8 @@ export async function updateOwnProfile(
       displayName: trimmedDisplayName,
     });
 
-    return await getOwnAccountProfile(uid);
+    invalidateCacheKey(`publicProfile:${uid}`);
+    return await getOwnAccountProfile(uid, true);
   } catch (error) {
     if (
       error instanceof Error &&

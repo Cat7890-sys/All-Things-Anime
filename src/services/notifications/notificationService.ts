@@ -18,6 +18,9 @@ import {
 } from 'firebase/firestore';
 import type { AtaNotification, NotificationCategory } from '../../types';
 import { db, handleFirestoreError, OperationType } from '../firebase';
+import { subscribeShared } from '../sharedSubscriptionManager';
+
+const SHARED_NOTIFICATION_LIMIT = 50;
 
 export interface PaginatedNotificationsResult {
   notifications: AtaNotification[];
@@ -79,36 +82,80 @@ export function subscribeToUserNotifications(
     return () => {};
   }
 
+  const effectiveLimit = Math.max(pageSize, SHARED_NOTIFICATION_LIMIT);
   const path = 'notifications';
-  const q = query(
-    collection(db, 'notifications'),
-    where('recipientId', '==', recipientId),
-    where('isDismissed', '==', false),
-    orderBy('createdAt', 'desc'),
-    limit(pageSize)
-  );
+  const channelKey = `notifications:${recipientId}:${effectiveLimit}`;
 
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const notifications = snapshot.docs.map((d) =>
-        mapDocToNotification(d.id, d.data())
+  return subscribeShared<AtaNotification[]>(
+    channelKey,
+    'notifications',
+    (emitData, emitError) => {
+      const q = query(
+        collection(db, 'notifications'),
+        where('recipientId', '==', recipientId),
+        where('isDismissed', '==', false),
+        orderBy('createdAt', 'desc'),
+        limit(effectiveLimit)
       );
-      const unreadCount = notifications.filter((n) => !n.isRead).length;
-      onResult({ notifications, unreadCount });
+
+      return onSnapshot(
+        q,
+        (snapshot) => {
+          emitData(
+            snapshot.docs.map((d) => mapDocToNotification(d.id, d.data()))
+          );
+        },
+        (error) => {
+          try {
+            handleFirestoreError(error, OperationType.LIST, path);
+          } catch (err) {
+            emitError(
+              err instanceof Error
+                ? err.message
+                : 'Unable to load notifications.'
+            );
+          }
+        }
+      );
     },
-    (error) => {
-      try {
-        handleFirestoreError(error, OperationType.LIST, path);
-      } catch (err) {
-        onError(
-          err instanceof Error
-            ? err.message
-            : 'Unable to load notifications.'
-        );
-      }
-    }
+    (allNotifications) => {
+      const sliced = allNotifications.slice(0, pageSize);
+      const unreadCount = sliced.filter((n) => !n.isRead).length;
+      onResult({ notifications: sliced, unreadCount });
+    },
+    onError,
+    { uid: recipientId }
   );
+}
+
+export async function fetchOlderNotifications(
+  recipientId: string,
+  beforeCreatedAt: Date,
+  pageSize = SHARED_NOTIFICATION_LIMIT
+): Promise<{ notifications: AtaNotification[]; hasMore: boolean }> {
+  if (!recipientId) {
+    return { notifications: [], hasMore: false };
+  }
+
+  try {
+    const q = query(
+      collection(db, 'notifications'),
+      where('recipientId', '==', recipientId),
+      where('isDismissed', '==', false),
+      orderBy('createdAt', 'desc'),
+      startAfter(Timestamp.fromDate(beforeCreatedAt)),
+      limit(pageSize)
+    );
+    const snapshot = await getDocs(q);
+    return {
+      notifications: snapshot.docs.map((d) =>
+        mapDocToNotification(d.id, d.data())
+      ),
+      hasMore: snapshot.docs.length === pageSize,
+    };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'notifications');
+  }
 }
 
 export async function markNotificationRead(

@@ -18,6 +18,7 @@ import type {
   CreateCommentInput,
 } from '../types';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
+import { subscribeShared } from './sharedSubscriptionManager';
 import { validateCommentContent } from './validation';
 
 function toDateOrNull(value: unknown): Date | null {
@@ -75,31 +76,41 @@ export function subscribeToPostComments(
   onError: (message: string) => void,
   communityId?: string
 ): Unsubscribe {
+  const scope = communityId || 'global';
   const path = getCommentsBasePath(postId, communityId);
-  const q = query(
-    getCommentsCollection(postId, communityId),
-    orderBy('createdAt', 'asc'),
-    limit(150)
-  );
 
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      onComments(
-        snapshot.docs
-          .filter((d) => d.data().moderationStatus !== 'removed_by_moderator')
-          .map((d) => mapDocToComment(d.id, d.data()))
+  return subscribeShared<AtaComment[]>(
+    `postComments:${scope}:${postId}`,
+    'commentService',
+    (emitData, emitError) => {
+      const q = query(
+        getCommentsCollection(postId, communityId),
+        orderBy('createdAt', 'asc'),
+        limit(150)
+      );
+
+      return onSnapshot(
+        q,
+        (snapshot) => {
+          emitData(
+            snapshot.docs
+              .filter((d) => d.data().moderationStatus !== 'removed_by_moderator')
+              .map((d) => mapDocToComment(d.id, d.data()))
+          );
+        },
+        (error) => {
+          try {
+            handleFirestoreError(error, OperationType.LIST, path);
+          } catch (err) {
+            emitError(
+              err instanceof Error ? err.message : 'Unable to load comments.'
+            );
+          }
+        }
       );
     },
-    (error) => {
-      try {
-        handleFirestoreError(error, OperationType.LIST, path);
-      } catch (err) {
-        onError(
-          err instanceof Error ? err.message : 'Unable to load comments.'
-        );
-      }
-    }
+    onComments,
+    onError
   );
 }
 

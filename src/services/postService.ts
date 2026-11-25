@@ -37,7 +37,11 @@ import {
   OperationType,
   storage,
 } from './firebase';
+import { getOrFetch, setCacheValue } from './memoryCache';
+import { subscribeShared } from './sharedSubscriptionManager';
 import { validatePostForm } from './validation';
+
+const POST_LIKE_TTL_MS = 3 * 60_000;
 
 export interface PaginatedPostsResult {
   posts: AtaPost[];
@@ -126,40 +130,50 @@ export function subscribeToCommunityPosts(
   onError: (message: string) => void,
   communityId?: string
 ): Unsubscribe {
+  const scope = communityId || 'global';
   const path = getPostCollectionPath(communityId);
-  const q = query(
-    getPostsCollection(communityId),
-    orderBy('createdAt', 'desc'),
-    limit(pageSize)
-  );
 
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const posts = snapshot.docs
-        .filter((d) => d.data().moderationStatus !== 'removed_by_moderator')
-        .map((d) => mapDocToPost(d.id, d.data()));
-      const lastCursor =
-        snapshot.docs.length > 0
-          ? snapshot.docs[snapshot.docs.length - 1]
-          : null;
-      onPosts({
-        posts,
-        lastCursor,
-        hasMore: snapshot.docs.length === pageSize,
-      });
+  return subscribeShared<PaginatedPostsResult>(
+    `communityPosts:${scope}:${pageSize}`,
+    'postService',
+    (emitData, emitError) => {
+      const q = query(
+        getPostsCollection(communityId),
+        orderBy('createdAt', 'desc'),
+        limit(pageSize)
+      );
+
+      return onSnapshot(
+        q,
+        (snapshot) => {
+          const posts = snapshot.docs
+            .filter((d) => d.data().moderationStatus !== 'removed_by_moderator')
+            .map((d) => mapDocToPost(d.id, d.data()));
+          const lastCursor =
+            snapshot.docs.length > 0
+              ? snapshot.docs[snapshot.docs.length - 1]
+              : null;
+          emitData({
+            posts,
+            lastCursor,
+            hasMore: snapshot.docs.length === pageSize,
+          });
+        },
+        (error) => {
+          try {
+            handleFirestoreError(error, OperationType.LIST, path);
+          } catch (err) {
+            emitError(
+              err instanceof Error
+                ? err.message
+                : 'Unable to load community posts.'
+            );
+          }
+        }
+      );
     },
-    (error) => {
-      try {
-        handleFirestoreError(error, OperationType.LIST, path);
-      } catch (err) {
-        onError(
-          err instanceof Error
-            ? err.message
-            : 'Unable to load community posts.'
-        );
-      }
-    }
+    onPosts,
+    onError
   );
 }
 
@@ -478,16 +492,25 @@ export async function getUserLikedPostMap(
   uid: string,
   communityId?: string
 ): Promise<Record<string, boolean>> {
+  if (!uid || postIds.length === 0) return {};
+  const scope = communityId || 'global';
   const entries = await Promise.all(
     postIds.map(async (postId) => {
-      try {
-        const snap = await getDoc(
-          doc(getPostDocRef(postId, communityId), 'reactions', uid)
-        );
-        return [postId, snap.exists()] as const;
-      } catch {
-        return [postId, false] as const;
-      }
+      const liked = await getOrFetch(
+        `postLike:${uid}:${scope}:${postId}`,
+        async () => {
+          try {
+            const snap = await getDoc(
+              doc(getPostDocRef(postId, communityId), 'reactions', uid)
+            );
+            return snap.exists();
+          } catch {
+            return false;
+          }
+        },
+        { ttlMs: POST_LIKE_TTL_MS, uid }
+      );
+      return [postId, liked] as const;
     })
   );
   return Object.fromEntries(entries);
@@ -508,9 +531,10 @@ export async function togglePostLike(
 
   await currentUser.getIdToken(true);
 
+  const scope = communityId || 'global';
   const path = `${getPostCollectionPath(communityId)}/${postId}/reactions/${uid}`;
   try {
-    return await runTransaction(db, async (transaction) => {
+    const result = await runTransaction(db, async (transaction) => {
       const postRef = getPostDocRef(postId, communityId);
       const reactionRef = doc(postRef, 'reactions', uid);
 
@@ -544,6 +568,11 @@ export async function togglePostLike(
       transaction.update(postRef, { likeCount: nextCount });
       return { liked: true, likeCount: nextCount };
     });
+    setCacheValue(`postLike:${uid}:${scope}:${postId}`, result.liked, {
+      ttlMs: POST_LIKE_TTL_MS,
+      uid,
+    });
+    return result;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }

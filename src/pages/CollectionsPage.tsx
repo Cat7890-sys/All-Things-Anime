@@ -23,9 +23,8 @@ import {
   createCollection,
   deleteCollection,
   getPublicCollections,
-  getUserCollections,
-  likeCollection,
   subscribeToUserCollections,
+  toggleCollectionLike,
   updateCollection,
 } from '../services/personalisation/collectionService';
 import type {
@@ -94,13 +93,20 @@ export const CollectionsPage: React.FC<CollectionsPageProps> = ({
     };
   }, [currentUserId]);
 
-  // Load public collections
+  // Load public collections only when exploring community lists
   useEffect(() => {
+    if (activeTab !== 'explore') return;
+    let cancelled = false;
     getPublicCollections(30)
       .then((cols) => {
-        setPublicCollections(cols || []);
+        if (!cancelled) {
+          setPublicCollections(cols || []);
+        }
       })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [activeTab]);
 
   // Anime search inside modal
@@ -210,13 +216,16 @@ export const CollectionsPage: React.FC<CollectionsPageProps> = ({
       onOpenAuth?.();
       return;
     }
-    await likeCollection(currentUserId, col.id);
+    const result = await toggleCollectionLike(currentUserId, col.id);
     setPublicCollections((prev) =>
-      prev.map((c) => (c.id === col.id ? { ...c, likeCount: c.likeCount + 1 } : c))
+      prev.map((c) => (c.id === col.id ? { ...c, likeCount: result.likeCount } : c))
+    );
+    setMyCollections((prev) =>
+      prev.map((c) => (c.id === col.id ? { ...c, likeCount: result.likeCount } : c))
     );
     if (selectedCollection?.id === col.id) {
       setSelectedCollection((prev) =>
-        prev ? { ...prev, likeCount: prev.likeCount + 1 } : null
+        prev ? { ...prev, likeCount: result.likeCount } : null
       );
     }
   };

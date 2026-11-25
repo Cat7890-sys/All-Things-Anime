@@ -15,6 +15,8 @@ import type {
   UpdateUserPreferencesInput,
 } from '../../types';
 import { db, handleFirestoreError, OperationType } from '../firebase';
+import { getCachedValue, getOrFetch, setCacheValue } from '../memoryCache';
+import { subscribeShared } from '../sharedSubscriptionManager';
 import {
   APPROVED_RECOMMENDATION_CATEGORIES,
   validateAccentColor,
@@ -26,6 +28,8 @@ import {
   validateRecommendationDiversity,
   validateThemePreference,
 } from '../validation';
+
+const USER_PREFS_CACHE_TTL_MS = 5 * 60_000;
 
 export const DEFAULT_DASHBOARD_WIDGETS: DashboardWidgetConfig[] = [
   { id: 'recommendations', label: 'Recommended For You', enabled: true, order: 0 },
@@ -363,7 +367,8 @@ function validatePreferencesUpdate(input: UpdateUserPreferencesInput): void {
 }
 
 export async function getUserPreferences(
-  userId: string
+  userId: string,
+  forceRefresh = false
 ): Promise<AtaUserPreferences> {
   if (!userId) {
     return {
@@ -374,13 +379,27 @@ export async function getUserPreferences(
     };
   }
 
-  const path = `userPreferences/${userId}`;
-  try {
-    const snap = await getDoc(doc(db, 'userPreferences', userId));
-    return mapDocToUserPreferences(userId, snap.exists() ? snap.data() : null);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.GET, path);
+  const cacheKey = `userPrefs:${userId}`;
+  if (!forceRefresh) {
+    const cached = getCachedValue<AtaUserPreferences>(cacheKey);
+    if (cached !== undefined) {
+      return cached;
+    }
   }
+
+  const path = `userPreferences/${userId}`;
+  return getOrFetch(
+    cacheKey,
+    async () => {
+      try {
+        const snap = await getDoc(doc(db, 'userPreferences', userId));
+        return mapDocToUserPreferences(userId, snap.exists() ? snap.data() : null);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.GET, path);
+      }
+    },
+    { ttlMs: USER_PREFS_CACHE_TTL_MS, uid: userId }
+  );
 }
 
 export function subscribeToUserPreferences(
@@ -399,27 +418,39 @@ export function subscribeToUserPreferences(
   }
 
   const path = `userPreferences/${userId}`;
-  return onSnapshot(
-    doc(db, 'userPreferences', userId),
-    (snapshot) => {
-      onPreferences(
-        mapDocToUserPreferences(
-          userId,
-          snapshot.exists() ? snapshot.data() : null
-        )
-      );
-    },
-    (error) => {
-      try {
-        handleFirestoreError(error, OperationType.GET, path);
-      } catch (err) {
-        onError?.(
-          err instanceof Error
-            ? err.message
-            : 'Unable to load user preferences.'
-        );
-      }
-    }
+  const channelKey = `userPrefs:${userId}`;
+  return subscribeShared<AtaUserPreferences>(
+    channelKey,
+    'userPreferencesService',
+    (emitData, emitError) =>
+      onSnapshot(
+        doc(db, 'userPreferences', userId),
+        (snapshot) => {
+          const prefs = mapDocToUserPreferences(
+            userId,
+            snapshot.exists() ? snapshot.data() : null
+          );
+          setCacheValue(channelKey, prefs, {
+            ttlMs: USER_PREFS_CACHE_TTL_MS,
+            uid: userId,
+          });
+          emitData(prefs);
+        },
+        (error) => {
+          try {
+            handleFirestoreError(error, OperationType.GET, path);
+          } catch (err) {
+            emitError(
+              err instanceof Error
+                ? err.message
+                : 'Unable to load user preferences.'
+            );
+          }
+        }
+      ),
+    onPreferences,
+    onError,
+    { uid: userId }
   );
 }
 
@@ -489,6 +520,10 @@ export async function updateUserPreferences(
     };
 
     await setDoc(doc(db, 'userPreferences', userId), payload, { merge: true });
+    setCacheValue(`userPrefs:${userId}`, updated, {
+      ttlMs: USER_PREFS_CACHE_TTL_MS,
+      uid: userId,
+    });
     return updated;
   } catch (error) {
     if (

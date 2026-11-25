@@ -23,6 +23,13 @@ import type {
   UserCollection,
 } from '../../types';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
+import {
+  getOrFetch,
+  invalidateCacheKey,
+  invalidateCachePrefix,
+  setCacheValue,
+} from '../memoryCache';
+import { subscribeShared } from '../sharedSubscriptionManager';
 import { getPublicProfile } from '../userProfileService';
 import {
   COLLECTION_MAX_ITEMS,
@@ -32,6 +39,11 @@ import {
   validateCollectionVisibility,
   validateOptionalHttpsUrl,
 } from '../validation';
+
+const USER_COLLECTIONS_CACHE_TTL_MS = 3 * 60_000;
+const PUBLIC_COLLECTIONS_CACHE_TTL_MS = 3 * 60_000;
+const COLLECTION_DOC_CACHE_TTL_MS = 2 * 60_000;
+const USER_COLLECTIONS_QUERY_LIMIT = 100;
 
 function toDateOrNull(value: unknown): Date | null {
   if (value instanceof Timestamp) {
@@ -168,29 +180,45 @@ export function subscribeToUserCollections(
     return () => {};
   }
 
+  const channelKey = `userCollections:${userId}`;
   const q = query(
     collection(db, 'userCollections'),
     where('ownerId', '==', userId),
-    orderBy('updatedAt', 'desc')
+    orderBy('updatedAt', 'desc'),
+    limit(USER_COLLECTIONS_QUERY_LIMIT)
   );
 
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const list = snapshot.docs.map((d) =>
-        mapDocToCollection(d.id, d.data())
-      );
-      onCollections(list);
-    },
-    (error) => {
-      try {
-        handleFirestoreError(error, OperationType.LIST, 'userCollections');
-      } catch (err) {
-        onError?.(
-          err instanceof Error ? err.message : 'Unable to sync user collections.'
-        );
-      }
-    }
+  return subscribeShared<UserCollection[]>(
+    channelKey,
+    'collectionService',
+    (emitData, emitError) =>
+      onSnapshot(
+        q,
+        (snapshot) => {
+          const list = snapshot.docs.map((d) =>
+            mapDocToCollection(d.id, d.data())
+          );
+          setCacheValue(channelKey, list, {
+            ttlMs: USER_COLLECTIONS_CACHE_TTL_MS,
+            uid: userId,
+          });
+          emitData(list);
+        },
+        (error) => {
+          try {
+            handleFirestoreError(error, OperationType.LIST, 'userCollections');
+          } catch (err) {
+            emitError(
+              err instanceof Error
+                ? err.message
+                : 'Unable to sync user collections.'
+            );
+          }
+        }
+      ),
+    onCollections,
+    onError,
+    { uid: userId }
   );
 }
 
@@ -198,34 +226,55 @@ export async function getUserCollections(
   userId: string
 ): Promise<UserCollection[]> {
   if (!userId) return [];
-  const q = query(
-    collection(db, 'userCollections'),
-    where('ownerId', '==', userId),
-    orderBy('updatedAt', 'desc')
+  const cacheKey = `userCollections:${userId}`;
+  return getOrFetch(
+    cacheKey,
+    async () => {
+      const q = query(
+        collection(db, 'userCollections'),
+        where('ownerId', '==', userId),
+        orderBy('updatedAt', 'desc'),
+        limit(USER_COLLECTIONS_QUERY_LIMIT)
+      );
+      try {
+        const snap = await getDocs(q);
+        return snap.docs.map((d) => mapDocToCollection(d.id, d.data()));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'userCollections');
+      }
+    },
+    { ttlMs: USER_COLLECTIONS_CACHE_TTL_MS, uid: userId }
   );
-  try {
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => mapDocToCollection(d.id, d.data()));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'userCollections');
-  }
 }
 
 export async function getPublicCollections(
   maxItems: number = 20
 ): Promise<UserCollection[]> {
-  const q = query(
-    collection(db, 'userCollections'),
-    where('visibility', '==', 'public'),
-    orderBy('updatedAt', 'desc'),
-    limit(maxItems)
+  const safeLimit = Math.min(Math.max(1, maxItems), 50);
+  return getOrFetch(
+    `publicCollections:${safeLimit}`,
+    async () => {
+      const q = query(
+        collection(db, 'userCollections'),
+        where('visibility', '==', 'public'),
+        orderBy('updatedAt', 'desc'),
+        limit(safeLimit)
+      );
+      try {
+        const snap = await getDocs(q);
+        const list = snap.docs.map((d) => mapDocToCollection(d.id, d.data()));
+        for (const col of list) {
+          setCacheValue(`collectionById:${col.id}`, col, {
+            ttlMs: COLLECTION_DOC_CACHE_TTL_MS,
+          });
+        }
+        return list;
+      } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'userCollections');
+      }
+    },
+    { ttlMs: PUBLIC_COLLECTIONS_CACHE_TTL_MS }
   );
-  try {
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => mapDocToCollection(d.id, d.data()));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'userCollections');
-  }
 }
 
 export async function getPublicCollectionsByOwner(
@@ -233,19 +282,26 @@ export async function getPublicCollectionsByOwner(
   maxItems: number = 10
 ): Promise<UserCollection[]> {
   if (!ownerId) return [];
-  const q = query(
-    collection(db, 'userCollections'),
-    where('ownerId', '==', ownerId),
-    where('visibility', '==', 'public'),
-    orderBy('updatedAt', 'desc'),
-    limit(maxItems)
+  const safeLimit = Math.min(Math.max(1, maxItems), 30);
+  return getOrFetch(
+    `publicCollectionsByOwner:${ownerId}:${safeLimit}`,
+    async () => {
+      const q = query(
+        collection(db, 'userCollections'),
+        where('ownerId', '==', ownerId),
+        where('visibility', '==', 'public'),
+        orderBy('updatedAt', 'desc'),
+        limit(safeLimit)
+      );
+      try {
+        const snap = await getDocs(q);
+        return snap.docs.map((d) => mapDocToCollection(d.id, d.data()));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'userCollections');
+      }
+    },
+    { ttlMs: PUBLIC_COLLECTIONS_CACHE_TTL_MS }
   );
-  try {
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => mapDocToCollection(d.id, d.data()));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'userCollections');
-  }
 }
 
 export async function getCollectionById(
@@ -253,13 +309,19 @@ export async function getCollectionById(
 ): Promise<UserCollection | null> {
   if (!collectionId) return null;
   const path = `userCollections/${collectionId}`;
-  try {
-    const snap = await getDoc(doc(db, 'userCollections', collectionId));
-    if (!snap.exists()) return null;
-    return mapDocToCollection(snap.id, snap.data());
-  } catch (error) {
-    handleFirestoreError(error, OperationType.GET, path);
-  }
+  return getOrFetch(
+    `collectionById:${collectionId}`,
+    async () => {
+      try {
+        const snap = await getDoc(doc(db, 'userCollections', collectionId));
+        if (!snap.exists()) return null;
+        return mapDocToCollection(snap.id, snap.data());
+      } catch (error) {
+        handleFirestoreError(error, OperationType.GET, path);
+      }
+    },
+    { ttlMs: COLLECTION_DOC_CACHE_TTL_MS }
+  );
 }
 
 export async function createCollection(
@@ -323,6 +385,9 @@ export async function createCollection(
 
   try {
     await setDoc(colRef, payload);
+    invalidateCacheKey(`userCollections:${ownerId}`);
+    invalidateCachePrefix('publicCollections:');
+    invalidateCachePrefix(`publicCollectionsByOwner:${ownerId}:`);
     return {
       ...payload,
       createdAt: now,
@@ -405,6 +470,10 @@ export async function updateCollection(
     }
 
     await updateDoc(colRef, updates);
+    invalidateCacheKey(`collectionById:${collectionId}`);
+    invalidateCacheKey(`userCollections:${ownerId}`);
+    invalidateCachePrefix('publicCollections:');
+    invalidateCachePrefix(`publicCollectionsByOwner:${ownerId}:`);
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -440,6 +509,11 @@ export async function addAnimeToExistingCollection(
       updatedAt: serverTimestamp(),
     });
 
+    invalidateCacheKey(`collectionById:${collectionId}`);
+    invalidateCacheKey(`userCollections:${ownerId}`);
+    invalidateCachePrefix('publicCollections:');
+    invalidateCachePrefix(`publicCollectionsByOwner:${ownerId}:`);
+
     return {
       ...existingCol,
       items: updatedItems,
@@ -473,6 +547,10 @@ export async function deleteCollection(
       throw new Error('You do not have permission to delete this collection.');
     }
     await deleteDoc(colRef);
+    invalidateCacheKey(`collectionById:${collectionId}`);
+    invalidateCacheKey(`userCollections:${ownerId}`);
+    invalidateCachePrefix('publicCollections:');
+    invalidateCachePrefix(`publicCollectionsByOwner:${ownerId}:`);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
@@ -512,7 +590,7 @@ export async function toggleCollectionLike(
   const path = `userCollections/${collectionId}/likes/${userId}`;
 
   try {
-    return await runTransaction(db, async (transaction) => {
+    const result = await runTransaction(db, async (transaction) => {
       const colSnap = await transaction.get(colRef);
       if (!colSnap.exists()) {
         throw new Error('Collection not found.');
@@ -529,7 +607,11 @@ export async function toggleCollectionLike(
         const nextLikes = Math.max(0, currentLikes - 1);
         transaction.delete(likeRef);
         transaction.update(colRef, { likeCount: nextLikes });
-        return { liked: false, likeCount: nextLikes };
+        return {
+          liked: false,
+          likeCount: nextLikes,
+          ownerId: String(data.ownerId || ''),
+        };
       } else {
         const nextLikes = currentLikes + 1;
         transaction.set(likeRef, {
@@ -538,9 +620,20 @@ export async function toggleCollectionLike(
           createdAt: serverTimestamp(),
         });
         transaction.update(colRef, { likeCount: nextLikes });
-        return { liked: true, likeCount: nextLikes };
+        return {
+          liked: true,
+          likeCount: nextLikes,
+          ownerId: String(data.ownerId || ''),
+        };
       }
     });
+    invalidateCacheKey(`collectionById:${collectionId}`);
+    invalidateCachePrefix('publicCollections:');
+    if (result.ownerId) {
+      invalidateCacheKey(`userCollections:${result.ownerId}`);
+      invalidateCachePrefix(`publicCollectionsByOwner:${result.ownerId}:`);
+    }
+    return { liked: result.liked, likeCount: result.likeCount };
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -559,7 +652,7 @@ export async function toggleCollectionSave(
   const path = `userCollections/${collectionId}/saves/${userId}`;
 
   try {
-    return await runTransaction(db, async (transaction) => {
+    const result = await runTransaction(db, async (transaction) => {
       const colSnap = await transaction.get(colRef);
       if (!colSnap.exists()) {
         throw new Error('Collection not found.');
@@ -576,7 +669,11 @@ export async function toggleCollectionSave(
         const nextSaves = Math.max(0, currentSaves - 1);
         transaction.delete(saveRef);
         transaction.update(colRef, { saveCount: nextSaves });
-        return { saved: false, saveCount: nextSaves };
+        return {
+          saved: false,
+          saveCount: nextSaves,
+          ownerId: String(data.ownerId || ''),
+        };
       } else {
         const nextSaves = currentSaves + 1;
         transaction.set(saveRef, {
@@ -585,9 +682,20 @@ export async function toggleCollectionSave(
           createdAt: serverTimestamp(),
         });
         transaction.update(colRef, { saveCount: nextSaves });
-        return { saved: true, saveCount: nextSaves };
+        return {
+          saved: true,
+          saveCount: nextSaves,
+          ownerId: String(data.ownerId || ''),
+        };
       }
     });
+    invalidateCacheKey(`collectionById:${collectionId}`);
+    invalidateCachePrefix('publicCollections:');
+    if (result.ownerId) {
+      invalidateCacheKey(`userCollections:${result.ownerId}`);
+      invalidateCachePrefix(`publicCollectionsByOwner:${result.ownerId}:`);
+    }
+    return { saved: result.saved, saveCount: result.saveCount };
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }

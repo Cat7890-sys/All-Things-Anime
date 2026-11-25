@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DocumentData, QueryDocumentSnapshot } from 'firebase/firestore';
 import {
   AlertCircle,
@@ -93,6 +93,7 @@ export const SocialFeedSection: React.FC<SocialFeedSectionProps> = ({
   const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set());
   const [isSocialGraphLoaded, setIsSocialGraphLoaded] = useState(false);
   const [likedPostMap, setLikedPostMap] = useState<Record<string, boolean>>({});
+  const requestedLikeIdsRef = useRef<Set<string>>(new Set());
 
   // Modals & Deep-Linking
   const [detailPostId, setDetailPostId] = useState<string | null>(null);
@@ -110,6 +111,7 @@ export const SocialFeedSection: React.FC<SocialFeedSectionProps> = ({
       setBlockedUserIds(new Set());
       setFollowingIds([]);
       setLikedPostMap({});
+      requestedLikeIdsRef.current.clear();
       setIsSocialGraphLoaded(true);
       return;
     }
@@ -206,6 +208,10 @@ export const SocialFeedSection: React.FC<SocialFeedSectionProps> = ({
     return followingPosts.filter((p) => !blockedUserIds.has(p.authorId));
   }, [followingPosts, blockedUserIds]);
 
+  useEffect(() => {
+    requestedLikeIdsRef.current.clear();
+  }, [firebaseUser?.uid]);
+
   // Hydrate liked state for displayed posts
   useEffect(() => {
     if (!firebaseUser) return;
@@ -215,8 +221,9 @@ export const SocialFeedSection: React.FC<SocialFeedSectionProps> = ({
         ...visibleFollowingPosts.map((p) => p.id),
       ])
     );
-    const missing = allIds.filter((id) => !(id in likedPostMap));
+    const missing = allIds.filter((id) => !requestedLikeIdsRef.current.has(id));
     if (missing.length === 0) return;
+    missing.forEach((id) => requestedLikeIdsRef.current.add(id));
 
     let active = true;
     void getUserLikedPostMap(missing, firebaseUser.uid).then((map) => {
@@ -227,7 +234,7 @@ export const SocialFeedSection: React.FC<SocialFeedSectionProps> = ({
     return () => {
       active = false;
     };
-  }, [firebaseUser, mergedCommunityPosts, visibleFollowingPosts, likedPostMap]);
+  }, [firebaseUser, mergedCommunityPosts, visibleFollowingPosts]);
 
   const handleLoadMoreCommunity = async () => {
     if (!communityCursor || isLoadingMoreCommunity) return;

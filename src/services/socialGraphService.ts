@@ -4,6 +4,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   query,
   runTransaction,
   serverTimestamp,
@@ -13,6 +14,14 @@ import {
 } from 'firebase/firestore';
 import type { BlockedUserRecord } from '../types';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
+import {
+  getCachedValue,
+  getOrFetch,
+  invalidateCacheKey,
+} from './memoryCache';
+
+const SOCIAL_GRAPH_TTL_MS = 3 * 60_000;
+const STATUS_CHECK_TTL_MS = 2 * 60_000;
 
 function toDateOrNull(value: unknown): Date | null {
   if (value instanceof Timestamp) {
@@ -28,27 +37,51 @@ export async function checkFollowStatus(
   if (!followerId || !targetUserId || followerId === targetUserId) {
     return false;
   }
-  const followId = `${followerId}__${targetUserId}`;
-  try {
-    const snap = await getDoc(doc(db, 'follows', followId));
-    return snap.exists();
-  } catch (error) {
-    handleFirestoreError(error, OperationType.GET, `follows/${followId}`);
+  const cachedFollowing = getCachedValue<string[]>(`followingIds:${followerId}`);
+  if (cachedFollowing !== undefined) {
+    return cachedFollowing.includes(targetUserId);
   }
+  const followId = `${followerId}__${targetUserId}`;
+  return getOrFetch(
+    `followStatus:${followerId}:${targetUserId}`,
+    async () => {
+      try {
+        const snap = await getDoc(doc(db, 'follows', followId));
+        return snap.exists();
+      } catch (error) {
+        handleFirestoreError(error, OperationType.GET, `follows/${followId}`);
+      }
+    },
+    { ttlMs: STATUS_CHECK_TTL_MS, uid: followerId }
+  );
 }
 
-export async function fetchFollowingIds(followerId: string): Promise<string[]> {
+export async function fetchFollowingIds(
+  followerId: string,
+  forceRefresh = false
+): Promise<string[]> {
   if (!followerId) return [];
-  try {
-    const q = query(
-      collection(db, 'follows'),
-      where('followerId', '==', followerId)
-    );
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map((d) => String(d.data().followingId));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'follows');
+  const cacheKey = `followingIds:${followerId}`;
+  if (forceRefresh) {
+    invalidateCacheKey(cacheKey);
   }
+  return getOrFetch(
+    cacheKey,
+    async () => {
+      try {
+        const q = query(
+          collection(db, 'follows'),
+          where('followerId', '==', followerId),
+          limit(500)
+        );
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map((d) => String(d.data().followingId));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'follows');
+      }
+    },
+    { ttlMs: SOCIAL_GRAPH_TTL_MS, uid: followerId }
+  );
 }
 
 export async function followUser(
@@ -115,6 +148,10 @@ export async function followUser(
         });
       }
     });
+    invalidateCacheKey(`followingIds:${followerId}`);
+    invalidateCacheKey(`followStatus:${followerId}:${targetUserId}`);
+    invalidateCacheKey(`publicProfile:${followerId}`);
+    invalidateCacheKey(`publicProfile:${targetUserId}`);
   } catch (error) {
     if (
       error instanceof Error &&
@@ -180,34 +217,50 @@ export async function unfollowUser(
         });
       }
     });
+    invalidateCacheKey(`followingIds:${followerId}`);
+    invalidateCacheKey(`followStatus:${followerId}:${targetUserId}`);
+    invalidateCacheKey(`publicProfile:${followerId}`);
+    invalidateCacheKey(`publicProfile:${targetUserId}`);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `follows/${followId}`);
   }
 }
 
 export async function fetchBlockedUsers(
-  blockerId: string
+  blockerId: string,
+  forceRefresh = false
 ): Promise<BlockedUserRecord[]> {
   if (!blockerId) return [];
-  try {
-    const q = query(
-      collection(db, 'blocks'),
-      where('blockerId', '==', blockerId)
-    );
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map((d) => {
-      const data = d.data();
-      return {
-        id: d.id,
-        blockerId: String(data.blockerId || ''),
-        blockedId: String(data.blockedId || ''),
-        blockedUsername: String(data.blockedUsername || ''),
-        createdAt: toDateOrNull(data.createdAt),
-      };
-    });
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'blocks');
+  const cacheKey = `blockedUsers:${blockerId}`;
+  if (forceRefresh) {
+    invalidateCacheKey(cacheKey);
   }
+  return getOrFetch(
+    cacheKey,
+    async () => {
+      try {
+        const q = query(
+          collection(db, 'blocks'),
+          where('blockerId', '==', blockerId),
+          limit(500)
+        );
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            blockerId: String(data.blockerId || ''),
+            blockedId: String(data.blockedId || ''),
+            blockedUsername: String(data.blockedUsername || ''),
+            createdAt: toDateOrNull(data.createdAt),
+          };
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'blocks');
+      }
+    },
+    { ttlMs: SOCIAL_GRAPH_TTL_MS, uid: blockerId }
+  );
 }
 
 export async function checkBlockBetween(
@@ -217,18 +270,35 @@ export async function checkBlockBetween(
   if (!uidA || !uidB || uidA === uidB) {
     return { blockedByMe: false, blockedByThem: false };
   }
-  try {
-    const [mySnap, theirSnap] = await Promise.all([
-      getDoc(doc(db, 'blocks', `${uidA}__${uidB}`)),
-      getDoc(doc(db, 'blocks', `${uidB}__${uidA}`)),
-    ]);
-    return {
-      blockedByMe: mySnap.exists(),
-      blockedByThem: theirSnap.exists(),
-    };
-  } catch {
-    return { blockedByMe: false, blockedByThem: false };
-  }
+  return getOrFetch(
+    `blockBetween:${uidA}:${uidB}`,
+    async () => {
+      try {
+        const cachedBlocked = getCachedValue<BlockedUserRecord[]>(
+          `blockedUsers:${uidA}`
+        );
+        if (cachedBlocked !== undefined) {
+          const blockedByMe = cachedBlocked.some((b) => b.blockedId === uidB);
+          const theirSnap = await getDoc(doc(db, 'blocks', `${uidB}__${uidA}`));
+          return {
+            blockedByMe,
+            blockedByThem: theirSnap.exists(),
+          };
+        }
+        const [mySnap, theirSnap] = await Promise.all([
+          getDoc(doc(db, 'blocks', `${uidA}__${uidB}`)),
+          getDoc(doc(db, 'blocks', `${uidB}__${uidA}`)),
+        ]);
+        return {
+          blockedByMe: mySnap.exists(),
+          blockedByThem: theirSnap.exists(),
+        };
+      } catch {
+        return { blockedByMe: false, blockedByThem: false };
+      }
+    },
+    { ttlMs: STATUS_CHECK_TTL_MS, uid: uidA }
+  );
 }
 
 export async function blockUser(
@@ -258,6 +328,9 @@ export async function blockUser(
       blockedUsername,
       createdAt: serverTimestamp(),
     });
+    invalidateCacheKey(`blockedUsers:${blockerId}`);
+    invalidateCacheKey(`blockBetween:${blockerId}:${blockedId}`);
+    invalidateCacheKey(`blockBetween:${blockedId}:${blockerId}`);
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, `blocks/${blockId}`);
   }
@@ -290,6 +363,9 @@ export async function unblockUser(
   const blockId = `${blockerId}__${blockedId}`;
   try {
     await deleteDoc(doc(db, 'blocks', blockId));
+    invalidateCacheKey(`blockedUsers:${blockerId}`);
+    invalidateCacheKey(`blockBetween:${blockerId}:${blockedId}`);
+    invalidateCacheKey(`blockBetween:${blockedId}:${blockerId}`);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, `blocks/${blockId}`);
   }

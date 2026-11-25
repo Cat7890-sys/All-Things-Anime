@@ -4,6 +4,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -24,6 +25,13 @@ import type {
 } from '../../types';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import {
+  getCachedValue,
+  getOrFetch,
+  invalidateCacheKey,
+  setCacheValue,
+} from '../memoryCache';
+import { subscribeShared } from '../sharedSubscriptionManager';
+import {
   validateAnimeRating,
   validateIsoDateString,
   validateOptionalHttpsUrl,
@@ -31,6 +39,9 @@ import {
   validateWatchedEpisodes,
   validateWatchlistStatus,
 } from '../validation';
+
+const ANIME_LIST_CACHE_TTL_MS = 2 * 60_000;
+const ANIME_LIST_QUERY_LIMIT = 500;
 
 function toDateOrNull(value: unknown): Date | null {
   if (value instanceof Timestamp) {
@@ -96,42 +107,110 @@ export function subscribeToUserAnimeList(
   }
 
   const path = `userAnimeLists/${userId}/items`;
-  const q = query(collection(db, path), orderBy('updatedAt', 'desc'));
+  const channelKey = `animeList:${userId}`;
+  const q = query(
+    collection(db, path),
+    orderBy('updatedAt', 'desc'),
+    limit(ANIME_LIST_QUERY_LIMIT)
+  );
 
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const items = snapshot.docs.map((d) =>
-        mapDocToAnimeListItem(d.id, d.data())
-      );
-      onList(items);
-    },
-    (error) => {
-      try {
-        handleFirestoreError(error, OperationType.LIST, path);
-      } catch (err) {
-        onError?.(
-          err instanceof Error
-            ? err.message
-            : 'Unable to sync anime tracker list.'
-        );
-      }
-    }
+  return subscribeShared<UserAnimeListItem[]>(
+    channelKey,
+    'animeTrackerService',
+    (emitData, emitError) =>
+      onSnapshot(
+        q,
+        (snapshot) => {
+          const items = snapshot.docs.map((d) =>
+            mapDocToAnimeListItem(d.id, d.data())
+          );
+          setCacheValue(channelKey, items, {
+            ttlMs: ANIME_LIST_CACHE_TTL_MS,
+            uid: userId,
+          });
+          emitData(items);
+        },
+        (error) => {
+          try {
+            handleFirestoreError(error, OperationType.LIST, path);
+          } catch (err) {
+            emitError(
+              err instanceof Error
+                ? err.message
+                : 'Unable to sync anime tracker list.'
+            );
+          }
+        }
+      ),
+    onList,
+    onError,
+    { uid: userId }
   );
 }
 
 export async function getUserAnimeList(
-  userId: string
+  userId: string,
+  forceRefresh = false
 ): Promise<UserAnimeListItem[]> {
   if (!userId) return [];
-  const path = `userAnimeLists/${userId}/items`;
-  try {
-    const q = query(collection(db, path), orderBy('updatedAt', 'desc'));
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map((d) => mapDocToAnimeListItem(d.id, d.data()));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, path);
+  const cacheKey = `animeList:${userId}`;
+  if (!forceRefresh) {
+    const cached = getCachedValue<UserAnimeListItem[]>(cacheKey);
+    if (cached !== undefined) {
+      return cached;
+    }
   }
+
+  const path = `userAnimeLists/${userId}/items`;
+  return getOrFetch(
+    cacheKey,
+    async () => {
+      try {
+        const q = query(
+          collection(db, path),
+          orderBy('updatedAt', 'desc'),
+          limit(ANIME_LIST_QUERY_LIMIT)
+        );
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map((d) => mapDocToAnimeListItem(d.id, d.data()));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, path);
+      }
+    },
+    { ttlMs: ANIME_LIST_CACHE_TTL_MS, uid: userId }
+  );
+}
+
+export async function getAnimeTrackerItem(
+  userId: string,
+  animeId: string
+): Promise<UserAnimeListItem | null> {
+  if (!userId || !animeId) return null;
+  const cleanId = animeId.trim();
+  if (!cleanId) return null;
+
+  const warmList = getCachedValue<UserAnimeListItem[]>(`animeList:${userId}`);
+  if (warmList !== undefined) {
+    return warmList.find((it) => String(it.animeId) === cleanId) || null;
+  }
+
+  const itemKey = `animeItem:${userId}:${cleanId}`;
+  const path = `userAnimeLists/${userId}/items/${cleanId}`;
+  return getOrFetch(
+    itemKey,
+    async () => {
+      try {
+        const snap = await getDoc(
+          doc(db, 'userAnimeLists', userId, 'items', cleanId)
+        );
+        if (!snap.exists()) return null;
+        return mapDocToAnimeListItem(snap.id, snap.data());
+      } catch (error) {
+        handleFirestoreError(error, OperationType.GET, path);
+      }
+    },
+    { ttlMs: ANIME_LIST_CACHE_TTL_MS, uid: userId }
+  );
 }
 
 export async function upsertAnimeListItem(
@@ -220,11 +299,18 @@ export async function upsertAnimeListItem(
 
     await setDoc(docRef, payload, { merge: true });
 
-    return {
+    const savedItem: UserAnimeListItem = {
       ...payload,
       createdAt: existingData ? toDateOrNull(existingData.createdAt) : now,
       updatedAt: now,
     };
+    invalidateCacheKey(`animeList:${userId}`);
+    setCacheValue(`animeItem:${userId}:${docId}`, savedItem, {
+      ttlMs: ANIME_LIST_CACHE_TTL_MS,
+      uid: userId,
+    });
+
+    return savedItem;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -239,7 +325,7 @@ export async function incrementWatchedEpisode(
   const path = `userAnimeLists/${userId}/items/${animeId}`;
 
   try {
-    return await runTransaction(db, async (transaction) => {
+    const nextWatched = await runTransaction(db, async (transaction) => {
       const snap = await transaction.get(docRef);
       if (!snap.exists()) {
         throw new Error('Anime entry not found in tracker.');
@@ -253,12 +339,13 @@ export async function incrementWatchedEpisode(
         return currentWatched;
       }
 
-      const nextWatched = currentWatched + 1;
-      const willBeCompleted = total !== null && total > 0 && nextWatched >= total;
+      const nextWatchedVal = currentWatched + 1;
+      const willBeCompleted =
+        total !== null && total > 0 && nextWatchedVal >= total;
       const todayIso = new Date().toISOString().split('T')[0];
 
       transaction.update(docRef, {
-        episodesWatched: nextWatched,
+        episodesWatched: nextWatchedVal,
         status: willBeCompleted
           ? 'completed'
           : data.status === 'planning'
@@ -271,8 +358,11 @@ export async function incrementWatchedEpisode(
         updatedAt: serverTimestamp(),
       });
 
-      return nextWatched;
+      return nextWatchedVal;
     });
+    invalidateCacheKey(`animeList:${userId}`);
+    invalidateCacheKey(`animeItem:${userId}:${animeId}`);
+    return nextWatched;
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -319,6 +409,8 @@ export async function updateAnimeStatus(
       completionDate,
       updatedAt: serverTimestamp(),
     });
+    invalidateCacheKey(`animeList:${userId}`);
+    invalidateCacheKey(`animeItem:${userId}:${animeId}`);
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -332,6 +424,8 @@ export async function removeAnimeFromList(
   const path = `userAnimeLists/${userId}/items/${animeId}`;
   try {
     await deleteDoc(doc(db, 'userAnimeLists', userId, 'items', animeId));
+    invalidateCacheKey(`animeList:${userId}`);
+    invalidateCacheKey(`animeItem:${userId}:${animeId}`);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }

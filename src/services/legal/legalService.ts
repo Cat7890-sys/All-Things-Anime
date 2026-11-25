@@ -15,6 +15,10 @@ import type {
   PlatformAnnouncement,
 } from '../../types';
 import { db } from '../firebase';
+import { getOrFetch, setCacheValue } from '../memoryCache';
+
+const LEGAL_DOC_CACHE_TTL_MS = 10 * 60_000;
+const ANNOUNCEMENTS_CACHE_TTL_MS = 5 * 60_000;
 
 function toDateOrNull(value: unknown): Date | null {
   if (value instanceof Timestamp) return value.toDate();
@@ -24,56 +28,76 @@ function toDateOrNull(value: unknown): Date | null {
 export async function fetchLegalDocumentOverride(
   slug: LegalPageSlug
 ): Promise<LegalDocumentOverride | null> {
-  try {
-    const snap = await getDoc(doc(db, 'legalDocuments', slug));
-    if (!snap.exists()) return null;
-    const data = snap.data();
-    return {
-      id: slug,
-      title: typeof data.title === 'string' ? data.title : '',
-      customSummary:
-        typeof data.customSummary === 'string' ? data.customSummary : '',
-      guidelinesList: Array.isArray(data.guidelinesList)
-        ? data.guidelinesList.map((item) => String(item)).filter(Boolean)
-        : [],
-      lastUpdatedLabel:
-        typeof data.lastUpdatedLabel === 'string' ? data.lastUpdatedLabel : '',
-      updatedByUid: String(data.updatedByUid || ''),
-      updatedAt: toDateOrNull(data.updatedAt),
-    };
-  } catch {
-    return null;
-  }
+  return getOrFetch(
+    `legalDoc:${slug}`,
+    async () => {
+      try {
+        const snap = await getDoc(doc(db, 'legalDocuments', slug));
+        if (!snap.exists()) return null;
+        const data = snap.data();
+        return {
+          id: slug,
+          title: typeof data.title === 'string' ? data.title : '',
+          customSummary:
+            typeof data.customSummary === 'string' ? data.customSummary : '',
+          guidelinesList: Array.isArray(data.guidelinesList)
+            ? data.guidelinesList.map((item) => String(item)).filter(Boolean)
+            : [],
+          lastUpdatedLabel:
+            typeof data.lastUpdatedLabel === 'string'
+              ? data.lastUpdatedLabel
+              : '',
+          updatedByUid: String(data.updatedByUid || ''),
+          updatedAt: toDateOrNull(data.updatedAt),
+        };
+      } catch {
+        return null;
+      }
+    },
+    { ttlMs: LEGAL_DOC_CACHE_TTL_MS }
+  );
 }
 
 export async function fetchAllLegalDocumentOverrides(): Promise<
   Record<string, LegalDocumentOverride>
 > {
-  try {
-    const snap = await getDocs(collection(db, 'legalDocuments'));
-    const map: Record<string, LegalDocumentOverride> = {};
-    snap.forEach((docSnap) => {
-      const data = docSnap.data();
-      map[docSnap.id] = {
-        id: docSnap.id as LegalPageSlug,
-        title: typeof data.title === 'string' ? data.title : '',
-        customSummary:
-          typeof data.customSummary === 'string' ? data.customSummary : '',
-        guidelinesList: Array.isArray(data.guidelinesList)
-          ? data.guidelinesList.map((item) => String(item)).filter(Boolean)
-          : [],
-        lastUpdatedLabel:
-          typeof data.lastUpdatedLabel === 'string'
-            ? data.lastUpdatedLabel
-            : '',
-        updatedByUid: String(data.updatedByUid || ''),
-        updatedAt: toDateOrNull(data.updatedAt),
-      };
-    });
-    return map;
-  } catch {
-    return {};
-  }
+  return getOrFetch(
+    'legalDocs:all',
+    async () => {
+      try {
+        const snap = await getDocs(
+          query(collection(db, 'legalDocuments'), limit(30))
+        );
+        const map: Record<string, LegalDocumentOverride> = {};
+        snap.forEach((docSnap) => {
+          const data = docSnap.data();
+          const parsed: LegalDocumentOverride = {
+            id: docSnap.id as LegalPageSlug,
+            title: typeof data.title === 'string' ? data.title : '',
+            customSummary:
+              typeof data.customSummary === 'string' ? data.customSummary : '',
+            guidelinesList: Array.isArray(data.guidelinesList)
+              ? data.guidelinesList.map((item) => String(item)).filter(Boolean)
+              : [],
+            lastUpdatedLabel:
+              typeof data.lastUpdatedLabel === 'string'
+                ? data.lastUpdatedLabel
+                : '',
+            updatedByUid: String(data.updatedByUid || ''),
+            updatedAt: toDateOrNull(data.updatedAt),
+          };
+          map[docSnap.id] = parsed;
+          setCacheValue(`legalDoc:${docSnap.id}`, parsed, {
+            ttlMs: LEGAL_DOC_CACHE_TTL_MS,
+          });
+        });
+        return map;
+      } catch {
+        return {};
+      }
+    },
+    { ttlMs: LEGAL_DOC_CACHE_TTL_MS }
+  );
 }
 
 function mapAnnouncementDoc(
@@ -101,45 +125,51 @@ function mapAnnouncementDoc(
 export async function fetchActivePlatformAnnouncements(
   userId?: string
 ): Promise<PlatformAnnouncement[]> {
-  try {
-    const publicQuery = query(
-      collection(db, 'platformAnnouncements'),
-      where('isActive', '==', true),
-      where('audience', '==', 'all_users'),
-      orderBy('updatedAt', 'desc'),
-      limit(10)
-    );
-
-    const targetedQuery = userId
-      ? query(
+  return getOrFetch(
+    `announcements:${userId || 'anon'}`,
+    async () => {
+      try {
+        const publicQuery = query(
           collection(db, 'platformAnnouncements'),
           where('isActive', '==', true),
-          where('targetUserIds', 'array-contains', userId),
+          where('audience', '==', 'all_users'),
+          orderBy('updatedAt', 'desc'),
           limit(10)
-        )
-      : null;
+        );
 
-    const [publicSnap, targetedSnap] = await Promise.all([
-      getDocs(publicQuery),
-      targetedQuery ? getDocs(targetedQuery) : Promise.resolve(null),
-    ]);
+        const targetedQuery = userId
+          ? query(
+              collection(db, 'platformAnnouncements'),
+              where('isActive', '==', true),
+              where('targetUserIds', 'array-contains', userId),
+              limit(10)
+            )
+          : null;
 
-    const byId = new Map<string, PlatformAnnouncement>();
-    publicSnap.forEach((d) => {
-      byId.set(d.id, mapAnnouncementDoc(d.id, d.data()));
-    });
-    targetedSnap?.forEach((d) => {
-      byId.set(d.id, mapAnnouncementDoc(d.id, d.data()));
-    });
+        const [publicSnap, targetedSnap] = await Promise.all([
+          getDocs(publicQuery),
+          targetedQuery ? getDocs(targetedQuery) : Promise.resolve(null),
+        ]);
 
-    return Array.from(byId.values()).sort((a, b) => {
-      const aTime = a.updatedAt ? a.updatedAt.getTime() : 0;
-      const bTime = b.updatedAt ? b.updatedAt.getTime() : 0;
-      return bTime - aTime;
-    });
-  } catch {
-    return [];
-  }
+        const byId = new Map<string, PlatformAnnouncement>();
+        publicSnap.forEach((d) => {
+          byId.set(d.id, mapAnnouncementDoc(d.id, d.data()));
+        });
+        targetedSnap?.forEach((d) => {
+          byId.set(d.id, mapAnnouncementDoc(d.id, d.data()));
+        });
+
+        return Array.from(byId.values()).sort((a, b) => {
+          const aTime = a.updatedAt ? a.updatedAt.getTime() : 0;
+          const bTime = b.updatedAt ? b.updatedAt.getTime() : 0;
+          return bTime - aTime;
+        });
+      } catch {
+        return [];
+      }
+    },
+    { ttlMs: ANNOUNCEMENTS_CACHE_TTL_MS, uid: userId }
+  );
 }
 
 export function clearNonEssentialLocalCaches(): number {

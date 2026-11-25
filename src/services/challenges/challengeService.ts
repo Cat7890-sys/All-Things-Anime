@@ -26,12 +26,20 @@ import type {
   UserAnimeListItem,
 } from '../../types';
 import { auth, db, functions, handleFirestoreError, OperationType } from '../firebase';
+import {
+  getOrFetch,
+  invalidateCacheKey,
+  invalidateCachePrefix,
+  setCacheValue,
+} from '../memoryCache';
 import { getUserAnimeList, upsertAnimeListItem } from '../personalisation/animeTrackerService';
 import {
   calculateChallengeProgress,
   validateChallengeForm,
 } from '../validation';
 import { computeChallengePoints, deriveChallengeLifecycleStatus } from './gamificationRules';
+
+const CHALLENGES_CACHE_TTL_MS = 2 * 60_000;
 
 function toDateOrNull(value: unknown): Date | null {
   if (value instanceof Timestamp) return value.toDate();
@@ -131,89 +139,116 @@ export async function fetchPublicAndJoinedChallenges(
   currentUserId?: string,
   communityId?: string
 ): Promise<AnimeChallenge[]> {
-  try {
-    if (communityId) {
-      const q = query(
-        collection(db, 'animeChallenges'),
-        where('communityId', '==', communityId),
-        orderBy('createdAt', 'desc'),
-        limit(40)
-      );
-      const snap = await getDocs(q);
-      return snap.docs
-        .map((d) => mapDocToChallenge(d.id, d.data()))
-        .filter((c) => c.moderationStatus === 'active');
-    }
-
-    const queries = [
-      getDocs(
-        query(
-          collection(db, 'animeChallenges'),
-          where('visibility', '==', 'public'),
-          where('moderationStatus', '==', 'active'),
-          orderBy('participantCount', 'desc'),
-          limit(50)
-        )
-      ),
-      getDocs(
-        query(
-          collection(db, 'animeChallenges'),
-          where('visibility', '==', 'community'),
-          where('communityVisibility', '==', 'public'),
-          where('moderationStatus', '==', 'active'),
-          limit(30)
-        )
-      ).catch(() => null),
-    ];
-
-    if (currentUserId) {
-      queries.push(
-        getDocs(
-          query(
+  const cacheKey = `challenges:list:${communityId || 'all'}:${
+    communityId ? 'shared' : currentUserId || 'anon'
+  }`;
+  return getOrFetch(
+    cacheKey,
+    async () => {
+      try {
+        if (communityId) {
+          const q = query(
             collection(db, 'animeChallenges'),
-            where('creatorId', '==', currentUserId),
-            limit(30)
-          )
-        ).catch(() => null)
-      );
-    }
-
-    const results = await Promise.all(queries);
-    const merged = new Map<string, AnimeChallenge>();
-    for (const snap of results) {
-      if (!snap) continue;
-      snap.docs.forEach((docSnap) => {
-        const mapped = mapDocToChallenge(docSnap.id, docSnap.data());
-        if (mapped.moderationStatus === 'active') {
-          merged.set(mapped.id, mapped);
+            where('communityId', '==', communityId),
+            orderBy('createdAt', 'desc'),
+            limit(40)
+          );
+          const snap = await getDocs(q);
+          const list = snap.docs
+            .map((d) => mapDocToChallenge(d.id, d.data()))
+            .filter((c) => c.moderationStatus === 'active');
+          for (const ch of list) {
+            setCacheValue(`challengeById:${ch.id}`, ch, {
+              ttlMs: CHALLENGES_CACHE_TTL_MS,
+            });
+          }
+          return list;
         }
-      });
-    }
 
-    return Array.from(merged.values()).sort((a, b) => {
-      if (a.isFeatured !== b.isFeatured) return a.isFeatured ? -1 : 1;
-      return b.participantCount - a.participantCount;
-    });
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'animeChallenges');
-  }
+        const queries = [
+          getDocs(
+            query(
+              collection(db, 'animeChallenges'),
+              where('visibility', '==', 'public'),
+              where('moderationStatus', '==', 'active'),
+              orderBy('participantCount', 'desc'),
+              limit(50)
+            )
+          ),
+          getDocs(
+            query(
+              collection(db, 'animeChallenges'),
+              where('visibility', '==', 'community'),
+              where('communityVisibility', '==', 'public'),
+              where('moderationStatus', '==', 'active'),
+              limit(30)
+            )
+          ).catch(() => null),
+        ];
+
+        if (currentUserId) {
+          queries.push(
+            getDocs(
+              query(
+                collection(db, 'animeChallenges'),
+                where('creatorId', '==', currentUserId),
+                limit(30)
+              )
+            ).catch(() => null)
+          );
+        }
+
+        const results = await Promise.all(queries);
+        const merged = new Map<string, AnimeChallenge>();
+        for (const snap of results) {
+          if (!snap) continue;
+          snap.docs.forEach((docSnap) => {
+            const mapped = mapDocToChallenge(docSnap.id, docSnap.data());
+            if (mapped.moderationStatus === 'active') {
+              merged.set(mapped.id, mapped);
+              setCacheValue(`challengeById:${mapped.id}`, mapped, {
+                ttlMs: CHALLENGES_CACHE_TTL_MS,
+              });
+            }
+          });
+        }
+
+        return Array.from(merged.values()).sort((a, b) => {
+          if (a.isFeatured !== b.isFeatured) return a.isFeatured ? -1 : 1;
+          return b.participantCount - a.participantCount;
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'animeChallenges');
+      }
+    },
+    {
+      ttlMs: CHALLENGES_CACHE_TTL_MS,
+      uid: communityId ? undefined : currentUserId,
+    }
+  );
 }
 
 export async function fetchChallengeById(
   challengeId: string
 ): Promise<AnimeChallenge | null> {
   if (!challengeId) return null;
-  try {
-    const snap = await getDoc(doc(db, 'animeChallenges', challengeId));
-    if (!snap.exists()) return null;
-    return mapDocToChallenge(snap.id, snap.data());
-  } catch (error) {
-    handleFirestoreError(
-      error,
-      OperationType.GET,
-      `animeChallenges/${challengeId}`
-    );
-  }
+  return getOrFetch(
+    `challengeById:${challengeId}`,
+    async () => {
+      try {
+        const snap = await getDoc(doc(db, 'animeChallenges', challengeId));
+        if (!snap.exists()) return null;
+        return mapDocToChallenge(snap.id, snap.data());
+      } catch (error) {
+        handleFirestoreError(
+          error,
+          OperationType.GET,
+          `animeChallenges/${challengeId}`
+        );
+      }
+    },
+    { ttlMs: CHALLENGES_CACHE_TTL_MS }
+  );
 }
 
 export async function createAnimeChallenge(
@@ -283,11 +318,16 @@ export async function createAnimeChallenge(
 
   try {
     await setDoc(docRef, payload);
+    invalidateCachePrefix('challenges:list:');
     const created = await getDoc(docRef);
-    return mapDocToChallenge(
+    const mapped = mapDocToChallenge(
       docRef.id,
       created.exists() ? created.data() : (payload as unknown as Record<string, unknown>)
     );
+    setCacheValue(`challengeById:${docRef.id}`, mapped, {
+      ttlMs: CHALLENGES_CACHE_TTL_MS,
+    });
+    return mapped;
   } catch (error) {
     handleFirestoreError(
       error,
@@ -341,6 +381,8 @@ export async function updateAnimeChallenge(
       status: derivedStatus,
       updatedAt: serverTimestamp(),
     });
+    invalidateCacheKey(`challengeById:${challengeId}`);
+    invalidateCachePrefix('challenges:list:');
   } catch (error) {
     handleFirestoreError(
       error,
@@ -356,6 +398,8 @@ export async function archiveAnimeChallenge(challengeId: string): Promise<void> 
       status: 'archived',
       updatedAt: serverTimestamp(),
     });
+    invalidateCacheKey(`challengeById:${challengeId}`);
+    invalidateCachePrefix('challenges:list:');
   } catch (error) {
     handleFirestoreError(
       error,
@@ -446,6 +490,10 @@ export async function joinAnimeChallenge(
     }).catch(() => undefined);
 
     const saved = await getDoc(partRef);
+    invalidateCacheKey(`challengeById:${challenge.id}`);
+    invalidateCachePrefix('challenges:list:');
+    invalidateCacheKey(`challengeParts:user:${profile.uid}`);
+    invalidateCacheKey(`challengeParts:challenge:${challenge.id}`);
     return mapDocToChallengeParticipation(
       partId,
       saved.exists() ? saved.data() : (payload as unknown as Record<string, unknown>)
@@ -472,6 +520,10 @@ export async function leaveAnimeChallenge(
       participantCount: Math.max(0, challenge.participantCount - 1),
     });
     await batch.commit();
+    invalidateCacheKey(`challengeById:${challenge.id}`);
+    invalidateCachePrefix('challenges:list:');
+    invalidateCacheKey(`challengeParts:user:${userId}`);
+    invalidateCacheKey(`challengeParts:challenge:${challenge.id}`);
   } catch (error) {
     handleFirestoreError(
       error,
@@ -554,6 +606,9 @@ export async function updateChallengeTargetProgress(params: {
       challengeId: challenge.id,
     }).catch(() => undefined);
 
+    invalidateCacheKey(`challengeParts:user:${participation.userId}`);
+    invalidateCacheKey(`challengeParts:challenge:${challenge.id}`);
+
     return {
       ...participation,
       completedAnimeIds: progress.validCompletedIds,
@@ -578,36 +633,52 @@ export async function fetchUserChallengeParticipations(
   userId: string
 ): Promise<ChallengeParticipation[]> {
   if (!userId) return [];
-  try {
-    const q = query(
-      collection(db, 'challengeParticipants'),
-      where('userId', '==', userId),
-      orderBy('updatedAt', 'desc'),
-      limit(50)
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => mapDocToChallengeParticipation(d.id, d.data()));
-  } catch {
-    return [];
-  }
+  return getOrFetch(
+    `challengeParts:user:${userId}`,
+    async () => {
+      try {
+        const q = query(
+          collection(db, 'challengeParticipants'),
+          where('userId', '==', userId),
+          orderBy('updatedAt', 'desc'),
+          limit(50)
+        );
+        const snap = await getDocs(q);
+        return snap.docs.map((d) =>
+          mapDocToChallengeParticipation(d.id, d.data())
+        );
+      } catch {
+        return [];
+      }
+    },
+    { ttlMs: CHALLENGES_CACHE_TTL_MS, uid: userId }
+  );
 }
 
 export async function fetchChallengeParticipants(
   challengeId: string
 ): Promise<ChallengeParticipation[]> {
   if (!challengeId) return [];
-  try {
-    const q = query(
-      collection(db, 'challengeParticipants'),
-      where('challengeId', '==', challengeId),
-      orderBy('progressPercent', 'desc'),
-      limit(50)
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => mapDocToChallengeParticipation(d.id, d.data()));
-  } catch {
-    return [];
-  }
+  return getOrFetch(
+    `challengeParts:challenge:${challengeId}`,
+    async () => {
+      try {
+        const q = query(
+          collection(db, 'challengeParticipants'),
+          where('challengeId', '==', challengeId),
+          orderBy('progressPercent', 'desc'),
+          limit(50)
+        );
+        const snap = await getDocs(q);
+        return snap.docs.map((d) =>
+          mapDocToChallengeParticipation(d.id, d.data())
+        );
+      } catch {
+        return [];
+      }
+    },
+    { ttlMs: CHALLENGES_CACHE_TTL_MS }
+  );
 }
 
 export async function inviteUsersToChallenge(

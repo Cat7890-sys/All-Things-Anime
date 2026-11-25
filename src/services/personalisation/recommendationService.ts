@@ -2,11 +2,11 @@ import {
   collection,
   deleteDoc,
   doc,
-  getDoc,
   getDocs,
+  limit,
+  query,
   serverTimestamp,
   setDoc,
-  updateDoc,
 } from 'firebase/firestore';
 import type {
   AnimeRecommendation,
@@ -18,6 +18,15 @@ import type {
 import { anilistService, parseAniListNumericId } from '../catalogue/anilistService';
 import type { NormalizedAnime } from '../catalogue/anilistTypes';
 import { db, handleFirestoreError, OperationType } from '../firebase';
+import {
+  getCachedValue,
+  getOrFetch,
+  invalidateCacheKey,
+  setCacheValue,
+} from '../memoryCache';
+
+const REC_FEEDBACK_CACHE_TTL_MS = 3 * 60_000;
+const REC_FEEDBACK_QUERY_LIMIT = 300;
 
 export const RECOMMENDATION_CATEGORY_META: Record<
   RecommendationCategoryId,
@@ -151,17 +160,25 @@ export async function getUserRecommendationFeedback(
 ): Promise<Record<string, RecommendationFeedbackType>> {
   if (!userId) return {};
   const path = `recommendationFeedback/${userId}/items`;
-  try {
-    const snap = await getDocs(collection(db, path));
-    const map: Record<string, RecommendationFeedbackType> = {};
-    for (const d of snap.docs) {
-      map[d.id] = d.data().feedbackType as RecommendationFeedbackType;
-    }
-    return map;
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, path);
-    return {};
-  }
+  return getOrFetch(
+    `recFeedback:${userId}`,
+    async () => {
+      try {
+        const snap = await getDocs(
+          query(collection(db, path), limit(REC_FEEDBACK_QUERY_LIMIT))
+        );
+        const map: Record<string, RecommendationFeedbackType> = {};
+        for (const d of snap.docs) {
+          map[d.id] = d.data().feedbackType as RecommendationFeedbackType;
+        }
+        return map;
+      } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, path);
+        return {};
+      }
+    },
+    { ttlMs: REC_FEEDBACK_CACHE_TTL_MS, uid: userId }
+  );
 }
 
 export async function recordRecommendationFeedback(
@@ -174,21 +191,25 @@ export async function recordRecommendationFeedback(
   const path = `recommendationFeedback/${userId}/items/${animeId}`;
   const docRef = doc(db, 'recommendationFeedback', userId, 'items', animeId);
   try {
-    const existingSnap = await getDoc(docRef);
-    if (existingSnap.exists()) {
-      await updateDoc(docRef, {
-        feedbackType,
-        reason: reason || '',
-        updatedAt: serverTimestamp(),
-      });
-    } else {
-      await setDoc(docRef, {
+    await setDoc(
+      docRef,
+      {
         animeId,
         feedbackType,
         reason: reason || '',
         updatedAt: serverTimestamp(),
-        createdAt: serverTimestamp(),
-      });
+      },
+      { merge: true }
+    );
+    const cacheKey = `recFeedback:${userId}`;
+    const cached =
+      getCachedValue<Record<string, RecommendationFeedbackType>>(cacheKey);
+    if (cached !== undefined) {
+      setCacheValue(
+        cacheKey,
+        { ...cached, [animeId]: feedbackType },
+        { ttlMs: REC_FEEDBACK_CACHE_TTL_MS, uid: userId }
+      );
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
@@ -201,8 +222,11 @@ export async function clearRecommendationFeedback(
   if (!userId) return;
   const path = `recommendationFeedback/${userId}/items`;
   try {
-    const snap = await getDocs(collection(db, path));
+    const snap = await getDocs(
+      query(collection(db, path), limit(REC_FEEDBACK_QUERY_LIMIT))
+    );
     await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
+    invalidateCacheKey(`recFeedback:${userId}`);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }

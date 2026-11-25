@@ -23,10 +23,15 @@ export const NotificationToastContainer: React.FC<NotificationToastContainerProp
   const [toasts, setToasts] = useState<AtaNotification[]>([]);
   const [popupEnabled, setPopupEnabled] = useState(true);
   const [quietHoursActive, setQuietHoursActive] = useState(false);
+  const popupEnabledRef = useRef(true);
+  const quietHoursActiveRef = useRef(false);
   const lastSeenIdRef = useRef<string | null>(null);
   const isInitialLoadRef = useRef(true);
 
   useEffect(() => {
+    lastSeenIdRef.current = null;
+    isInitialLoadRef.current = true;
+
     if (!currentUserId) {
       setToasts([]);
       return;
@@ -35,8 +40,12 @@ export const NotificationToastContainer: React.FC<NotificationToastContainerProp
     const unsubSettings = subscribeToNotificationSettings(
       currentUserId,
       (settings) => {
-        setPopupEnabled(settings.popupEnabled);
-        setQuietHoursActive(isQuietHoursActive(settings));
+        const nextPopup = settings.popupEnabled;
+        const nextQuiet = isQuietHoursActive(settings);
+        popupEnabledRef.current = nextPopup;
+        quietHoursActiveRef.current = nextQuiet;
+        setPopupEnabled(nextPopup);
+        setQuietHoursActive(nextQuiet);
       },
       () => {}
     );
@@ -62,7 +71,11 @@ export const NotificationToastContainer: React.FC<NotificationToastContainerProp
           lastSeenIdRef.current = latest.id;
 
           // Check if unread and not quiet hours / popup enabled
-          if (!latest.isRead && popupEnabled && !quietHoursActive) {
+          if (
+            !latest.isRead &&
+            popupEnabledRef.current &&
+            !quietHoursActiveRef.current
+          ) {
             setToasts((prev) => {
               // Avoid duplicates
               if (prev.some((t) => t.id === latest.id)) return prev;
@@ -78,7 +91,7 @@ export const NotificationToastContainer: React.FC<NotificationToastContainerProp
       unsubSettings();
       unsubNotifs();
     };
-  }, [currentUserId, popupEnabled, quietHoursActive]);
+  }, [currentUserId]);
 
   const handleCloseToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));

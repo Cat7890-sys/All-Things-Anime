@@ -17,6 +17,9 @@ import type {
   UserAchievement,
 } from '../../types';
 import { db, functions } from '../firebase';
+import { getOrFetch } from '../memoryCache';
+
+const GAMIFICATION_CACHE_TTL_MS = 2 * 60_000;
 
 function toDateOrNull(value: unknown): Date | null {
   if (value instanceof Timestamp) return value.toDate();
@@ -62,109 +65,139 @@ export function mapDocToLeaderboardProfile(
 export async function fetchOverallLeaderboard(
   maxEntries = 30
 ): Promise<LeaderboardProfile[]> {
-  try {
-    const q = query(
-      collection(db, 'leaderboardProfiles'),
-      orderBy('totalPoints', 'desc'),
-      limit(maxEntries)
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => mapDocToLeaderboardProfile(d.id, d.data()));
-  } catch {
-    return [];
-  }
+  const safeLimit = Math.min(Math.max(1, maxEntries), 100);
+  return getOrFetch(
+    `leaderboard:overall:${safeLimit}`,
+    async () => {
+      try {
+        const q = query(
+          collection(db, 'leaderboardProfiles'),
+          orderBy('totalPoints', 'desc'),
+          limit(safeLimit)
+        );
+        const snap = await getDocs(q);
+        return snap.docs.map((d) =>
+          mapDocToLeaderboardProfile(d.id, d.data())
+        );
+      } catch {
+        return [];
+      }
+    },
+    { ttlMs: GAMIFICATION_CACHE_TTL_MS }
+  );
 }
 
 export async function fetchUserLeaderboardProfile(
   userId: string
 ): Promise<LeaderboardProfile | null> {
   if (!userId) return null;
-  try {
-    const snap = await getDoc(doc(db, 'leaderboardProfiles', userId));
-    if (!snap.exists()) return null;
-    return mapDocToLeaderboardProfile(snap.id, snap.data());
-  } catch {
-    return null;
-  }
+  return getOrFetch(
+    `leaderboard:user:${userId}`,
+    async () => {
+      try {
+        const snap = await getDoc(doc(db, 'leaderboardProfiles', userId));
+        if (!snap.exists()) return null;
+        return mapDocToLeaderboardProfile(snap.id, snap.data());
+      } catch {
+        return null;
+      }
+    },
+    { ttlMs: GAMIFICATION_CACHE_TTL_MS, uid: userId }
+  );
 }
 
 export async function fetchCommunityLeaderboard(): Promise<
   CommunityLeaderboardEntry[]
 > {
-  try {
-    const q = query(
-      collection(db, 'animeChallenges'),
-      where('visibility', '==', 'community'),
-      where('communityVisibility', '==', 'public'),
-      where('moderationStatus', '==', 'active'),
-      limit(80)
-    );
-    const snap = await getDocs(q);
-    const byCommunity = new Map<string, CommunityLeaderboardEntry>();
+  return getOrFetch(
+    'leaderboard:community',
+    async () => {
+      try {
+        const q = query(
+          collection(db, 'animeChallenges'),
+          where('visibility', '==', 'community'),
+          where('communityVisibility', '==', 'public'),
+          where('moderationStatus', '==', 'active'),
+          limit(80)
+        );
+        const snap = await getDocs(q);
+        const byCommunity = new Map<string, CommunityLeaderboardEntry>();
 
-    snap.docs.forEach((d) => {
-      const data = d.data();
-      const communityId = String(data.communityId || '');
-      const communityName = String(data.communityName || 'Community Club');
-      if (!communityId) return;
+        snap.docs.forEach((d) => {
+          const data = d.data();
+          const communityId = String(data.communityId || '');
+          const communityName = String(data.communityName || 'Community Club');
+          if (!communityId) return;
 
-      const existing = byCommunity.get(communityId) || {
-        communityId,
-        communityName,
-        totalChallenges: 0,
-        totalParticipants: 0,
-        totalCompletions: 0,
-        totalScore: 0,
-      };
+          const existing = byCommunity.get(communityId) || {
+            communityId,
+            communityName,
+            totalChallenges: 0,
+            totalParticipants: 0,
+            totalCompletions: 0,
+            totalScore: 0,
+          };
 
-      const participants =
-        typeof data.participantCount === 'number' ? data.participantCount : 0;
-      const completions =
-        typeof data.completedCount === 'number' ? data.completedCount : 0;
+          const participants =
+            typeof data.participantCount === 'number'
+              ? data.participantCount
+              : 0;
+          const completions =
+            typeof data.completedCount === 'number' ? data.completedCount : 0;
 
-      existing.totalChallenges += 1;
-      existing.totalParticipants += participants;
-      existing.totalCompletions += completions;
-      existing.totalScore =
-        existing.totalChallenges * 15 +
-        existing.totalParticipants * 10 +
-        existing.totalCompletions * 40;
-      byCommunity.set(communityId, existing);
-    });
+          existing.totalChallenges += 1;
+          existing.totalParticipants += participants;
+          existing.totalCompletions += completions;
+          existing.totalScore =
+            existing.totalChallenges * 15 +
+            existing.totalParticipants * 10 +
+            existing.totalCompletions * 40;
+          byCommunity.set(communityId, existing);
+        });
 
-    return Array.from(byCommunity.values()).sort(
-      (a, b) => b.totalScore - a.totalScore
-    );
-  } catch {
-    return [];
-  }
+        return Array.from(byCommunity.values()).sort(
+          (a, b) => b.totalScore - a.totalScore
+        );
+      } catch {
+        return [];
+      }
+    },
+    { ttlMs: GAMIFICATION_CACHE_TTL_MS }
+  );
 }
 
 export async function fetchUserAchievements(
   userId: string
 ): Promise<UserAchievement[]> {
   if (!userId) return [];
-  try {
-    const q = query(
-      collection(db, 'userAchievements'),
-      where('userId', '==', userId)
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => {
-      const data = d.data();
-      return {
-        id: d.id,
-        userId: String(data.userId || userId),
-        achievementId: data.achievementId as AchievementId,
-        title: String(data.title || ''),
-        description: String(data.description || ''),
-        sourceEventId: String(data.sourceEventId || ''),
-        unlockedAt: toDateOrNull(data.unlockedAt),
-      };
-    });
-  } catch {
-    return [];
-  }
+  return getOrFetch(
+    `userAchievements:${userId}`,
+    async () => {
+      try {
+        const q = query(
+          collection(db, 'userAchievements'),
+          where('userId', '==', userId),
+          limit(100)
+        );
+        const snap = await getDocs(q);
+        return snap.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            userId: String(data.userId || userId),
+            achievementId: data.achievementId as AchievementId,
+            title: String(data.title || ''),
+            description: String(data.description || ''),
+            sourceEventId: String(data.sourceEventId || ''),
+            unlockedAt: toDateOrNull(data.unlockedAt),
+          };
+        });
+      } catch {
+        return [];
+      }
+    },
+    { ttlMs: GAMIFICATION_CACHE_TTL_MS, uid: userId }
+  );
 }
 
 export async function syncChallengeRewardsSafely(

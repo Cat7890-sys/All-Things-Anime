@@ -20,7 +20,8 @@ import type {
   AtaMessage,
   AtaUserAccount,
 } from '../../types';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { auth, db, handleFirestoreError, OperationType } from '../firebase';
+import { subscribeShared } from '../sharedSubscriptionManager';
 import { checkBlockBetween } from '../socialGraphService';
 import {
   canEditMessageWithinWindow,
@@ -43,45 +44,56 @@ export function subscribeToRecentMessages(
   conversationId: string,
   pageSize: number,
   onMessages: (result: PaginatedMessagesResult) => void,
-  onError: (message: string) => void
+  onError: (message: string) => void,
+  viewerUid?: string
 ): Unsubscribe {
   if (!conversationId) {
     onMessages({ messages: [], oldestCursor: null, hasMore: false });
     return () => {};
   }
 
+  const effectiveUid = viewerUid || auth.currentUser?.uid || undefined;
   const path = `conversations/${conversationId}/messages`;
-  const q = query(
-    collection(db, 'conversations', conversationId, 'messages'),
-    orderBy('createdAt', 'desc'),
-    limit(pageSize)
-  );
+  return subscribeShared<PaginatedMessagesResult>(
+    `conversationMessages:${conversationId}:${pageSize}:${effectiveUid || 'anon'}`,
+    'messaging:messages',
+    (emitData, emitError) => {
+      const q = query(
+        collection(db, 'conversations', conversationId, 'messages'),
+        orderBy('createdAt', 'desc'),
+        limit(pageSize)
+      );
 
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const oldestCursor =
-        snapshot.docs.length > 0
-          ? snapshot.docs[snapshot.docs.length - 1]
-          : null;
-      const messages = snapshot.docs
-        .map((d) => mapDocToMessage(d.id, d.data()))
-        .reverse();
-      onMessages({
-        messages,
-        oldestCursor,
-        hasMore: snapshot.docs.length === pageSize,
-      });
+      return onSnapshot(
+        q,
+        (snapshot) => {
+          const oldestCursor =
+            snapshot.docs.length > 0
+              ? snapshot.docs[snapshot.docs.length - 1]
+              : null;
+          const messages = snapshot.docs
+            .map((d) => mapDocToMessage(d.id, d.data()))
+            .reverse();
+          emitData({
+            messages,
+            oldestCursor,
+            hasMore: snapshot.docs.length === pageSize,
+          });
+        },
+        (error) => {
+          try {
+            handleFirestoreError(error, OperationType.LIST, path);
+          } catch (err) {
+            emitError(
+              err instanceof Error ? err.message : 'Unable to load messages.'
+            );
+          }
+        }
+      );
     },
-    (error) => {
-      try {
-        handleFirestoreError(error, OperationType.LIST, path);
-      } catch (err) {
-        onError(
-          err instanceof Error ? err.message : 'Unable to load messages.'
-        );
-      }
-    }
+    onMessages,
+    onError,
+    effectiveUid ? { uid: effectiveUid } : undefined
   );
 }
 

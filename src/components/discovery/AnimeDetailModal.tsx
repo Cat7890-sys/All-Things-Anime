@@ -20,7 +20,7 @@ import type { NormalizedAnime } from '../../services/catalogue/anilistTypes';
 import { MangaImage } from '../MangaImage';
 import { useAuth } from '../../hooks/useAuth';
 import {
-  getUserAnimeList,
+  getAnimeTrackerItem,
   incrementWatchedEpisode,
   upsertAnimeListItem,
 } from '../../services/personalisation/animeTrackerService';
@@ -76,21 +76,22 @@ export const AnimeDetailModal: React.FC<AnimeDetailModalProps> = ({
       })
       .catch(() => {});
 
+    let cancelled = false;
     if (firebaseUser) {
-      void getUserAnimeList(firebaseUser.uid).then((list) => {
-        const found = list.find(
-          (it) => String(it.animeId) === String(anime.id)
-        );
-        if (found) {
-          setUserTrackStatus(found.status);
-          setUserEpisodesWatched(found.episodesWatched);
+      void getAnimeTrackerItem(firebaseUser.uid, String(anime.id)).then(
+        (found) => {
+          if (!cancelled && found) {
+            setUserTrackStatus(found.status);
+            setUserEpisodesWatched(found.episodesWatched);
+          }
         }
-      });
+      );
     }
 
     void getSimilarAnimeForDetail(anime, [], {}).then(setSimilarAnimeList);
 
     return () => {
+      cancelled = true;
       controller.abort();
     };
   }, [anime, firebaseUser]);

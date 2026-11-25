@@ -11,6 +11,14 @@ import type {
   UpdateNotificationSettingsInput,
 } from '../../types';
 import { db, handleFirestoreError, OperationType } from '../firebase';
+import {
+  getCachedValue,
+  getOrFetch,
+  setCacheValue,
+} from '../memoryCache';
+import { subscribeShared } from '../sharedSubscriptionManager';
+
+const NOTIFICATION_SETTINGS_TTL_MS = 5 * 60 * 1000;
 
 export const DEFAULT_NOTIFICATION_SETTINGS: Omit<
   AtaNotificationSettings,
@@ -87,7 +95,8 @@ export function mapDocToNotificationSettings(
 }
 
 export async function getNotificationSettings(
-  userId: string
+  userId: string,
+  forceRefresh = false
 ): Promise<AtaNotificationSettings> {
   if (!userId) {
     return {
@@ -97,15 +106,40 @@ export async function getNotificationSettings(
     };
   }
   const path = `notificationSettings/${userId}`;
-  try {
-    const snap = await getDoc(doc(db, 'notificationSettings', userId));
-    return mapDocToNotificationSettings(
-      userId,
-      snap.exists() ? snap.data() : null
-    );
-  } catch (error) {
-    handleFirestoreError(error, OperationType.GET, path);
+  const cacheKey = `notificationSettings:${userId}`;
+  if (forceRefresh) {
+    // Bypass cache when explicitly refreshing
+    try {
+      const snap = await getDoc(doc(db, 'notificationSettings', userId));
+      const mapped = mapDocToNotificationSettings(
+        userId,
+        snap.exists() ? snap.data() : null
+      );
+      setCacheValue(cacheKey, mapped, {
+        ttlMs: NOTIFICATION_SETTINGS_TTL_MS,
+        uid: userId,
+      });
+      return mapped;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.GET, path);
+    }
   }
+
+  return getOrFetch(
+    cacheKey,
+    async () => {
+      try {
+        const snap = await getDoc(doc(db, 'notificationSettings', userId));
+        return mapDocToNotificationSettings(
+          userId,
+          snap.exists() ? snap.data() : null
+        );
+      } catch (error) {
+        handleFirestoreError(error, OperationType.GET, path);
+      }
+    },
+    { ttlMs: NOTIFICATION_SETTINGS_TTL_MS, uid: userId }
+  );
 }
 
 export function subscribeToNotificationSettings(
@@ -123,27 +157,39 @@ export function subscribeToNotificationSettings(
   }
 
   const path = `notificationSettings/${userId}`;
-  return onSnapshot(
-    doc(db, 'notificationSettings', userId),
-    (snapshot) => {
-      onSettings(
-        mapDocToNotificationSettings(
-          userId,
-          snapshot.exists() ? snapshot.data() : null
-        )
-      );
-    },
-    (error) => {
-      try {
-        handleFirestoreError(error, OperationType.GET, path);
-      } catch (err) {
-        onError?.(
-          err instanceof Error
-            ? err.message
-            : 'Unable to sync notification settings.'
-        );
-      }
-    }
+  const channelKey = `notificationSettings:${userId}`;
+  return subscribeShared<AtaNotificationSettings>(
+    channelKey,
+    'notificationSettings',
+    (emitData, emitError) =>
+      onSnapshot(
+        doc(db, 'notificationSettings', userId),
+        (snapshot) => {
+          const mapped = mapDocToNotificationSettings(
+            userId,
+            snapshot.exists() ? snapshot.data() : null
+          );
+          setCacheValue(channelKey, mapped, {
+            ttlMs: NOTIFICATION_SETTINGS_TTL_MS,
+            uid: userId,
+          });
+          emitData(mapped);
+        },
+        (error) => {
+          try {
+            handleFirestoreError(error, OperationType.GET, path);
+          } catch (err) {
+            emitError(
+              err instanceof Error
+                ? err.message
+                : 'Unable to sync notification settings.'
+            );
+          }
+        }
+      ),
+    onSettings,
+    onError,
+    { uid: userId }
   );
 }
 
@@ -156,8 +202,10 @@ export async function updateNotificationSettings(
   }
 
   const path = `notificationSettings/${userId}`;
+  const cacheKey = `notificationSettings:${userId}`;
   try {
-    const current = await getNotificationSettings(userId);
+    const cached = getCachedValue<AtaNotificationSettings>(cacheKey);
+    const current = cached ?? (await getNotificationSettings(userId));
     const updated: AtaNotificationSettings = {
       ...current,
       ...input,
@@ -184,6 +232,10 @@ export async function updateNotificationSettings(
     };
 
     await setDoc(doc(db, 'notificationSettings', userId), payload);
+    setCacheValue(cacheKey, updated, {
+      ttlMs: NOTIFICATION_SETTINGS_TTL_MS,
+      uid: userId,
+    });
     return updated;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);

@@ -1,11 +1,17 @@
 import {
   collection,
   getDocs,
+  limit,
+  query,
   Timestamp,
 } from 'firebase/firestore';
 import type { CatalogueOverrideRecord } from '../../types';
 import { db } from '../firebase';
+import { getOrFetch } from '../memoryCache';
 import type { NormalizedAnime } from './anilistTypes';
+
+const CATALOGUE_OVERRIDES_CACHE_TTL_MS = 10 * 60_000;
+const CATALOGUE_OVERRIDES_QUERY_LIMIT = 500;
 
 function toDateOrNull(value: unknown): Date | null {
   if (value instanceof Timestamp) return value.toDate();
@@ -46,19 +52,30 @@ export function mapCatalogueOverrideDoc(
 export async function fetchCatalogueOverrides(): Promise<
   Record<number, CatalogueOverrideRecord>
 > {
-  try {
-    const snap = await getDocs(collection(db, 'catalogueOverrides'));
-    const byAnimeId: Record<number, CatalogueOverrideRecord> = {};
-    snap.forEach((docSnap) => {
-      const mapped = mapCatalogueOverrideDoc(docSnap.id, docSnap.data());
-      if (mapped.animeId > 0) {
-        byAnimeId[mapped.animeId] = mapped;
+  return getOrFetch(
+    'catalogueOverrides:all',
+    async () => {
+      try {
+        const snap = await getDocs(
+          query(
+            collection(db, 'catalogueOverrides'),
+            limit(CATALOGUE_OVERRIDES_QUERY_LIMIT)
+          )
+        );
+        const byAnimeId: Record<number, CatalogueOverrideRecord> = {};
+        snap.forEach((docSnap) => {
+          const mapped = mapCatalogueOverrideDoc(docSnap.id, docSnap.data());
+          if (mapped.animeId > 0) {
+            byAnimeId[mapped.animeId] = mapped;
+          }
+        });
+        return byAnimeId;
+      } catch {
+        return {};
       }
-    });
-    return byAnimeId;
-  } catch {
-    return {};
-  }
+    },
+    { ttlMs: CATALOGUE_OVERRIDES_CACHE_TTL_MS }
+  );
 }
 
 export interface CatalogueItemWithOverride {

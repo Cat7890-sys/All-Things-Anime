@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, CheckCheck, Filter, Inbox, Settings, Trash2, Check, ExternalLink, Loader2, AlertCircle } from 'lucide-react';
 import type { AtaNotification, NotificationCategory, NavDestinationId } from '../types';
 import {
   subscribeToUserNotifications,
+  fetchOlderNotifications,
   markNotificationRead,
   markAllNotificationsRead,
   dismissNotification,
@@ -31,7 +32,10 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({
   onSelectRouteTarget,
 }) => {
   const [notifications, setNotifications] = useState<AtaNotification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [olderNotifications, setOlderNotifications] = useState<AtaNotification[]>([]);
+  const [hasMoreOlder, setHasMoreOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const hasLoadedOlderRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tabMode, setTabMode] = useState<TabMode>('all');
@@ -39,9 +43,12 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({
   const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
+    setOlderNotifications([]);
+    setHasMoreOlder(false);
+    hasLoadedOlderRef.current = false;
+
     if (!currentUserId) {
       setNotifications([]);
-      setUnreadCount(0);
       setLoading(false);
       return;
     }
@@ -52,7 +59,9 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({
       50,
       (result) => {
         setNotifications(result.notifications);
-        setUnreadCount(result.unreadCount);
+        if (!hasLoadedOlderRef.current) {
+          setHasMoreOlder(result.notifications.length >= 50);
+        }
         setLoading(false);
       },
       (errMessage) => {
@@ -66,9 +75,56 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({
     };
   }, [currentUserId]);
 
+  const allNotifications = useMemo(() => {
+    if (olderNotifications.length === 0) return notifications;
+    const liveIds = new Set(notifications.map((n) => n.id));
+    return [
+      ...notifications,
+      ...olderNotifications.filter((n) => !liveIds.has(n.id)),
+    ];
+  }, [notifications, olderNotifications]);
+
+  const unreadCount = useMemo(
+    () => allNotifications.filter((n) => !n.isRead).length,
+    [allNotifications]
+  );
+
+  const handleLoadOlder = async () => {
+    if (!currentUserId || loadingOlder) return;
+    const lastDated = [...allNotifications]
+      .reverse()
+      .find((n) => n.createdAt !== null)?.createdAt;
+    if (!lastDated) {
+      setHasMoreOlder(false);
+      return;
+    }
+
+    setLoadingOlder(true);
+    setError(null);
+    try {
+      const res = await fetchOlderNotifications(currentUserId, lastDated, 50);
+      hasLoadedOlderRef.current = true;
+      setOlderNotifications((prev) => {
+        const seen = new Set(prev.map((p) => p.id));
+        const appended = res.notifications.filter((n) => !seen.has(n.id));
+        return [...prev, ...appended];
+      });
+      setHasMoreOlder(res.hasMore);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Failed to load older notifications.'
+      );
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
+
   const handleNotificationClick = async (notif: AtaNotification) => {
     if (!notif.isRead) {
       await markNotificationRead(notif.id);
+      setOlderNotifications((prev) =>
+        prev.map((n) => (n.id === notif.id ? { ...n, isRead: true } : n))
+      );
     }
     const routeInfo = getNotificationRouteInfo(notif);
     if (onSelectRouteTarget) {
@@ -83,6 +139,7 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({
     setActionLoading(true);
     try {
       await markAllNotificationsRead(currentUserId);
+      setOlderNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to mark notifications read.');
     } finally {
@@ -94,13 +151,14 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({
     e.stopPropagation();
     try {
       await dismissNotification(notificationId);
+      setOlderNotifications((prev) => prev.filter((n) => n.id !== notificationId));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to dismiss notification.');
     }
   };
 
   // Filter notifications
-  const filteredNotifications = notifications.filter((notif) => {
+  const filteredNotifications = allNotifications.filter((notif) => {
     if (tabMode === 'unread' && notif.isRead) {
       return false;
     }
@@ -161,7 +219,7 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({
                 : 'border-transparent text-[#52576B] dark:text-[#A7A9B8] hover:text-[#090B14] dark:hover:text-white'
             }`}
           >
-            All Activity ({notifications.length})
+            All Activity ({allNotifications.length})
           </button>
           <button
             type="button"
@@ -298,6 +356,18 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({
                   </div>
                 </div>
               ))}
+              {hasMoreOlder && (
+                <div className="pt-2 flex justify-center">
+                  <button
+                    type="button"
+                    disabled={loadingOlder}
+                    onClick={() => void handleLoadOlder()}
+                    className="px-4 py-2 rounded-xl bg-white dark:bg-[#171923] border border-[#D4D7E2] dark:border-[#303342] text-xs font-bold text-[#090B14] dark:text-white hover:border-[#EF3038] transition-colors disabled:opacity-50"
+                  >
+                    {loadingOlder ? 'Loading older notifications...' : 'Load older notifications'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

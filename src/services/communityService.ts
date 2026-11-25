@@ -38,10 +38,39 @@ import {
   storage,
 } from './firebase';
 import {
+  getCachedValue,
+  getOrFetch,
+  invalidateCacheKey,
+  invalidateCachePrefix,
+  setCacheValue,
+} from './memoryCache';
+import {
   validateCreateCommunityForm,
   validateJoinRequestMessage,
   validateUpdateCommunityForm,
 } from './validation';
+
+const COMMUNITY_LIST_TTL_MS = 3 * 60_000;
+const COMMUNITY_DETAIL_TTL_MS = 2 * 60_000;
+
+function warmCommunityDocs(communities: AtaCommunity[]): void {
+  for (const comm of communities) {
+    setCacheValue(`communityById:${comm.id}`, comm, {
+      ttlMs: COMMUNITY_DETAIL_TTL_MS,
+    });
+  }
+}
+
+function invalidateCommunityListsAndDetail(communityId: string, ownerId?: string): void {
+  invalidateCacheKey(`communityById:${communityId}`);
+  invalidateCachePrefix('communities:popular:');
+  invalidateCachePrefix('communities:recent:');
+  if (ownerId) {
+    invalidateCacheKey(`communities:owned:${ownerId}`);
+  } else {
+    invalidateCachePrefix('communities:owned:');
+  }
+}
 
 function toDateOrNull(value: unknown): Date | null {
   if (value instanceof Timestamp) {
@@ -214,119 +243,172 @@ export async function isCommunitySlugAvailable(slug: string): Promise<boolean> {
 export async function fetchPopularCommunities(
   maxCount = 40
 ): Promise<AtaCommunity[]> {
-  try {
-    const q = query(
-      collection(db, 'communities'),
-      where('status', '==', 'active'),
-      orderBy('memberCount', 'desc'),
-      limit(maxCount)
-    );
-    const snapshot = await getDocs(q);
-    return snapshot.docs
-      .filter((d) => d.data().moderationStatus !== 'removed_by_moderator')
-      .map((d) => mapDocToCommunity(d.id, d.data()));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'communities');
-  }
+  return getOrFetch(
+    `communities:popular:${maxCount}`,
+    async () => {
+      try {
+        const q = query(
+          collection(db, 'communities'),
+          where('status', '==', 'active'),
+          orderBy('memberCount', 'desc'),
+          limit(maxCount)
+        );
+        const snapshot = await getDocs(q);
+        const results = snapshot.docs
+          .filter((d) => d.data().moderationStatus !== 'removed_by_moderator')
+          .map((d) => mapDocToCommunity(d.id, d.data()));
+        warmCommunityDocs(results);
+        return results;
+      } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'communities');
+      }
+    },
+    { ttlMs: COMMUNITY_LIST_TTL_MS }
+  );
 }
 
 export async function fetchRecentCommunities(
   maxCount = 40
 ): Promise<AtaCommunity[]> {
-  try {
-    const q = query(
-      collection(db, 'communities'),
-      where('status', '==', 'active'),
-      orderBy('createdAt', 'desc'),
-      limit(maxCount)
-    );
-    const snapshot = await getDocs(q);
-    return snapshot.docs
-      .filter((d) => d.data().moderationStatus !== 'removed_by_moderator')
-      .map((d) => mapDocToCommunity(d.id, d.data()));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'communities');
-  }
+  return getOrFetch(
+    `communities:recent:${maxCount}`,
+    async () => {
+      try {
+        const q = query(
+          collection(db, 'communities'),
+          where('status', '==', 'active'),
+          orderBy('createdAt', 'desc'),
+          limit(maxCount)
+        );
+        const snapshot = await getDocs(q);
+        const results = snapshot.docs
+          .filter((d) => d.data().moderationStatus !== 'removed_by_moderator')
+          .map((d) => mapDocToCommunity(d.id, d.data()));
+        warmCommunityDocs(results);
+        return results;
+      } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'communities');
+      }
+    },
+    { ttlMs: COMMUNITY_LIST_TTL_MS }
+  );
 }
 
 export async function fetchOwnedCommunities(
   ownerId: string
 ): Promise<AtaCommunity[]> {
   if (!ownerId) return [];
-  try {
-    const q = query(
-      collection(db, 'communities'),
-      where('ownerId', '==', ownerId),
-      orderBy('createdAt', 'desc'),
-      limit(30)
-    );
-    const snapshot = await getDocs(q);
-    return snapshot.docs
-      .filter((d) => d.data().moderationStatus !== 'removed_by_moderator')
-      .map((d) => mapDocToCommunity(d.id, d.data()));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'communities');
-  }
+  return getOrFetch(
+    `communities:owned:${ownerId}`,
+    async () => {
+      try {
+        const q = query(
+          collection(db, 'communities'),
+          where('ownerId', '==', ownerId),
+          orderBy('createdAt', 'desc'),
+          limit(30)
+        );
+        const snapshot = await getDocs(q);
+        const results = snapshot.docs
+          .filter((d) => d.data().moderationStatus !== 'removed_by_moderator')
+          .map((d) => mapDocToCommunity(d.id, d.data()));
+        warmCommunityDocs(results);
+        return results;
+      } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'communities');
+      }
+    },
+    { ttlMs: COMMUNITY_LIST_TTL_MS, uid: ownerId }
+  );
 }
 
 export async function fetchCommunityById(
   communityId: string
 ): Promise<AtaCommunity | null> {
   if (!communityId) return null;
-  try {
-    const snap = await getDoc(doc(db, 'communities', communityId));
-    if (!snap.exists()) return null;
-    if (snap.data().moderationStatus === 'removed_by_moderator') return null;
-    return mapDocToCommunity(snap.id, snap.data());
-  } catch (error) {
-    handleFirestoreError(
-      error,
-      OperationType.GET,
-      `communities/${communityId}`
-    );
-  }
+  return getOrFetch(
+    `communityById:${communityId}`,
+    async () => {
+      try {
+        const snap = await getDoc(doc(db, 'communities', communityId));
+        if (!snap.exists()) return null;
+        if (snap.data().moderationStatus === 'removed_by_moderator') return null;
+        return mapDocToCommunity(snap.id, snap.data());
+      } catch (error) {
+        handleFirestoreError(
+          error,
+          OperationType.GET,
+          `communities/${communityId}`
+        );
+      }
+    },
+    { ttlMs: COMMUNITY_DETAIL_TTL_MS }
+  );
 }
 
 export async function fetchUserMemberships(
   uid: string
 ): Promise<CommunityMembership[]> {
   if (!uid) return [];
-  try {
-    const q = query(
-      collection(db, 'communityMemberships'),
-      where('userId', '==', uid),
-      orderBy('joinedAt', 'desc'),
-      limit(60)
-    );
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map((d) => mapDocToMembership(d.id, d.data()));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'communityMemberships');
-  }
+  return getOrFetch(
+    `communityMemberships:user:${uid}`,
+    async () => {
+      try {
+        const q = query(
+          collection(db, 'communityMemberships'),
+          where('userId', '==', uid),
+          orderBy('joinedAt', 'desc'),
+          limit(60)
+        );
+        const snapshot = await getDocs(q);
+        const list = snapshot.docs.map((d) => mapDocToMembership(d.id, d.data()));
+        for (const m of list) {
+          setCacheValue(`myMembership:${m.communityId}:${uid}`, m, {
+            ttlMs: COMMUNITY_DETAIL_TTL_MS,
+            uid,
+          });
+        }
+        return list;
+      } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'communityMemberships');
+      }
+    },
+    { ttlMs: COMMUNITY_DETAIL_TTL_MS, uid }
+  );
 }
 
 export async function fetchUserPendingJoinRequestMap(
   uid: string
 ): Promise<Record<string, CommunityJoinRequest>> {
   if (!uid) return {};
-  try {
-    const q = query(
-      collection(db, 'communityJoinRequests'),
-      where('userId', '==', uid),
-      where('status', '==', 'pending'),
-      orderBy('updatedAt', 'desc'),
-      limit(50)
-    );
-    const snapshot = await getDocs(q);
-    const map: Record<string, CommunityJoinRequest> = {};
-    for (const d of snapshot.docs) {
-      const req = mapDocToJoinRequest(d.id, d.data());
-      map[req.communityId] = req;
-    }
-    return map;
-  } catch {
-    return {};
-  }
+  return getOrFetch(
+    `myPendingJoinRequests:${uid}`,
+    async () => {
+      try {
+        const q = query(
+          collection(db, 'communityJoinRequests'),
+          where('userId', '==', uid),
+          where('status', '==', 'pending'),
+          orderBy('updatedAt', 'desc'),
+          limit(50)
+        );
+        const snapshot = await getDocs(q);
+        const map: Record<string, CommunityJoinRequest> = {};
+        for (const d of snapshot.docs) {
+          const req = mapDocToJoinRequest(d.id, d.data());
+          map[req.communityId] = req;
+          setCacheValue(`myJoinRequest:${req.communityId}:${uid}`, req, {
+            ttlMs: COMMUNITY_DETAIL_TTL_MS,
+            uid,
+          });
+        }
+        return map;
+      } catch {
+        return {};
+      }
+    },
+    { ttlMs: COMMUNITY_DETAIL_TTL_MS, uid }
+  );
 }
 
 export async function createCommunity(
@@ -478,7 +560,13 @@ export async function createCommunity(
     if (!createdSnap.exists()) {
       throw new Error('Community was created but could not be reloaded.');
     }
-    return mapDocToCommunity(createdSnap.id, createdSnap.data());
+    const created = mapDocToCommunity(createdSnap.id, createdSnap.data());
+    invalidateCommunityListsAndDetail(created.id, currentUser.uid);
+    invalidateCacheKey(`communityMemberships:user:${currentUser.uid}`);
+    setCacheValue(`communityById:${created.id}`, created, {
+      ttlMs: COMMUNITY_DETAIL_TTL_MS,
+    });
+    return created;
   } catch (error) {
     if (avatarPath) await bestEffortDeleteStorageObject(avatarPath);
     if (coverPath) await bestEffortDeleteStorageObject(coverPath);
@@ -631,7 +719,12 @@ export async function updateCommunityDetails(
     if (!updatedSnap.exists()) {
       throw new Error('Community could not be reloaded after updating.');
     }
-    return mapDocToCommunity(updatedSnap.id, updatedSnap.data());
+    const updated = mapDocToCommunity(updatedSnap.id, updatedSnap.data());
+    invalidateCommunityListsAndDetail(updated.id, updated.ownerId);
+    setCacheValue(`communityById:${updated.id}`, updated, {
+      ttlMs: COMMUNITY_DETAIL_TTL_MS,
+    });
+    return updated;
   } catch (error) {
     if (newAvatarPath) await bestEffortDeleteStorageObject(newAvatarPath);
     if (newCoverPath) await bestEffortDeleteStorageObject(newCoverPath);
@@ -680,7 +773,12 @@ export async function updateCommunityOwnerSettings(
     if (!updatedSnap.exists()) {
       throw new Error('Community could not be reloaded.');
     }
-    return mapDocToCommunity(updatedSnap.id, updatedSnap.data());
+    const updated = mapDocToCommunity(updatedSnap.id, updatedSnap.data());
+    invalidateCommunityListsAndDetail(updated.id, updated.ownerId);
+    setCacheValue(`communityById:${updated.id}`, updated, {
+      ttlMs: COMMUNITY_DETAIL_TTL_MS,
+    });
+    return updated;
   } catch (error) {
     if (
       error instanceof Error &&
@@ -742,6 +840,10 @@ export async function deleteCommunity(community: AtaCommunity): Promise<void> {
     }
 
     await batch.commit();
+    invalidateCommunityListsAndDetail(community.id, community.ownerId);
+    invalidateCacheKey(`communityMemberships:user:${currentUser.uid}`);
+    invalidateCacheKey(`myMembership:${community.id}:${currentUser.uid}`);
+    invalidateCachePrefix(`communityMembers:${community.id}:`);
   } catch (error) {
     handleFirestoreError(
       error,
@@ -761,18 +863,30 @@ export async function fetchMyCommunityMembership(
   uid: string
 ): Promise<CommunityMembership | null> {
   if (!communityId || !uid) return null;
-  const membershipId = `${communityId}__${uid}`;
-  try {
-    const snap = await getDoc(doc(db, 'communityMemberships', membershipId));
-    if (!snap.exists()) return null;
-    return mapDocToMembership(snap.id, snap.data());
-  } catch (error) {
-    handleFirestoreError(
-      error,
-      OperationType.GET,
-      `communityMemberships/${membershipId}`
-    );
+  const cachedUserMemberships = getCachedValue<CommunityMembership[]>(
+    `communityMemberships:user:${uid}`
+  );
+  if (cachedUserMemberships !== undefined) {
+    return cachedUserMemberships.find((m) => m.communityId === communityId) ?? null;
   }
+  const membershipId = `${communityId}__${uid}`;
+  return getOrFetch(
+    `myMembership:${communityId}:${uid}`,
+    async () => {
+      try {
+        const snap = await getDoc(doc(db, 'communityMemberships', membershipId));
+        if (!snap.exists()) return null;
+        return mapDocToMembership(snap.id, snap.data());
+      } catch (error) {
+        handleFirestoreError(
+          error,
+          OperationType.GET,
+          `communityMemberships/${membershipId}`
+        );
+      }
+    },
+    { ttlMs: COMMUNITY_DETAIL_TTL_MS, uid }
+  );
 }
 
 export async function fetchCommunityMembers(
@@ -780,18 +894,24 @@ export async function fetchCommunityMembers(
   maxCount = 100
 ): Promise<CommunityMembership[]> {
   if (!communityId) return [];
-  try {
-    const q = query(
-      collection(db, 'communityMemberships'),
-      where('communityId', '==', communityId),
-      orderBy('joinedAt', 'desc'),
-      limit(maxCount)
-    );
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map((d) => mapDocToMembership(d.id, d.data()));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'communityMemberships');
-  }
+  return getOrFetch(
+    `communityMembers:${communityId}:${maxCount}`,
+    async () => {
+      try {
+        const q = query(
+          collection(db, 'communityMemberships'),
+          where('communityId', '==', communityId),
+          orderBy('joinedAt', 'desc'),
+          limit(maxCount)
+        );
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map((d) => mapDocToMembership(d.id, d.data()));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'communityMemberships');
+      }
+    },
+    { ttlMs: COMMUNITY_DETAIL_TTL_MS }
+  );
 }
 
 export async function joinPublicCommunity(
@@ -865,8 +985,16 @@ export async function joinPublicCommunity(
     if (!createdSnap.exists()) {
       throw new Error('Membership was saved but could not be loaded.');
     }
+    const membership = mapDocToMembership(createdSnap.id, createdSnap.data());
+    invalidateCommunityListsAndDetail(communityId);
+    invalidateCacheKey(`communityMemberships:user:${currentUser.uid}`);
+    setCacheValue(`myMembership:${communityId}:${currentUser.uid}`, membership, {
+      ttlMs: COMMUNITY_DETAIL_TTL_MS,
+      uid: currentUser.uid,
+    });
+    invalidateCachePrefix(`communityMembers:${communityId}:`);
     return {
-      membership: mapDocToMembership(createdSnap.id, createdSnap.data()),
+      membership,
       memberCount: nextCount,
     };
   } catch (error) {
@@ -905,7 +1033,7 @@ export async function leaveCommunity(
   const membershipRef = doc(db, 'communityMemberships', membershipId);
 
   try {
-    return await runTransaction(db, async (transaction) => {
+    const nextCount = await runTransaction(db, async (transaction) => {
       const [commSnap, memSnap] = await Promise.all([
         transaction.get(communityRef),
         transaction.get(membershipRef),
@@ -934,6 +1062,11 @@ export async function leaveCommunity(
       }
       return nextCount;
     });
+    invalidateCommunityListsAndDetail(communityId);
+    invalidateCacheKey(`communityMemberships:user:${uid}`);
+    invalidateCacheKey(`myMembership:${communityId}:${uid}`);
+    invalidateCachePrefix(`communityMembers:${communityId}:`);
+    return nextCount;
   } catch (error) {
     if (
       error instanceof Error &&
@@ -955,18 +1088,30 @@ export async function fetchMyJoinRequest(
   uid: string
 ): Promise<CommunityJoinRequest | null> {
   if (!communityId || !uid) return null;
-  const requestId = `${communityId}__${uid}`;
-  try {
-    const snap = await getDoc(doc(db, 'communityJoinRequests', requestId));
-    if (!snap.exists()) return null;
-    return mapDocToJoinRequest(snap.id, snap.data());
-  } catch (error) {
-    handleFirestoreError(
-      error,
-      OperationType.GET,
-      `communityJoinRequests/${requestId}`
-    );
+  const cachedPending = getCachedValue<Record<string, CommunityJoinRequest>>(
+    `myPendingJoinRequests:${uid}`
+  );
+  if (cachedPending && cachedPending[communityId]) {
+    return cachedPending[communityId];
   }
+  const requestId = `${communityId}__${uid}`;
+  return getOrFetch(
+    `myJoinRequest:${communityId}:${uid}`,
+    async () => {
+      try {
+        const snap = await getDoc(doc(db, 'communityJoinRequests', requestId));
+        if (!snap.exists()) return null;
+        return mapDocToJoinRequest(snap.id, snap.data());
+      } catch (error) {
+        handleFirestoreError(
+          error,
+          OperationType.GET,
+          `communityJoinRequests/${requestId}`
+        );
+      }
+    },
+    { ttlMs: COMMUNITY_DETAIL_TTL_MS, uid }
+  );
 }
 
 export async function requestPrivateMembership(
@@ -1051,7 +1196,13 @@ export async function requestPrivateMembership(
     if (!savedSnap.exists()) {
       throw new Error('Membership request could not be reloaded.');
     }
-    return mapDocToJoinRequest(savedSnap.id, savedSnap.data());
+    const joinReq = mapDocToJoinRequest(savedSnap.id, savedSnap.data());
+    invalidateCacheKey(`myPendingJoinRequests:${currentUser.uid}`);
+    setCacheValue(`myJoinRequest:${communityId}:${currentUser.uid}`, joinReq, {
+      ttlMs: COMMUNITY_DETAIL_TTL_MS,
+      uid: currentUser.uid,
+    });
+    return joinReq;
   } catch (error) {
     if (
       error instanceof Error &&
@@ -1090,6 +1241,8 @@ export async function cancelJoinRequest(
         transaction.delete(reqRef);
       }
     });
+    invalidateCacheKey(`myPendingJoinRequests:${uid}`);
+    invalidateCacheKey(`myJoinRequest:${communityId}:${uid}`);
   } catch (error) {
     handleFirestoreError(
       error,
@@ -1188,6 +1341,13 @@ export async function approveJoinRequest(
       return countVal;
     });
 
+    invalidateCommunityListsAndDetail(communityId);
+    invalidateCacheKey(`communityMemberships:user:${request.userId}`);
+    invalidateCacheKey(`myMembership:${communityId}:${request.userId}`);
+    invalidateCachePrefix(`communityMembers:${communityId}:`);
+    invalidateCacheKey(`myPendingJoinRequests:${request.userId}`);
+    invalidateCacheKey(`myJoinRequest:${communityId}:${request.userId}`);
+
     return nextCount;
   } catch (error) {
     if (
@@ -1235,6 +1395,8 @@ export async function rejectJoinRequest(
         updatedAt: serverTimestamp(),
       });
     });
+    invalidateCacheKey(`myPendingJoinRequests:${targetUserId}`);
+    invalidateCacheKey(`myJoinRequest:${communityId}:${targetUserId}`);
   } catch (error) {
     if (error instanceof Error && error.message.includes('no longer pending')) {
       throw error;
@@ -1264,7 +1426,7 @@ export async function setMemberRole(
   const membershipRef = doc(db, 'communityMemberships', membershipId);
 
   try {
-    return await runTransaction(db, async (transaction) => {
+    const nextMods = await runTransaction(db, async (transaction) => {
       const [commSnap, memSnap] = await Promise.all([
         transaction.get(communityRef),
         transaction.get(membershipRef),
@@ -1311,6 +1473,11 @@ export async function setMemberRole(
 
       return nextMods;
     });
+    invalidateCommunityListsAndDetail(communityId);
+    invalidateCacheKey(`communityMemberships:user:${targetUserId}`);
+    invalidateCacheKey(`myMembership:${communityId}:${targetUserId}`);
+    invalidateCachePrefix(`communityMembers:${communityId}:`);
+    return nextMods;
   } catch (error) {
     if (
       error instanceof Error &&
@@ -1355,7 +1522,7 @@ export async function removeCommunityMember(
   }
 
   try {
-    return await runTransaction(db, async (transaction) => {
+    const result = await runTransaction(db, async (transaction) => {
       const [commSnap, memSnap] = await Promise.all([
         transaction.get(communityRef),
         transaction.get(membershipRef),
@@ -1389,6 +1556,11 @@ export async function removeCommunityMember(
         : [];
       return { memberCount: nextCount, moderatorIds: mods };
     });
+    invalidateCommunityListsAndDetail(communityId);
+    invalidateCacheKey(`communityMemberships:user:${targetUserId}`);
+    invalidateCacheKey(`myMembership:${communityId}:${targetUserId}`);
+    invalidateCachePrefix(`communityMembers:${communityId}:`);
+    return result;
   } catch (error) {
     handleFirestoreError(
       error,
